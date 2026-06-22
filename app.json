@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "Journi",
+    "slug": "journi",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/journi_icon_1024_fundo_escuro.png",
+    "splash": {
+      "image": "./assets/journi_logo_completa.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0D1326"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.journi.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/journi_icon_1024_transparente.png",
+        "backgroundColor": "#0D1326"
+      },
+      "package": "com.journi.app",
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/journi_icon_1024_transparente.png"
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Permitir que o Journi acesse sua localização para sugerir a cidade automaticamente ao postar fotos."
+        }
+      ],
+      "expo-sharing",
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "9929daaf-28c0-4408-bef1-e2b18abd1035"
+      }
+    },
+    "owner": "itselvismll"
+  }
+}

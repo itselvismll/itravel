@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"const p = require\\('./package.json'\\); console.log\\(p.dependencies['expo-image-picker'] || 'NOT INSTALLED'\\)\")",
+      "Bash(New-Item -ItemType File -Path \"c:\\\\Users\\\\elvis.leite.de.lima\\\\Documents\\\\itravel-novo\\\\src\\\\screens\\\\feed\\\\FeedScreen.js\" -Force)",
+      "Bash(Out-Null)",
+      "Read(//c/Users/elvis.leite.de.lima/Documents/**)",
+      "Read(//c/Users/elvis.leite.de.lima/Documents//**)",
+      "Bash(find /c/Users/elvis.leite.de.lima -maxdepth 4 -type d -name \"itravel-video\" 2>/dev/null; find /c/Users/elvis.leite.de.lima/Documents/Itravel -maxdepth 3 -type d 2>/dev/null | head -20)",
+      "Read(//c/Users/elvis.leite.de.lima/**)",
+      "Bash(xargs grep -l '\"remotion\"')",
+      "Bash(mkdir -p \"/c/Users/elvis.leite.de.lima/Documents/itravel-video/src\" \"/c/Users/elvis.leite.de.lima/Documents/itravel-video/out\" && echo \"dirs ok\")",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(cd \"/c/Users/elvis.leite.de.lima/Documents/itravel-video\" && find . -not -path '*/node_modules/*' -not -path '*/.git/*' | sort)",
+      "Read(//c/c/Users/elvis.leite.de.lima/Documents/**)",
+      "Bash(npx expo *)",
+      "Bash(grep -v \"//\\\\|console\")",
+      "Bash(curl -s \"https://restcountries.com/v3.1/alpha/BRA\")",
+      "Bash(curl -sL \"https://restcountries.com/v3.1/alpha/BRA\")",
+      "Bash(curl -sI \"https://restcountries.com/v3.1/alpha/BRA\")",
+      "Bash(curl -sL \"https://restcountries.com/v3.1/alpha/BRA?fields=name,capital,population,languages,currencies,region,subregion,flags,borders,timezones,idd,latlng,area,maps\" --url-query \"\")",
+      "Bash(curl -sL \"https://restcountries.com/v5/alpha/BRA?fields=name,capital,population,languages,currencies,region,subregion,flags,borders,timezones,idd,latlng,area,maps\")",
+      "Bash(curl -sL \"https://restcountries.com/docs/legacy-api-deprecation\")",
+      "Bash(curl -sI \"https://restcountries.com/v3.1/\")",
+      "Bash(curl -sL \"https://files-03.restcountries.com/countries.00/legacy.json\")",
+      "Bash(curl -sI \"https://files-03.restcountries.com/countries.00/legacy.json\")",
+      "Bash(curl -s \"https://api.first.org/data/v1/countries/BRA\")",
+      "Bash(curl -sI \"https://api.first.org/data/v1/countries/BRA\")",
+      "Bash(curl -s \"https://api.first.org/data/v1/countries?q=Brazil\")",
+      "Bash(curl -s \"https://countriesnow.space/api/v0.1/countries/capital\" -H \"Content-Type: application/json\" -d '{\"country\":\"Brazil\"}')",
+      "Bash(curl -s \"https://raw.githubusercontent.com/mledoze/countries/master/dist/countries.min.json\")",
+      "Bash(curl -sI \"https://raw.githubusercontent.com/mledoze/countries/master/dist/countries.min.json\")"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\elvis.leite.de.lima\\Documents\\itravel-video"
+    ]
+  }
+}
