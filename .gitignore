@@ -39,3 +39,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Supabase temp files
+supabase/.temp/
+
+# Playwright MCP logs
+.playwright-mcp/
