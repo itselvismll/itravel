@@ -20,33 +20,10 @@ import { getCurrentUser, signOut, getVisitedCountries, supabase } from '../../se
 import { getWishlist } from '../../services/socialService';
 import { getProfile } from '../../services/profileService';
 import { getFavoritePhotos, getAllUserPhotos } from '../../services/photoService';
-import { getAlpha2, getStampRotation } from '../../utils/countryUtils';
+import { getAlpha2, getStampRotation, getCountryNamePt } from '../../utils/countryUtils';
 import StarRating from '../../components/StarRating';
 import { useUpload } from '../../context/UploadContext';
 import { getLevelInfo } from '../../utils/travelerLevels';
-
-const COUNTRY_NAMES_PT = {
-  'Brazil': 'Brasil', 'Algeria': 'Argélia', 'United States of America': 'Estados Unidos',
-  'Portugal': 'Portugal', 'France': 'França', 'Germany': 'Alemanha',
-  'Italy': 'Itália', 'Spain': 'Espanha', 'Japan': 'Japão',
-  'Argentina': 'Argentina', 'Chile': 'Chile', 'Colombia': 'Colômbia',
-  'Mexico': 'México', 'Peru': 'Peru', 'Uruguay': 'Uruguai',
-  'Bolivia': 'Bolívia', 'Paraguay': 'Paraguai', 'Venezuela': 'Venezuela',
-  'Ecuador': 'Equador', 'Morocco': 'Marrocos', 'Egypt': 'Egito',
-  'South Africa': 'África do Sul', 'Ethiopia': 'Etiópia', 'Libya': 'Líbia',
-  'Nigeria': 'Nigéria', 'Kenya': 'Quênia', 'Tanzania': 'Tanzânia',
-  'China': 'China', 'India': 'Índia', 'Thailand': 'Tailândia',
-  'Indonesia': 'Indonésia', 'Vietnam': 'Vietnã', 'Russia': 'Rússia',
-  'Ukraine': 'Ucrânia', 'Turkey': 'Turquia', 'Türkiye': 'Turquia',
-  'Saudi Arabia': 'Arábia Saudita', 'United Arab Emirates': 'Emirados Árabes',
-  'United Kingdom': 'Reino Unido', 'Australia': 'Austrália',
-  'Canada': 'Canadá', 'Netherlands': 'Holanda', 'Belgium': 'Bélgica',
-  'Switzerland': 'Suíça', 'Austria': 'Áustria', 'Sweden': 'Suécia',
-  'Norway': 'Noruega', 'Denmark': 'Dinamarca', 'Finland': 'Finlândia',
-  'Greece': 'Grécia', 'Poland': 'Polônia', 'Romania': 'Romênia',
-};
-
-const getCountryNamePt = (name) => COUNTRY_NAMES_PT[name] || name;
 
 export default function ProfileScreen({ navigation }) {
   const [profile, setProfile] = useState(null);
@@ -59,6 +36,7 @@ export default function ProfileScreen({ navigation }) {
   const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
   const [wishlist, setWishlist] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const { refreshTrigger } = useUpload();
   const shareCardRef = useRef();
@@ -111,6 +89,13 @@ export default function ProfileScreen({ navigation }) {
 
       setFollowersCount(followers || 0);
       setFollowingCount(following || 0);
+
+      const { data: notifs } = await supabase
+        .from('notifications')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('read', false);
+      setUnreadCount((notifs || []).length);
     } catch (error) {
       console.error('Erro ao carregar perfil:', error);
     } finally {
@@ -201,6 +186,24 @@ export default function ProfileScreen({ navigation }) {
           onPress={() => navigation.navigate('EditProfile', { profile })}
         >
           <Ionicons name="pencil" size={16} color="rgba(255,255,255,0.6)" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Notificações')}
+          style={{ position: 'absolute', top: 16, right: 56 }}
+        >
+          <Ionicons name="notifications-outline" size={24} color="#F7F7F2" />
+          {unreadCount > 0 && (
+            <View style={{
+              position: 'absolute', top: -4, right: -4,
+              width: 16, height: 16, borderRadius: 8,
+              backgroundColor: '#FF4D6D',
+              alignItems: 'center', justifyContent: 'center'
+            }}>
+              <Text style={{ color: '#fff', fontSize: 9, fontWeight: '700' }}>
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
 
         <View style={styles.avatar}>

@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../services/supabase';
 import { followUser, unfollowUser, getFollowing, getFollowCounts } from '../../services/followService';
-import { getAlpha2 } from '../../utils/countryUtils';
+import { getFlagEmoji } from '../../utils/flagUtils';
 
 const { width } = Dimensions.get('window');
 const PHOTO_SIZE = (width - 4) / 3;
@@ -21,21 +21,6 @@ const LEVELS = [
 
 const getLevel = (count) =>
   LEVELS.find(l => count >= l.min && count <= l.max) || LEVELS[0];
-
-const getFlagEmoji = (code) => {
-  if (!code || typeof code !== 'string') return '🌍';
-  const upper = code.trim().toUpperCase();
-  if (upper.length === 2) {
-    return upper.split('').map(c => String.fromCodePoint(127397 + c.charCodeAt(0))).join('');
-  }
-  if (upper.length === 3) {
-    const alpha2 = (getAlpha2(upper) || '').toUpperCase();
-    if (alpha2.length === 2) {
-      return alpha2.split('').map(c => String.fromCodePoint(127397 + c.charCodeAt(0))).join('');
-    }
-  }
-  return '🌍';
-};
 
 export default function PublicProfileScreen({ route, navigation }) {
   const { userId, username } = route.params;

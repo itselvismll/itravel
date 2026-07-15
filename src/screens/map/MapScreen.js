@@ -8,6 +8,7 @@ import { isInWishlist, addToWishlist, removeFromWishlist, getWishlist } from '..
 import { getCountryInfo, formatPopulation, formatArea, getBorderCountries } from '../../services/countriesApi';
 import { getCountryCulturalData } from '../../data/countriesData';
 import { ALPHA3_TO_ALPHA2, getAlpha2 } from '../../utils/countryUtils';
+import { getFlagEmoji } from '../../utils/flagUtils';
 import { PROMPT_TYPES, askTravelAssistant } from '../../services/assistantService';
 import PhotoGallery from '../../components/PhotoGallery';
 import PhotoUploader from '../../components/PhotoUploader';
@@ -57,13 +58,6 @@ const COUNTRIES_LIST = [
   { code: 'PA', name: 'Panamá' }, { code: 'GT', name: 'Guatemala' },
   { code: 'IS', name: 'Islândia' }, { code: 'IE', name: 'Irlanda' },
 ];
-
-const getFlagEmoji = (code) => {
-  if (!code) return '🌍';
-  return code.toUpperCase().split('').map(c =>
-    String.fromCodePoint(127397 + c.charCodeAt(0))
-  ).join('');
-};
 
 let MapContainer, GeoJSON, TileLayer, Marker, Popup, L, MarkerClusterGroup;
 if (Platform.OS === 'web') {

@@ -13,7 +13,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES } from '../utils/constants';
 import { uploadPhoto } from '../services/photoService';
-import { getAlpha3 } from '../utils/countryUtils';
+import { getAlpha3, getAlpha2 } from '../utils/countryUtils';
+import { supabase } from '../services/supabase';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 
 const GOOGLE_PLACES_KEY = 'AIzaSyC0UMp9B6JWuZMLM0m3E87xBqC4V0KU9m8';
@@ -158,6 +159,18 @@ export default function PhotoUploader({
 
     if (result.success) {
       setUploadSuccess(true);
+      // Mark country as visited
+      const { data: authData } = await supabase.auth.getUser();
+      const currentUser = authData?.user;
+      if (currentUser && effectiveCountryCode) {
+        const alpha2 = getAlpha2(effectiveCountryCode).toUpperCase();
+        await supabase
+          .from('visited_countries')
+          .upsert(
+            { user_id: currentUser.id, country_code: alpha2, country_name: effectiveCountryName },
+            { onConflict: 'user_id,country_code', ignoreDuplicates: true }
+          );
+      }
       if (onPhotoUploaded) onPhotoUploaded(result.data);
       setTimeout(() => {
         handleRemovePreview();

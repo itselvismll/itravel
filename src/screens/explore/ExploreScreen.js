@@ -6,71 +6,14 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../services/supabase';
 import { getCurrentUser } from '../../services/supabase';
-import { getAlpha2, ALPHA3_TO_ALPHA2 } from '../../utils/countryUtils';
+import { getAlpha2, ALPHA3_TO_ALPHA2, getCountryNamePt } from '../../utils/countryUtils';
+import { getFlagEmoji } from '../../utils/flagUtils';
 import { followUser, unfollowUser, getFollowing, getRecentPublicPhotos, getUsersToDiscover } from '../../services/followService';
 import { searchTravelers, getSuggestedTravelers, getTravelersByCountry, addToWishlist, removeFromWishlist, isInWishlist } from '../../services/socialService';
 import { logger } from '../../utils/logger';
 import StarRating from '../../components/StarRating';
 import Avatar from '../../components/Avatar';
 import { useUpload } from '../../context/UploadContext';
-
-const COUNTRY_NAMES_PT = {
-  'Afghanistan': 'Afeganistão', 'Albania': 'Albânia', 'Algeria': 'Argélia',
-  'Angola': 'Angola', 'Argentina': 'Argentina', 'Australia': 'Austrália',
-  'Austria': 'Áustria', 'Belgium': 'Bélgica', 'Bolivia': 'Bolívia',
-  'Brazil': 'Brasil', 'Bulgaria': 'Bulgária', 'Canada': 'Canadá',
-  'Chile': 'Chile', 'China': 'China', 'Colombia': 'Colômbia',
-  'Croatia': 'Croácia', 'Cuba': 'Cuba', 'Czech Republic': 'República Tcheca',
-  'Czechia': 'República Tcheca', 'Denmark': 'Dinamarca', 'Ecuador': 'Equador',
-  'Egypt': 'Egito', 'Ethiopia': 'Etiópia', 'Finland': 'Finlândia',
-  'France': 'França', 'Germany': 'Alemanha', 'Greece': 'Grécia',
-  'Hungary': 'Hungria', 'India': 'Índia', 'Indonesia': 'Indonésia',
-  'Iran': 'Irã', 'Iraq': 'Iraque', 'Ireland': 'Irlanda',
-  'Israel': 'Israel', 'Italy': 'Itália', 'Jamaica': 'Jamaica',
-  'Japan': 'Japão', 'Jordan': 'Jordânia', 'Kenya': 'Quênia',
-  'Libya': 'Líbia', 'Malaysia': 'Malásia', 'Mexico': 'México',
-  'Morocco': 'Marrocos', 'Netherlands': 'Holanda', 'New Zealand': 'Nova Zelândia',
-  'Nigeria': 'Nigéria', 'North Korea': 'Coreia do Norte', 'Norway': 'Noruega',
-  'Pakistan': 'Paquistão', 'Panama': 'Panamá', 'Paraguay': 'Paraguai',
-  'Peru': 'Peru', 'Philippines': 'Filipinas', 'Poland': 'Polônia',
-  'Portugal': 'Portugal', 'Romania': 'Romênia', 'Russia': 'Rússia',
-  'Saudi Arabia': 'Arábia Saudita', 'Serbia': 'Sérvia', 'Somalia': 'Somália',
-  'South Africa': 'África do Sul', 'South Korea': 'Coreia do Sul',
-  'Spain': 'Espanha', 'Sudan': 'Sudão', 'Sweden': 'Suécia',
-  'Switzerland': 'Suíça', 'Syria': 'Síria', 'Thailand': 'Tailândia',
-  'Tunisia': 'Tunísia', 'Turkey': 'Turquia', 'Türkiye': 'Turquia',
-  'Ukraine': 'Ucrânia', 'United Arab Emirates': 'Emirados Árabes',
-  'United Kingdom': 'Reino Unido', 'United States of America': 'Estados Unidos',
-  'Uruguay': 'Uruguai', 'Venezuela': 'Venezuela', 'Vietnam': 'Vietnã',
-  'Tanzania': 'Tanzânia', 'Uganda': 'Uganda', 'Ghana': 'Gana',
-  'Cameroon': 'Camarões', 'Mozambique': 'Moçambique',
-};
-
-const getCountryNamePt = (name) => COUNTRY_NAMES_PT[name] || name;
-
-const getFlagEmoji = (code) => {
-  if (!code || typeof code !== 'string') return '🌍';
-  const upper = code.trim().toUpperCase();
-
-  if (upper.length === 2) {
-    return upper
-      .split('')
-      .map(c => String.fromCodePoint(127397 + c.charCodeAt(0)))
-      .join('');
-  }
-
-  if (upper.length === 3) {
-    const alpha2 = (getAlpha2(upper) || '').toUpperCase();
-    if (alpha2.length === 2) {
-      return alpha2
-        .split('')
-        .map(c => String.fromCodePoint(127397 + c.charCodeAt(0)))
-        .join('');
-    }
-  }
-
-  return '🌍';
-};
 
 const ALPHA3_TO_NAMEEN = {
   'BRA':'Brazil','USA':'United States of America','ARG':'Argentina',
@@ -248,7 +191,7 @@ export default function ExploreScreen({ navigation }) {
 
   const buildFallbackCountries = () =>
     Object.entries(ALPHA3_TO_NAMEEN)
-      .map(([code, nameEn]) => ({ code, nameEn, name: COUNTRY_NAMES_PT[nameEn] || nameEn }))
+      .map(([code, nameEn]) => ({ code, nameEn, name: getCountryNamePt(nameEn) }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
   const loadAllCountries = async () => {
@@ -393,9 +336,11 @@ export default function ExploreScreen({ navigation }) {
 
   useEffect(() => {
     if (destCountry) {
-      isInWishlist(destCountry.country_code).then(r => setDestWishlisted(r.data || false));
+      const rawCode = destCountry.country_code || '';
+      const alpha2Dest = rawCode.length === 3 ? (ALPHA3_TO_ALPHA2[rawCode.toUpperCase()] || rawCode) : rawCode;
+      isInWishlist(alpha2Dest).then(r => setDestWishlisted(r.data || false));
       setLoadingDestTravelers(true);
-      getTravelersByCountry(destCountry.country_code, currentUser?.id).then(r => {
+      getTravelersByCountry(alpha2Dest, currentUser?.id).then(r => {
         setDestTravelers(r.success ? r.data : []);
         setLoadingDestTravelers(false);
       });

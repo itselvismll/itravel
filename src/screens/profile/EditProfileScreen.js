@@ -8,6 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Image,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -138,6 +139,7 @@ export default function EditProfileScreen({ navigation, route }) {
       });
 
       if (result.success) {
+        Alert.alert('Perfil atualizado!', 'Suas informações foram salvas.');
         navigation.goBack();
       } else {
         setErrorMessage('Erro ao salvar: ' + result.error);

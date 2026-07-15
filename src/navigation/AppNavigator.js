@@ -25,6 +25,7 @@ import UploadPlaceholder from '../screens/upload/UploadPlaceholder';
 import PhotoUploader from '../components/PhotoUploader';
 import PublicProfileScreen from '../screens/profile/PublicProfileScreen';
 import AssistantResultScreen from '../screens/assistant/AssistantResultScreen';
+import NotificationsScreen from '../screens/NotificationsScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -279,6 +280,11 @@ export default function AppNavigator() {
             <Stack.Screen
               name="AssistantResult"
               component={AssistantResultScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="Notificações"
+              component={NotificationsScreen}
               options={{ headerShown: false }}
             />
           </Stack.Navigator>

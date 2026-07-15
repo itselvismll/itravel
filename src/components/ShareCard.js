@@ -1,7 +1,8 @@
 import React, { forwardRef } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
-import { getAlpha2 } from '../utils/countryUtils';
 import { getLevelInfo } from '../utils/travelerLevels';
+import { getFlagEmoji } from '../utils/flagUtils';
+import { ALPHA3_TO_ALPHA2 } from '../utils/countryUtils';
 
 const COUNTRY_NAMES_PT = {
   BRA:'Brasil', USA:'EUA', ARG:'Argentina', PRT:'Portugal', ESP:'Espanha',
@@ -22,16 +23,6 @@ const COUNTRY_NAMES_PT = {
   ETH:'Etiópia', DZA:'Argélia', IRN:'Irã', IRQ:'Iraque', JOR:'Jordânia',
   KWT:'Kuwait', LBN:'Líbano', SYR:'Síria', YEM:'Iêmen',
   GEO:'Geórgia', ARM:'Armênia', AZE:'Azerbaijão',
-};
-
-const getFlagEmoji = (code) => {
-  if (!code) return '🌍';
-  let alpha2 = code.toUpperCase();
-  if (alpha2.length === 3) {
-    alpha2 = (getAlpha2(alpha2) || alpha2).toUpperCase();
-  }
-  if (alpha2.length !== 2) return '🌍';
-  return alpha2.split('').map(c => String.fromCodePoint(127397 + c.charCodeAt(0))).join('');
 };
 
 const FlagGrid = ({ codes, title, titleColor }) => {

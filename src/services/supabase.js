@@ -26,6 +26,7 @@ export async function signUp(email, password, username, fullName) {
           id: authData.user.id,
           username,
           full_name: fullName,
+          display_name: fullName,
           avatar_url: null,
           bio: null,
         },

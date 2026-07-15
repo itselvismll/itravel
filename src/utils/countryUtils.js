@@ -54,6 +54,54 @@ export const getStampRotation = (countryCode) => {
   return (hash % 17) - 8;
 };
 
+export const COUNTRY_NAMES_PT = {
+  'Afghanistan': 'Afeganistão', 'Albania': 'Albânia', 'Algeria': 'Argélia',
+  'Angola': 'Angola', 'Argentina': 'Argentina', 'Australia': 'Austrália',
+  'Austria': 'Áustria', 'Belgium': 'Bélgica', 'Bolivia': 'Bolívia',
+  'Brazil': 'Brasil', 'Bulgaria': 'Bulgária', 'Canada': 'Canadá',
+  'Chile': 'Chile', 'China': 'China', 'Colombia': 'Colômbia',
+  'Croatia': 'Croácia', 'Cuba': 'Cuba', 'Czech Republic': 'República Tcheca',
+  'Czechia': 'República Tcheca', 'Denmark': 'Dinamarca', 'Ecuador': 'Equador',
+  'Egypt': 'Egito', 'Ethiopia': 'Etiópia', 'Finland': 'Finlândia',
+  'France': 'França', 'Germany': 'Alemanha', 'Greece': 'Grécia',
+  'Hungary': 'Hungria', 'India': 'Índia', 'Indonesia': 'Indonésia',
+  'Iran': 'Irã', 'Iraq': 'Iraque', 'Ireland': 'Irlanda',
+  'Israel': 'Israel', 'Italy': 'Itália', 'Jamaica': 'Jamaica',
+  'Japan': 'Japão', 'Jordan': 'Jordânia', 'Kenya': 'Quênia',
+  'Libya': 'Líbia', 'Malaysia': 'Malásia', 'Mexico': 'México',
+  'Morocco': 'Marrocos', 'Netherlands': 'Holanda', 'New Zealand': 'Nova Zelândia',
+  'Nigeria': 'Nigéria', 'North Korea': 'Coreia do Norte', 'Norway': 'Noruega',
+  'Pakistan': 'Paquistão', 'Panama': 'Panamá', 'Paraguay': 'Paraguai',
+  'Peru': 'Peru', 'Philippines': 'Filipinas', 'Poland': 'Polônia',
+  'Portugal': 'Portugal', 'Romania': 'Romênia', 'Russia': 'Rússia',
+  'Saudi Arabia': 'Arábia Saudita', 'Serbia': 'Sérvia', 'Somalia': 'Somália',
+  'South Africa': 'África do Sul', 'South Korea': 'Coreia do Sul',
+  'Spain': 'Espanha', 'Sudan': 'Sudão', 'Sweden': 'Suécia',
+  'Switzerland': 'Suíça', 'Syria': 'Síria', 'Thailand': 'Tailândia',
+  'Tunisia': 'Tunísia', 'Turkey': 'Turquia', 'Türkiye': 'Turquia',
+  'Ukraine': 'Ucrânia', 'United Arab Emirates': 'Emirados Árabes',
+  'United Kingdom': 'Reino Unido', 'United States of America': 'Estados Unidos',
+  'United States': 'Estados Unidos',
+  'Uruguay': 'Uruguai', 'Venezuela': 'Venezuela', 'Vietnam': 'Vietnã',
+  'Tanzania': 'Tanzânia', 'Uganda': 'Uganda', 'Ghana': 'Gana',
+  'Cameroon': 'Camarões', 'Mozambique': 'Moçambique',
+  'Costa Rica': 'Costa Rica', 'Dominican Republic': 'República Dominicana',
+  'El Salvador': 'El Salvador', 'Guatemala': 'Guatemala', 'Honduras': 'Honduras',
+  'Nicaragua': 'Nicarágua', 'Paraguay': 'Paraguai', 'Suriname': 'Suriname',
+  'Guyana': 'Guiana', 'Trinidad and Tobago': 'Trinidad e Tobago',
+  'Jamaica': 'Jamaica', 'Haiti': 'Haiti', 'Cuba': 'Cuba',
+  'Kazakhstan': 'Cazaquistão', 'Uzbekistan': 'Uzbequistão',
+  'Turkmenistan': 'Turcomenistão', 'Kyrgyzstan': 'Quirguistão',
+  'Tajikistan': 'Tajiquistão', 'Mongolia': 'Mongólia', 'Nepal': 'Nepal',
+  'Sri Lanka': 'Sri Lanka', 'Myanmar': 'Mianmar', 'Cambodia': 'Camboja',
+  'Laos': 'Laos', 'North Korea': 'Coreia do Norte',
+  'South Korea': 'Coreia do Sul', 'Taiwan': 'Taiwan',
+  'Hong Kong': 'Hong Kong', 'Singapore': 'Singapura',
+  'Bangladesh': 'Bangladesh', 'Afghanistan': 'Afeganistão',
+};
+
+export const getCountryNamePt = (name) => COUNTRY_NAMES_PT[name] || name;
+
 export const getAlpha3 = (input) => {
   if (!input) return null;
   const code = input.trim();
