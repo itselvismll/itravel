@@ -1,0 +1,20 @@
+- generic [ref=e10]:
+  - generic [ref=e29]: Suas viagens. Suas histórias. Suas conexões.
+  - generic [ref=e30]:
+    - generic [ref=e31]: Bem-vindo de volta!
+    - generic [ref=e32]: Entre para continuar sua jornada
+    - generic [ref=e34]:
+      - generic [ref=e35]: 
+      - textbox "Email" [ref=e36]
+    - generic [ref=e38]:
+      - generic [ref=e39]: 
+      - textbox "Senha" [ref=e40]
+      - generic [ref=e42] [cursor=pointer]: 
+    - generic [ref=e44] [cursor=pointer]:
+      - generic [ref=e45]: Entrar
+      - generic [ref=e46]: 
+    - generic [ref=e49]: ou
+    - generic [ref=e51] [cursor=pointer]:
+      - generic [ref=e52]: 
+      - generic [ref=e53]: Continuar com Google
+    - generic [ref=e55] [cursor=pointer]: Não tem conta? Cadastre-se grátis
