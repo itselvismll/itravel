@@ -12,7 +12,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.journi.app"
+      "bundleIdentifier": "com.journi.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {

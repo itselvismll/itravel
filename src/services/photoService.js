@@ -295,6 +295,7 @@ export const getTopPlacesByCountry = async (countryCode) => {
       .from(TABLE)
       .select('city, location_name, rating')
       .in('country_code', uniqueCodes)
+      .eq('is_public', true)
       .not('location_name', 'is', null)
       .not('rating', 'is', null);
 

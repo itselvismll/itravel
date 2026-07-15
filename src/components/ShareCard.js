@@ -1,19 +1,8 @@
-﻿import React, { forwardRef } from 'react';
+import React, { forwardRef } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
-import { getAlpha2, getStampRotation } from '../utils/countryUtils';
+import { getAlpha2 } from '../utils/countryUtils';
 import { getLevelInfo } from '../utils/travelerLevels';
 
-const STAMP_COLORS = ['#E74C3C', '#3498DB', '#27AE60', '#9B59B6', '#F39C12', '#1ABC9C'];
-
-const getStampColor = (countryCode) => {
-  let hash = 0;
-  for (let i = 0; i < countryCode.length; i++) {
-    hash = countryCode.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return STAMP_COLORS[Math.abs(hash) % STAMP_COLORS.length];
-};
-
-// Alpha-3 → nome curto em PT para o carimbo
 const COUNTRY_NAMES_PT = {
   BRA:'Brasil', USA:'EUA', ARG:'Argentina', PRT:'Portugal', ESP:'Espanha',
   FRA:'França', ITA:'Itália', DEU:'Alemanha', GBR:'Reino Unido', JPN:'Japão',
@@ -31,16 +20,47 @@ const COUNTRY_NAMES_PT = {
   HUN:'Hungria', ROU:'Romênia', BGR:'Bulgária', HRV:'Croácia', SRB:'Sérvia',
   SVK:'Eslováquia', SVN:'Eslovênia', PHL:'Filipinas', BGD:'Bangladesh',
   ETH:'Etiópia', DZA:'Argélia', IRN:'Irã', IRQ:'Iraque', JOR:'Jordânia',
-  KWT:'Kuwait', ARE:'Emirados', LBN:'Líbano', SYR:'Síria', YEM:'Iêmen',
+  KWT:'Kuwait', LBN:'Líbano', SYR:'Síria', YEM:'Iêmen',
   GEO:'Geórgia', ARM:'Armênia', AZE:'Azerbaijão',
 };
 
-const ShareCard = forwardRef(({ profile, visitedCountryCodes, totalPhotos, totalCities }, ref) => {
-  const levelInfo = getLevelInfo(visitedCountryCodes.length);
-  const initial = (profile?.username || 'V')[0].toUpperCase();
+const getFlagEmoji = (code) => {
+  if (!code) return '🌍';
+  let alpha2 = code.toUpperCase();
+  if (alpha2.length === 3) {
+    alpha2 = (getAlpha2(alpha2) || alpha2).toUpperCase();
+  }
+  if (alpha2.length !== 2) return '🌍';
+  return alpha2.split('').map(c => String.fromCodePoint(127397 + c.charCodeAt(0))).join('');
+};
 
-  const slots = [...visitedCountryCodes.slice(0, 6)];
-  while (slots.length < 6) slots.push(null);
+const FlagGrid = ({ codes, title, titleColor }) => {
+  if (!codes || codes.length === 0) return null;
+  const rows = [];
+  for (let i = 0; i < codes.length; i += 6) {
+    rows.push(codes.slice(i, i + 6));
+  }
+  return (
+    <View style={{ marginTop: 18 }}>
+      <Text style={{ color: titleColor, fontSize: 10, fontWeight: '700', letterSpacing: 2, marginBottom: 10 }}>
+        {title}
+      </Text>
+      {rows.map((row, i) => (
+        <View key={i} style={{ flexDirection: 'row', gap: 6, marginBottom: 6 }}>
+          {row.map((code, j) => (
+            <Text key={`${code}-${j}`} style={{ fontSize: 26 }}>
+              {getFlagEmoji(code)}
+            </Text>
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+};
+
+const ShareCard = forwardRef(({ profile, visitedCountryCodes, wishlistCodes, totalPhotos, totalCities }, ref) => {
+  const levelInfo = getLevelInfo((visitedCountryCodes || []).length);
+  const initial = (profile?.username || 'V')[0].toUpperCase();
 
   return (
     <View ref={ref} style={styles.card} collapsable={false}>
@@ -68,15 +88,15 @@ const ShareCard = forwardRef(({ profile, visitedCountryCodes, totalPhotos, total
         </View>
       </View>
 
-      {/* Stats — estilo boarding pass */}
+      {/* Stats */}
       <View style={styles.statsRow}>
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>{visitedCountryCodes.length}</Text>
+          <Text style={styles.statValue}>{(visitedCountryCodes || []).length}</Text>
           <Text style={styles.statLabel}>PAÍSES</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>{totalPhotos}</Text>
+          <Text style={styles.statValue}>{totalPhotos || 0}</Text>
           <Text style={styles.statLabel}>FOTOS</Text>
         </View>
         <View style={styles.statDivider} />
@@ -86,43 +106,22 @@ const ShareCard = forwardRef(({ profile, visitedCountryCodes, totalPhotos, total
         </View>
       </View>
 
-      {/* Carimbos */}
-      <View style={styles.stampsGrid}>
-        {slots.map((code, i) => {
-          if (!code) {
-            return (
-              <View
-                key={`empty-${i}`}
-                style={[styles.stampEmpty, { transform: [{ rotate: `${i % 2 === 0 ? -4 : 5}deg` }] }]}
-              >
-                <Text style={styles.stampEmptyText}>?</Text>
-              </View>
-            );
-          }
-          const color = getStampColor(code);
-          return (
-            <View
-              key={code}
-              style={[
-                styles.stamp,
-                {
-                  borderColor: color + '99',
-                  backgroundColor: color + '12',
-                  transform: [{ rotate: `${getStampRotation(code)}deg` }],
-                },
-              ]}
-            >
-              <Image
-                source={{ uri: `https://flagcdn.com/w80/${getAlpha2(code)}.png` }}
-                style={styles.stampFlag}
-              />
-              <Text style={[styles.stampText, { color }]}>
-                {(COUNTRY_NAMES_PT[code] || code).toUpperCase()}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
+      {/* Grid de países visitados */}
+      <FlagGrid
+        codes={visitedCountryCodes}
+        title="PAÍSES VISITADOS"
+        titleColor="rgba(255,255,255,0.5)"
+      />
+
+      {/* Grid de wishlist */}
+      <FlagGrid
+        codes={wishlistCodes}
+        title="QUERO VISITAR 💜"
+        titleColor="#6C2BD9"
+      />
+
+      {/* Divider */}
+      <View style={styles.footerDivider} />
 
       {/* Footer */}
       <View style={styles.footer}>
@@ -137,11 +136,9 @@ export default ShareCard;
 
 const styles = StyleSheet.create({
   card: {
-    width: 360,
-    height: 640,
+    width: 380,
     backgroundColor: '#0D1326',
     padding: 28,
-    justifyContent: 'flex-start',
   },
   header: {
     flexDirection: 'row',
@@ -149,95 +146,60 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tagline: { color: 'rgba(255,255,255,0.5)', fontSize: 11, letterSpacing: 3 },
-  logo: { color: '#6C2BD9', fontSize: 18, fontWeight: '700', fontFamily: 'Poppins_700Bold' },
-  profileSection: { alignItems: 'center', marginTop: 28 },
+  logo: { color: '#6C2BD9', fontSize: 18, fontWeight: '700' },
+  profileSection: { alignItems: 'center', marginTop: 24 },
   avatarRing: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     borderWidth: 2.5,
     borderColor: '#6C2BD9',
     padding: 3,
   },
-  avatarImage: { width: '100%', height: '100%', borderRadius: 38 },
+  avatarImage: { width: '100%', height: '100%', borderRadius: 36 },
   avatarFallback: {
     width: '100%',
     height: '100%',
-    borderRadius: 38,
+    borderRadius: 36,
     backgroundColor: '#2b2f45',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarInitial: { color: 'white', fontSize: 28, fontWeight: '700' },
-  username: { color: 'white', fontSize: 17, fontWeight: '700', marginTop: 12 },
+  avatarInitial: { color: 'white', fontSize: 26, fontWeight: '700' },
+  username: { color: 'white', fontSize: 16, fontWeight: '700', marginTop: 10 },
   levelBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(255,107,53,0.12)',
+    backgroundColor: 'rgba(108,43,217,0.15)',
     borderRadius: 20,
-    paddingVertical: 5,
-    paddingHorizontal: 14,
+    paddingVertical: 4,
+    paddingHorizontal: 12,
     marginTop: 8,
   },
-  levelIcon: { fontSize: 15 },
-  levelName: { color: '#6C2BD9', fontSize: 12, fontWeight: '700' },
+  levelIcon: { fontSize: 14 },
+  levelName: { color: '#6C2BD9', fontSize: 11, fontWeight: '700' },
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.05)',
     borderRadius: 14,
-    marginTop: 28,
+    marginTop: 22,
   },
-  statItem: { flex: 1, alignItems: 'center', paddingVertical: 14 },
-  statValue: { color: '#6C2BD9', fontSize: 24, fontWeight: '700' },
-  statLabel: {
-    color: 'rgba(255,255,255,0.45)',
-    fontSize: 10,
-    marginTop: 3,
-    letterSpacing: 1,
-  },
-  statDivider: { width: 1, height: 32, backgroundColor: 'rgba(255,255,255,0.1)' },
-  stampsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 14,
-    marginTop: 28,
-  },
-  stamp: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stampFlag: { width: 30, height: 20, borderRadius: 2 },
-  stampText: { fontSize: 9, fontWeight: '700', letterSpacing: 0.5, marginTop: 4 },
-  stampEmpty: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    borderColor: 'rgba(255,255,255,0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stampEmptyText: { color: 'rgba(255,255,255,0.2)', fontSize: 28 },
-  footer: {
-    position: 'absolute',
-    bottom: 28,
-    left: 28,
-    right: 28,
+  statItem: { flex: 1, alignItems: 'center', paddingVertical: 12 },
+  statValue: { color: '#6C2BD9', fontSize: 22, fontWeight: '700' },
+  statLabel: { color: 'rgba(255,255,255,0.45)', fontSize: 10, marginTop: 2, letterSpacing: 1 },
+  statDivider: { width: 1, height: 30, backgroundColor: 'rgba(255,255,255,0.1)' },
+  footerDivider: {
+    marginTop: 20,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.12)',
     borderStyle: 'dashed',
-    paddingTop: 12,
+  },
+  footer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginTop: 12,
   },
   footerText: { color: 'rgba(255,255,255,0.35)', fontSize: 10 },
 });

@@ -1,16 +1,69 @@
 ﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, ActivityIndicator, Alert, Platform, TextInput, Image } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, ActivityIndicator, Alert, Platform, TextInput, Image, KeyboardAvoidingView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../utils/constants';
 import { supabase, getCurrentUser, getVisitedCountries, markCountryAsVisited, unmarkCountryAsVisited } from '../../services/supabase';
+import { isInWishlist, addToWishlist, removeFromWishlist, getWishlist } from '../../services/socialService';
 import { getCountryInfo, formatPopulation, formatArea, getBorderCountries } from '../../services/countriesApi';
 import { getCountryCulturalData } from '../../data/countriesData';
 import { ALPHA3_TO_ALPHA2, getAlpha2 } from '../../utils/countryUtils';
+import { PROMPT_TYPES, askTravelAssistant } from '../../services/assistantService';
 import PhotoGallery from '../../components/PhotoGallery';
 import PhotoUploader from '../../components/PhotoUploader';
 import { useUpload } from '../../context/UploadContext';
 import { getCoverPhoto, getTopPlacesByCountry } from '../../services/photoService';
 import Svg, { Path, Circle } from 'react-native-svg';
+
+const ALPHA2_TO_ALPHA3 = Object.fromEntries(
+  Object.entries(ALPHA3_TO_ALPHA2).map(([k, v]) => [v, k])
+);
+
+const COUNTRIES_LIST = [
+  { code: 'BR', name: 'Brasil' }, { code: 'AR', name: 'Argentina' },
+  { code: 'US', name: 'Estados Unidos' }, { code: 'FR', name: 'França' },
+  { code: 'IT', name: 'Itália' }, { code: 'ES', name: 'Espanha' },
+  { code: 'PT', name: 'Portugal' }, { code: 'DE', name: 'Alemanha' },
+  { code: 'GB', name: 'Reino Unido' }, { code: 'JP', name: 'Japão' },
+  { code: 'CN', name: 'China' }, { code: 'KR', name: 'Coreia do Sul' },
+  { code: 'TH', name: 'Tailândia' }, { code: 'VN', name: 'Vietnã' },
+  { code: 'ID', name: 'Indonésia' }, { code: 'AU', name: 'Austrália' },
+  { code: 'NZ', name: 'Nova Zelândia' }, { code: 'MX', name: 'México' },
+  { code: 'CO', name: 'Colômbia' }, { code: 'PE', name: 'Peru' },
+  { code: 'CL', name: 'Chile' }, { code: 'UY', name: 'Uruguai' },
+  { code: 'PY', name: 'Paraguai' }, { code: 'BO', name: 'Bolívia' },
+  { code: 'EC', name: 'Equador' }, { code: 'VE', name: 'Venezuela' },
+  { code: 'CA', name: 'Canadá' }, { code: 'ZA', name: 'África do Sul' },
+  { code: 'EG', name: 'Egito' }, { code: 'MA', name: 'Marrocos' },
+  { code: 'KE', name: 'Quênia' }, { code: 'NG', name: 'Nigéria' },
+  { code: 'ET', name: 'Etiópia' }, { code: 'TR', name: 'Turquia' },
+  { code: 'GR', name: 'Grécia' }, { code: 'NL', name: 'Holanda' },
+  { code: 'BE', name: 'Bélgica' }, { code: 'CH', name: 'Suíça' },
+  { code: 'AT', name: 'Áustria' }, { code: 'SE', name: 'Suécia' },
+  { code: 'NO', name: 'Noruega' }, { code: 'DK', name: 'Dinamarca' },
+  { code: 'FI', name: 'Finlândia' }, { code: 'PL', name: 'Polônia' },
+  { code: 'CZ', name: 'República Tcheca' }, { code: 'HU', name: 'Hungria' },
+  { code: 'RO', name: 'Romênia' }, { code: 'HR', name: 'Croácia' },
+  { code: 'IN', name: 'Índia' }, { code: 'NE', name: 'Níger' },
+  { code: 'LY', name: 'Líbia' }, { code: 'DZ', name: 'Argélia' },
+  { code: 'RU', name: 'Rússia' }, { code: 'UA', name: 'Ucrânia' },
+  { code: 'SG', name: 'Singapura' }, { code: 'MY', name: 'Malásia' },
+  { code: 'PH', name: 'Filipinas' }, { code: 'PK', name: 'Paquistão' },
+  { code: 'BD', name: 'Bangladesh' }, { code: 'LK', name: 'Sri Lanka' },
+  { code: 'NP', name: 'Nepal' }, { code: 'AE', name: 'Emirados Árabes' },
+  { code: 'SA', name: 'Arábia Saudita' }, { code: 'IL', name: 'Israel' },
+  { code: 'JO', name: 'Jordânia' }, { code: 'CU', name: 'Cuba' },
+  { code: 'DO', name: 'República Dominicana' }, { code: 'CR', name: 'Costa Rica' },
+  { code: 'PA', name: 'Panamá' }, { code: 'GT', name: 'Guatemala' },
+  { code: 'IS', name: 'Islândia' }, { code: 'IE', name: 'Irlanda' },
+];
+
+const getFlagEmoji = (code) => {
+  if (!code) return '🌍';
+  return code.toUpperCase().split('').map(c =>
+    String.fromCodePoint(127397 + c.charCodeAt(0))
+  ).join('');
+};
 
 let MapContainer, GeoJSON, TileLayer, Marker, Popup, L, MarkerClusterGroup;
 if (Platform.OS === 'web') {
@@ -28,7 +81,7 @@ if (Platform.OS === 'web') {
 
 
 
-export default function MapScreen() {
+export default function MapScreen({ navigation }) {
   const [countries, setCountries] = useState(null);
   const [visitedCountries, setVisitedCountries] = useState([]);
   const [selectedCountry, setSelectedCountry] = useState(null);
@@ -49,8 +102,18 @@ export default function MapScreen() {
   const [modalPhotoStats, setModalPhotoStats] = useState({ photoCount: 0, cityCount: 0, favoriteCount: 0 });
   const [topPlaces, setTopPlaces] = useState({});
   const [countrySearch, setCountrySearch] = useState('');
+  const [isWishlisted, setIsWishlisted] = useState(false);
+  const [wishlistCodes, setWishlistCodes] = useState([]);
+  const [assistantVisible, setAssistantVisible] = useState(false);
+  const [selectedPromptType, setSelectedPromptType] = useState(null);
+  const [assistantDestination, setAssistantDestination] = useState('');
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantStep, setAssistantStep] = useState('select');
+  const [countrySuggestions, setCountrySuggestions] = useState([]);
 
   const visitedCountriesDataRef = useRef([]);
+
+  console.log('RENDER step:', assistantStep, 'loading:', assistantLoading, 'dest:', assistantDestination);
 
   const { refreshTrigger } = useUpload();
 
@@ -101,6 +164,36 @@ export default function MapScreen() {
     }
   }, [refreshTrigger]);
 
+  useEffect(() => {
+    if (modalVisible && selectedCountry) {
+      isInWishlist(selectedCountry.code).then(r => setIsWishlisted(r.data || false));
+    } else {
+      setIsWishlisted(false);
+    }
+  }, [modalVisible, selectedCountry]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const loadWishlist = async () => {
+        try {
+          const { data: { user: authUser } } = await supabase.auth.getUser();
+          if (!authUser) return;
+          const wishlistResult = await getWishlist(authUser.id);
+          if (wishlistResult.success) {
+            const codes = wishlistResult.data.map(w => {
+              const upper = w.country_code.toUpperCase();
+              return ALPHA2_TO_ALPHA3[upper] || upper;
+            });
+            setWishlistCodes(codes);
+          }
+        } catch (error) {
+          console.error('Erro ao carregar wishlist:', error);
+        }
+      };
+      loadWishlist();
+    }, [])
+  );
+
   const loadData = async () => {
     try {
       setLoading(true);
@@ -127,6 +220,15 @@ export default function MapScreen() {
           setCoverPhotos(Object.fromEntries(coverEntries.filter(Boolean)));
 
           await loadCityPinsForUser(currentUser.id);
+
+          const wlResult = await getWishlist(currentUser.id);
+          if (wlResult.success) {
+            const codes = wlResult.data.map(w => {
+              const upper = w.country_code.toUpperCase();
+              return ALPHA2_TO_ALPHA3[upper] || upper;
+            });
+            setWishlistCodes(codes);
+          }
         }
       }
 
@@ -264,6 +366,19 @@ export default function MapScreen() {
     }
   };
 
+  const toggleWishlist = async () => {
+    if (!selectedCountry) return;
+    if (isWishlisted) {
+      await removeFromWishlist(selectedCountry.code);
+      setIsWishlisted(false);
+      setWishlistCodes(prev => prev.filter(c => c !== selectedCountry.code));
+    } else {
+      await addToWishlist(selectedCountry.code, selectedCountry.name);
+      setIsWishlisted(true);
+      setWishlistCodes(prev => [...prev, selectedCountry.code]);
+    }
+  };
+
   const searchResults = countrySearch.length >= 2 && countries
     ? countries.features
         .filter(f =>
@@ -284,9 +399,10 @@ export default function MapScreen() {
     const code = feature.properties['ISO3166-1-Alpha-3'];
     const alpha2 = ALPHA3_TO_ALPHA2[code] || code;
     const isVisited = visitedCountries.includes(alpha2);
+    const isWishlist = wishlistCodes.includes(code);
     return {
-      fillColor: isVisited ? COLORS.primary : '#0D1326',
-      fillOpacity: isVisited ? 0.7 : 0.3,
+      fillColor: isVisited ? COLORS.primary : isWishlist ? '#FFFFFF' : '#0D1326',
+      fillOpacity: isVisited ? 0.7 : isWishlist ? 0.6 : 0.3,
       color: '#444444',
       weight: 0.5,
     };
@@ -296,19 +412,20 @@ export default function MapScreen() {
     const code = feature.properties['ISO3166-1-Alpha-3'];
     const alpha2 = ALPHA3_TO_ALPHA2[code] || code;
     const isVisited = visitedCountries.includes(alpha2);
+    const isWishlist = wishlistCodes.includes(code);
 
     layer.on({
       mouseover: (e) => {
         e.target.setStyle({
           fillOpacity: 0.9,
-          fillColor: isVisited ? COLORS.primary : '#2a2a4e',
+          fillColor: isVisited ? COLORS.primary : isWishlist ? '#F0F0F0' : '#2a2a4e',
         });
         setHoveredCountry(feature.properties.name);
       },
       mouseout: (e) => {
         e.target.setStyle({
-          fillOpacity: isVisited ? 0.7 : 0.3,
-          fillColor: isVisited ? COLORS.primary : '#0D1326',
+          fillOpacity: isVisited ? 0.7 : isWishlist ? 0.6 : 0.3,
+          fillColor: isVisited ? COLORS.primary : isWishlist ? '#FFFFFF' : '#0D1326',
         });
         setHoveredCountry(null);
       },
@@ -349,50 +466,29 @@ export default function MapScreen() {
         </View>
       )}
 
-      {/* Barra de busca de países */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <Ionicons name="search-outline" size={15} color="rgba(255,255,255,0.5)" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Buscar país..."
-            placeholderTextColor="rgba(255,255,255,0.35)"
-            value={countrySearch}
-            onChangeText={setCountrySearch}
-          />
-          {countrySearch.length > 0 && (
-            <TouchableOpacity onPress={() => setCountrySearch('')}>
-              <Ionicons name="close-circle" size={15} color="rgba(255,255,255,0.4)" />
-            </TouchableOpacity>
-          )}
-        </View>
-        {searchResults.length > 0 && (
-          <View style={styles.searchDropdown}>
-            {searchResults.map((feature, i) => {
-              const code = feature.properties['ISO3166-1-Alpha-3'];
-              const name = feature.properties.ADMIN;
-              const alpha2 = getAlpha2(code);
-              return (
-                <TouchableOpacity
-                  key={code}
-                  style={[styles.searchResultItem, i < searchResults.length - 1 && styles.searchResultBorder]}
-                  onPress={() => {
-                    setCountrySearch('');
-                    handleCountryClick(feature);
-                  }}
-                >
-                  <Image
-                    source={{ uri: `https://flagcdn.com/w40/${alpha2}.png` }}
-                    style={{ width: 22, height: 15, borderRadius: 2 }}
-                  />
-                  <Text style={[styles.searchResultText, { flex: 1 }]}>{name}</Text>
-                  <Ionicons name="chevron-forward" size={13} color="rgba(255,255,255,0.3)" />
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-      </View>
+      {/* Barra do assistente de viagem */}
+      <TouchableOpacity
+        onPress={() => {
+          setAssistantStep('select');
+          setSelectedPromptType(null);
+          setAssistantDestination('');
+          setAssistantVisible(true);
+        }}
+        style={{
+          position: 'absolute', top: 16, left: 16, right: 16, zIndex: 1000,
+          flexDirection: 'row', alignItems: 'center', gap: 10,
+          backgroundColor: 'rgba(13,19,38,0.92)',
+          borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12,
+          borderWidth: 1, borderColor: 'rgba(108,43,217,0.4)',
+          shadowColor: '#6C2BD9', shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.3, shadowRadius: 8, elevation: 5,
+        }}
+      >
+        <Ionicons name="sparkles-outline" size={18} color="#6C2BD9" />
+        <Text style={{ color: '#9aa0c6', fontSize: 14, flex: 1 }}>
+          ✈️ Planejar viagem com IA...
+        </Text>
+      </TouchableOpacity>
 
       {/* Gráfico circular de estatísticas */}
       <View style={styles.statsCard}>
@@ -474,7 +570,7 @@ export default function MapScreen() {
           />
           {countries && (
             <GeoJSON
-              key={visitedCountries.join(',')}
+              key={visitedCountries.join(',') + '|' + wishlistCodes.join(',')}
               data={countries}
               style={geoJsonStyle}
               onEachFeature={onEachFeature}
@@ -580,6 +676,24 @@ export default function MapScreen() {
                       {visitedCountries.includes(ALPHA3_TO_ALPHA2[selectedCountry?.code] || selectedCountry?.code) ? 'Já visitei ✓' : 'Marcar como visitado'}
                     </Text>
                   </TouchableOpacity>
+
+                  {!visitedCountries.includes(ALPHA3_TO_ALPHA2[selectedCountry?.code] || selectedCountry?.code) && (
+                    <TouchableOpacity
+                      onPress={toggleWishlist}
+                      style={{
+                        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        marginTop: 12, paddingVertical: 12, paddingHorizontal: 20,
+                        borderRadius: 12,
+                        backgroundColor: '#1b1f3a',
+                        borderWidth: 1.5, borderColor: isWishlisted ? '#FFFFFF' : '#6C2BD9',
+                      }}
+                    >
+                      <Text style={{ fontSize: 16 }}>🗺️</Text>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: isWishlisted ? '#FFFFFF' : '#6C2BD9', letterSpacing: 0.5 }}>
+                        {isWishlisted ? 'Na wishlist ✓' : 'Quero visitar'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
 
                 {/* Scroll com fundo cinza */}
@@ -777,6 +891,230 @@ export default function MapScreen() {
         </View>
       </Modal>
 
+      {/* Modal do assistente de viagem */}
+      <Modal
+        visible={assistantVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAssistantVisible(false)}
+      >
+        <View style={{ flex: 1, justifyContent: 'flex-end',
+          backgroundColor: 'rgba(0,0,0,0.6)' }}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <View style={{
+              backgroundColor: '#11162b', borderTopLeftRadius: 24,
+              borderTopRightRadius: 24, padding: 20, paddingBottom: 40,
+              borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.08)'
+            }}>
+              <View style={{ width: 40, height: 4, borderRadius: 2,
+                backgroundColor: '#2a2f50', alignSelf: 'center', marginBottom: 20 }} />
+
+              {assistantStep === 'select' && (
+                <>
+                  <Text style={{ fontSize: 18, fontWeight: '700',
+                    color: '#F7F7F2', marginBottom: 4 }}>
+                    Assistente de Viagem ✨
+                  </Text>
+                  <Text style={{ fontSize: 13, color: '#9aa0c6', marginBottom: 20 }}>
+                    O que você precisa para sua próxima aventura?
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                    {PROMPT_TYPES.map(type => (
+                      <TouchableOpacity
+                        key={type.id}
+                        onPress={() => {
+                          setSelectedPromptType(type);
+                          setAssistantStep('destination');
+                        }}
+                        style={{
+                          width: '47%', backgroundColor: '#1b1f3a',
+                          borderRadius: 14, padding: 14,
+                          borderWidth: 1.5, borderColor: type.color, gap: 4
+                        }}
+                      >
+                        <Text style={{ fontSize: 24 }}>{type.emoji}</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '700',
+                          color: '#F7F7F2' }}>{type.title}</Text>
+                        <Text style={{ fontSize: 11, color: '#9aa0c6' }}>
+                          {type.description}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {assistantStep === 'destination' && selectedPromptType && (
+                <>
+                  <TouchableOpacity
+                    onPress={() => setAssistantStep('select')}
+                    style={{ flexDirection: 'row', alignItems: 'center',
+                      gap: 6, marginBottom: 16 }}
+                  >
+                    <Ionicons name="arrow-back" size={18} color="#9aa0c6" />
+                    <Text style={{ color: '#9aa0c6' }}>Voltar</Text>
+                  </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', alignItems: 'center',
+                    gap: 10, marginBottom: 20, backgroundColor: '#1b1f3a',
+                    borderRadius: 12, padding: 12,
+                    borderWidth: 1, borderColor: selectedPromptType.color }}>
+                    <Text style={{ fontSize: 22 }}>{selectedPromptType.emoji}</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '700',
+                      color: selectedPromptType.color }}>
+                      {selectedPromptType.title}
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 13, fontWeight: '700',
+                    color: '#9aa0c6', letterSpacing: 1, marginBottom: 10 }}>
+                    QUAL O DESTINO?
+                  </Text>
+                  <TextInput
+                    value={assistantDestination}
+                    onChangeText={(text) => {
+                      setAssistantDestination(text);
+                      if (text.length >= 1) {
+                        const filtered = COUNTRIES_LIST.filter(c =>
+                          c.name.toLowerCase().includes(text.toLowerCase()) ||
+                          c.code.toLowerCase().includes(text.toLowerCase())
+                        ).slice(0, 5);
+                        setCountrySuggestions(filtered);
+                      } else {
+                        setCountrySuggestions([]);
+                      }
+                    }}
+                    placeholder="Ex: Brasil, Japão, França..."
+                    placeholderTextColor="#555a78"
+                    style={{
+                      backgroundColor: '#1b1f3a', borderRadius: 12,
+                      padding: 14, fontSize: 15, color: '#F7F7F2',
+                      borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+                      marginBottom: countrySuggestions.length > 0 ? 0 : 14
+                    }}
+                    autoFocus
+                  />
+                  {countrySuggestions.length > 0 && (
+                    <View style={{
+                      backgroundColor: '#1b1f3a',
+                      borderWidth: 1, borderTopWidth: 0,
+                      borderColor: 'rgba(255,255,255,0.08)',
+                      borderBottomLeftRadius: 12, borderBottomRightRadius: 12,
+                      marginBottom: 14, overflow: 'hidden'
+                    }}>
+                      {countrySuggestions.map((country, idx) => (
+                        <TouchableOpacity
+                          key={country.code}
+                          onPress={() => {
+                            setAssistantDestination(country.name);
+                            setCountrySuggestions([]);
+                          }}
+                          style={{
+                            flexDirection: 'row', alignItems: 'center',
+                            gap: 12, padding: 12,
+                            borderTopWidth: idx > 0 ? 1 : 0,
+                            borderTopColor: 'rgba(255,255,255,0.06)'
+                          }}
+                        >
+                          <Text style={{ fontSize: 24 }}>{getFlagEmoji(country.code)}</Text>
+                          <Text style={{ fontSize: 14, color: '#F7F7F2', fontWeight: '600' }}>
+                            {country.name}
+                          </Text>
+                          <Text style={{ fontSize: 12, color: '#9aa0c6', marginLeft: 'auto' }}>
+                            {country.code}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                  <TouchableOpacity
+                    disabled={!assistantDestination.trim() || assistantLoading}
+                    onPress={async () => {
+                      console.log('=== BOTÃO GERAR CLICADO ===');
+                      if (!assistantDestination.trim()) {
+                        console.log('Destino vazio, abortando');
+                        return;
+                      }
+                      setAssistantLoading(true);
+                      console.log('Loading iniciado');
+                      try {
+                        const { data: { user: authUser } } = await supabase.auth.getUser();
+                        console.log('User ID:', authUser?.id);
+                        const [countriesRes, wishlistRes] = await Promise.all([
+                          supabase.from('visited_countries')
+                            .select('country_name').eq('user_id', authUser.id),
+                          getWishlist(authUser.id),
+                        ]);
+                        console.log('Countries:', countriesRes.data?.length);
+                        console.log('Wishlist:', wishlistRes.data?.length);
+                        const visited = (countriesRes.data || []).map(c => c.country_name);
+                        const wishlist = (wishlistRes.data || []).map(c => c.country_name);
+                        const levels = [
+                          { max: 2, name: 'Iniciante' },
+                          { max: 5, name: 'Viajante' },
+                          { max: 10, name: 'Explorador' },
+                          { max: 20, name: 'Globetrotter' },
+                          { max: 999, name: 'Lenda Viajante' },
+                        ];
+                        const level = levels.find(l => visited.length <= l.max)?.name || 'Lenda Viajante';
+                        console.log('Chamando askTravelAssistant...');
+                        console.log('Params:', {
+                          promptType: selectedPromptType?.id,
+                          destination: assistantDestination.trim(),
+                        });
+                        const result = await askTravelAssistant({
+                          promptType: selectedPromptType.id,
+                          destination: assistantDestination.trim(),
+                          userContext: {
+                            visitedCountries: visited,
+                            wishlistCountries: wishlist,
+                            totalCountries: visited.length,
+                            level,
+                          },
+                        });
+                        console.log('Resultado:', JSON.stringify(result));
+                        setAssistantLoading(false);
+                        setAssistantVisible(false);
+                        if (result.success) {
+                          navigation.navigate('AssistantResult', {
+                            promptType: selectedPromptType.id,
+                            destination: assistantDestination.trim(),
+                            response: result.response,
+                          });
+                        } else {
+                          Alert.alert('Erro', result.error);
+                        }
+                      } catch (error) {
+                        console.error('=== ERRO NO ONPRESS ===', error);
+                        setAssistantLoading(false);
+                        Alert.alert('Erro', error.message);
+                      }
+                    }}
+                    style={{
+                      backgroundColor: assistantDestination.trim() ? '#6C2BD9' : '#2a2f50',
+                      borderRadius: 12, padding: 15,
+                      alignItems: 'center', flexDirection: 'row',
+                      justifyContent: 'center', gap: 8
+                    }}
+                  >
+                    {assistantLoading ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <>
+                        <Ionicons name="sparkles" size={18} color="#fff" />
+                        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>
+                          Gerar com IA
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
       {/* Modal de upload de foto */}
       <Modal
         visible={showUploader}
@@ -847,7 +1185,6 @@ const styles = StyleSheet.create({
     flex: 1,
     color: 'white',
     fontSize: 13,
-    outline: 'none',
   },
   searchDropdown: {
     backgroundColor: 'rgba(26,26,46,0.96)',

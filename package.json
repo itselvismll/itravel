@@ -46,5 +46,8 @@
     "react-native-web": "^0.21.0",
     "topojson-client": "^3.1.0"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "typescript": "~5.9.2"
+  }
 }

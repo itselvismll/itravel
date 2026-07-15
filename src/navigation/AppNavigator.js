@@ -23,6 +23,8 @@ import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import UploadPlaceholder from '../screens/upload/UploadPlaceholder';
 import PhotoUploader from '../components/PhotoUploader';
+import PublicProfileScreen from '../screens/profile/PublicProfileScreen';
+import AssistantResultScreen from '../screens/assistant/AssistantResultScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -33,6 +35,108 @@ function ProfileStack() {
       <Stack.Screen name="ProfileMain" component={ProfileScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
     </Stack.Navigator>
+  );
+}
+
+function TabNavigator() {
+  const { openUploader } = useUpload();
+  return (
+    <Tab.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: '#333',
+        tabBarInactiveTintColor: '#999',
+        tabBarStyle: {
+          backgroundColor: '#FFFFFF',
+          borderTopWidth: 1,
+          borderTopColor: COLORS.border,
+          paddingBottom: 5,
+          paddingTop: 5,
+          height: 60,
+        },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '600',
+          marginTop: 2,
+        },
+      }}
+    >
+      <Tab.Screen
+        name="Map"
+        component={MapScreen}
+        options={{
+          tabBarLabel: 'Mapa',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="map-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      <Tab.Screen
+        name="Explore"
+        component={ExploreScreen}
+        options={{
+          tabBarLabel: 'Explorar',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="compass-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      <Tab.Screen
+        name="QuickUpload"
+        component={UploadPlaceholder}
+        options={{
+          tabBarLabel: () => null,
+          tabBarIcon: () => (
+            <View style={{
+              width: 48,
+              height: 48,
+              borderRadius: 24,
+              backgroundColor: '#6C2BD9',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginTop: -16,
+              shadowColor: '#6C2BD9',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.4,
+              shadowRadius: 8,
+              elevation: 6,
+            }}>
+              <Ionicons name="add" size={28} color="white" />
+            </View>
+          ),
+        }}
+        listeners={{
+          tabPress: (e) => {
+            e.preventDefault();
+            openUploader();
+          },
+        }}
+      />
+
+      <Tab.Screen
+        name="Feed"
+        component={FeedScreen}
+        options={{
+          tabBarLabel: 'Feed',
+          tabBarIcon: ({ size, color }) => (
+            <Ionicons name="newspaper-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      <Tab.Screen
+        name="Profile"
+        component={ProfileStack}
+        options={{
+          tabBarLabel: 'Perfil',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person" size={size} color={color} />
+          ),
+        }}
+      />
+    </Tab.Navigator>
   );
 }
 
@@ -169,102 +273,15 @@ export default function AppNavigator() {
             <Stack.Screen name="Register" component={RegisterScreen} />
           </Stack.Navigator>
         ) : (
-          <Tab.Navigator
-            screenOptions={{
-              headerShown: false,
-              tabBarActiveTintColor: '#333',
-              tabBarInactiveTintColor: '#999',
-              tabBarStyle: {
-                backgroundColor: '#FFFFFF',
-                borderTopWidth: 1,
-                borderTopColor: COLORS.border,
-                paddingBottom: 5,
-                paddingTop: 5,
-                height: 60,
-              },
-              tabBarLabelStyle: {
-                fontSize: 11,
-                fontWeight: '600',
-                marginTop: 2,
-              },
-            }}
-          >
-            <Tab.Screen
-              name="Map"
-              component={MapScreen}
-              options={{
-                tabBarLabel: 'Mapa',
-                tabBarIcon: ({ color, size }) => (
-                  <Ionicons name="map-outline" size={size} color={color} />
-                ),
-              }}
+          <Stack.Navigator screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="Main" component={TabNavigator} />
+            <Stack.Screen name="PublicProfile" component={PublicProfileScreen} />
+            <Stack.Screen
+              name="AssistantResult"
+              component={AssistantResultScreen}
+              options={{ headerShown: false }}
             />
-
-            <Tab.Screen
-              name="Explore"
-              component={ExploreScreen}
-              options={{
-                tabBarLabel: 'Explorar',
-                tabBarIcon: ({ color, size }) => (
-                  <Ionicons name="compass-outline" size={size} color={color} />
-                ),
-              }}
-            />
-
-            <Tab.Screen
-              name="QuickUpload"
-              component={UploadPlaceholder}
-              options={{
-                tabBarLabel: () => null,
-                tabBarIcon: () => (
-                  <View style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: 24,
-                    backgroundColor: '#6C2BD9',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginTop: -16,
-                    shadowColor: '#6C2BD9',
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.4,
-                    shadowRadius: 8,
-                    elevation: 6,
-                  }}>
-                    <Ionicons name="add" size={28} color="white" />
-                  </View>
-                ),
-              }}
-              listeners={{
-                tabPress: (e) => {
-                  e.preventDefault();
-                  openUploader();
-                },
-              }}
-            />
-
-            <Tab.Screen
-              name="Feed"
-              component={FeedScreen}
-              options={{
-                tabBarLabel: 'Feed',
-                tabBarIcon: ({ size, color }) => (
-                  <Ionicons name="newspaper-outline" size={size} color={color} />
-                ),
-              }}
-            />
-
-            <Tab.Screen
-              name="Profile"
-              component={ProfileStack}
-              options={{
-                tabBarLabel: 'Perfil',
-                tabBarIcon: ({ color, size }) => (
-                  <Ionicons name="person" size={size} color={color} />
-                ),
-              }}
-            />
-          </Tab.Navigator>
+          </Stack.Navigator>
         )}
       </NavigationContainer>
 

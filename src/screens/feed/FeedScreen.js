@@ -88,6 +88,9 @@ export default function FeedScreen({ navigation }) {
       setNewComment('');
       const updated = await getComments(commentPhoto.id);
       if (updated.success) setComments(updated.data);
+    } else {
+      console.error('Erro ao salvar comentário:', result.error);
+      alert('Erro ao salvar comentário. Tente novamente.');
     }
     setCommentLoading(false);
   };
@@ -182,23 +185,31 @@ export default function FeedScreen({ navigation }) {
                 <View key={post.id} style={styles.feedCard}>
 
                   <View style={styles.postHeader}>
-                    <Avatar profile={post.profiles} size={34} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.postAuthorName}>
-                        {post.profiles?.display_name || post.profiles?.username || 'Viajante'}
-                      </Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        {post.country_code && (
-                          <Image
-                            source={{ uri: `https://flagcdn.com/w40/${getAlpha2(post.country_code)}.png` }}
-                            style={{ width: 14, height: 10, borderRadius: 1 }}
-                          />
-                        )}
-                        <Text style={styles.postAuthorMeta}>
-                          {[post.city, post.country_name].filter(Boolean).join(', ')}
+                    <TouchableOpacity
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+                      onPress={() => navigation.navigate('PublicProfile', {
+                        userId: post.user_id,
+                        username: post.profiles?.username,
+                      })}
+                    >
+                      <Avatar profile={post.profiles} size={34} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.postAuthorName}>
+                          {post.profiles?.display_name || post.profiles?.username || 'Viajante'}
                         </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          {post.country_code && (
+                            <Image
+                              source={{ uri: `https://flagcdn.com/w40/${getAlpha2(post.country_code)}.png` }}
+                              style={{ width: 14, height: 10, borderRadius: 1 }}
+                            />
+                          )}
+                          <Text style={styles.postAuthorMeta}>
+                            {[post.city, post.country_name].filter(Boolean).join(', ')}
+                          </Text>
+                        </View>
                       </View>
-                    </View>
+                    </TouchableOpacity>
                     <Text style={styles.postTime}>{timeAgo(post.created_at)}</Text>
                   </View>
 

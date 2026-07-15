@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getCurrentUser, signOut, getVisitedCountries, supabase } from '../../services/supabase';
+import { getWishlist } from '../../services/socialService';
 import { getProfile } from '../../services/profileService';
 import { getFavoritePhotos, getAllUserPhotos } from '../../services/photoService';
 import { getAlpha2, getStampRotation } from '../../utils/countryUtils';
@@ -56,6 +57,7 @@ export default function ProfileScreen({ navigation }) {
   const [followersCount, setFollowersCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
+  const [wishlist, setWishlist] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const { refreshTrigger } = useUpload();
@@ -85,15 +87,17 @@ export default function ProfileScreen({ navigation }) {
         console.log('⚠️ Profile não encontrado ou erro:', profileResult);
       }
 
-      const [countriesResult, favResult, photosResult] = await Promise.all([
+      const [countriesResult, favResult, photosResult, wishlistResult] = await Promise.all([
         getVisitedCountries(user.id),
         getFavoritePhotos(user.id),
         getAllUserPhotos(user.id),
+        getWishlist(user.id),
       ]);
 
       if (countriesResult.success) setVisitedCountries(countriesResult.data);
       if (favResult.success) setFavoritePhotos(favResult.data);
       if (photosResult.success) setPhotos(photosResult.data);
+      if (wishlistResult.success) setWishlist(wishlistResult.data);
 
       const { count: followers } = await supabase
         .from('followers')
@@ -295,6 +299,44 @@ export default function ProfileScreen({ navigation }) {
         )}
       </View>
 
+      {/* Wishlist */}
+      {wishlist.length > 0 && (
+        <View style={styles.card}>
+          <View style={styles.cardTitleRow}>
+            <Ionicons name="heart-outline" size={14} color="#00D1C1" />
+            <Text style={[styles.cardTitle, { color: '#00D1C1' }]}>QUERO VISITAR</Text>
+          </View>
+          <View style={styles.stampsGrid}>
+            {wishlist.map((item, index) => {
+              const rotations = [-4, 3, -3, 4];
+              const rotation = rotations[index % 4];
+              return (
+                <View
+                  key={item.id}
+                  style={[styles.travelTag, { transform: [{ rotate: `${rotation}deg` }] }]}
+                >
+                  <View style={[styles.tagHole, { backgroundColor: '#00D1C1', borderColor: '#00A89C' }]} />
+                  <Image
+                    source={{ uri: `https://flagcdn.com/w40/${getAlpha2(item.country_code)}.png` }}
+                    style={styles.tagFlag}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.tagDivider} />
+                  <View style={styles.tagFooter}>
+                    <Text style={styles.tagName} numberOfLines={1}>
+                      {getCountryNamePt(item.country_name || item.country_code).toUpperCase()}
+                    </Text>
+                    <Text style={[styles.tagCode, { color: '#00D1C1' }]}>
+                      {getAlpha2(item.country_code).toUpperCase()}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
       {/* Botão compartilhar passaporte */}
       <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
         <Ionicons name="share-social-outline" size={18} color="white" />
@@ -425,6 +467,7 @@ export default function ProfileScreen({ navigation }) {
       <ShareCard
         profile={profile}
         visitedCountryCodes={visitedCountryCodes}
+        wishlistCodes={wishlist.map(w => w.country_code)}
         totalPhotos={totalPhotosCount}
         totalCities={totalCities}
       />
