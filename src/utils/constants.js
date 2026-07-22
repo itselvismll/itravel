@@ -45,8 +45,8 @@ export const SPACING = {
 
 // Configurações da API
 export const API_CONFIG = {
-  SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://qenehyizxesmaeylmcjv.supabase.co',
-  SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFlbmVoeWl6eGVzbWFleWxtY2p2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMTExNTEsImV4cCI6MjA5NDY4NzE1MX0.EbxNAu--FMOErxm94Af3GwjQ8dHgtLHbsXiabVjmVOk',
+  SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL,
+  SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
   GOOGLE_MAPS_API_KEY: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '',
 };
 

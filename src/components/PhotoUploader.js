@@ -8,22 +8,23 @@ import {
   Alert,
   StyleSheet,
   Image,
-  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SIZES } from '../utils/constants';
+import * as ImagePicker from 'expo-image-picker';
+import { API_CONFIG, COLORS, SIZES } from '../utils/constants';
 import { uploadPhoto } from '../services/photoService';
-import { getAlpha3, getAlpha2 } from '../utils/countryUtils';
+import { getAlpha3 } from '../utils/countryUtils';
 import { supabase } from '../services/supabase';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 
-const GOOGLE_PLACES_KEY = 'AIzaSyC0UMp9B6JWuZMLM0m3E87xBqC4V0KU9m8';
+const GOOGLE_PLACES_KEY = API_CONFIG.GOOGLE_MAPS_API_KEY;
+const IS_WEB = process.env.EXPO_OS === 'web';
 
 const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
 
 export default function PhotoUploader({
-  countryCode, countryName, countryNameEn, userId, onPhotoUploaded,
-  prefilledCity, prefilledCountryName, prefilledCountryCode,
+  countryCode = null, countryName = null, countryNameEn = null, userId, onPhotoUploaded,
+  prefilledCity = null, prefilledCountryName = null, prefilledCountryCode = null,
 }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -69,6 +70,11 @@ export default function PhotoUploader({
       });
     }
   }, [prefilledCity, prefilledCountryName, countryCode]);
+
+  useEffect(() => () => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (IS_WEB && preview?.startsWith('blob:')) URL.revokeObjectURL(preview);
+  }, [preview]);
 
   const searchCities = async (query) => {
     if (query.length < 3) {
@@ -117,7 +123,44 @@ export default function PhotoUploader({
     setPreview(URL.createObjectURL(file));
   };
 
+  const handlePickPhoto = async () => {
+    if (IS_WEB) {
+      fileInputRef.current?.click();
+      return;
+    }
+
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permissão necessária', 'Permita o acesso às fotos para adicionar uma imagem.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.85,
+      });
+
+      if (result.canceled) return;
+
+      const asset = result.assets[0];
+      if (asset.fileSize && asset.fileSize > MAX_SIZE_BYTES) {
+        Alert.alert('Arquivo muito grande', 'A imagem deve ter no máximo 5MB.');
+        return;
+      }
+
+      setSelectedFile(asset);
+      setUploadSuccess(false);
+      setPreview(asset.uri);
+    } catch (error) {
+      console.error('Erro ao selecionar imagem:', error);
+      Alert.alert('Erro', 'Não foi possível abrir sua biblioteca de fotos.');
+    }
+  };
+
   const handleRemovePreview = () => {
+    if (IS_WEB && preview?.startsWith('blob:')) URL.revokeObjectURL(preview);
     setSelectedFile(null);
     setPreview(null);
     setCaption('');
@@ -163,11 +206,12 @@ export default function PhotoUploader({
       const { data: authData } = await supabase.auth.getUser();
       const currentUser = authData?.user;
       if (currentUser && effectiveCountryCode) {
-        const alpha2 = getAlpha2(effectiveCountryCode).toUpperCase();
+        const alpha3 = getAlpha3(effectiveCountryCode)?.toUpperCase();
+        if (!alpha3) throw new Error('Código de país inválido');
         await supabase
           .from('visited_countries')
           .upsert(
-            { user_id: currentUser.id, country_code: alpha2, country_name: effectiveCountryName },
+            { user_id: currentUser.id, country_code: alpha3, country_name: effectiveCountryName },
             { onConflict: 'user_id,country_code', ignoreDuplicates: true }
           );
       }
@@ -183,18 +227,20 @@ export default function PhotoUploader({
   return (
     <View style={styles.container}>
       {/* Input file nativo web — oculto */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/jpg"
-        style={{ display: 'none' }}
-        onChange={handleFileChange}
-      />
+      {IS_WEB && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/jpg"
+          style={{ display: 'none' }}
+          onChange={handleFileChange}
+        />
+      )}
 
       {!selectedFile ? (
         <TouchableOpacity
           style={styles.addButton}
-          onPress={() => fileInputRef.current?.click()}
+          onPress={handlePickPhoto}
           activeOpacity={0.7}
         >
           <Ionicons name="camera" size={22} color={COLORS.primary} />
@@ -304,7 +350,7 @@ export default function PhotoUploader({
           {/* Local específico */}
           <View style={styles.formGroup}>
             <Text style={styles.formLabel}>Local específico <Text style={styles.formLabelOptional}>(opcional)</Text></Text>
-            {Platform.OS === 'web' ? (
+            {IS_WEB || !GOOGLE_PLACES_KEY ? (
               <TextInput
                 style={styles.formInput}
                 placeholder="Ex: Cristo Redentor, Pelourinho..."

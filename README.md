@@ -15,14 +15,14 @@ Aplicativo mobile de viagem para documentar e compartilhar jornadas ao redor do 
 
 - **Frontend:** React Native + Expo (iOS, Android e Web)
 - **Backend:** Supabase (banco de dados, autenticação, storage, Edge Functions)
-- **IA:** Google Gemini 1.5 Flash via Supabase Edge Function (Deno)
+- **IA:** Google Gemini 3.5 Flash via Supabase Edge Function (Deno)
 - **Mapas:** Leaflet + D3-geo + TopoJSON
 - **Navegação:** React Navigation (Stack + Bottom Tabs)
 
 ## Pré-requisitos
 
-- Node.js 18+
-- Expo CLI (`npm install -g expo-cli`)
+- Node.js 20.19+
+- Expo CLI pelo projeto (`npx expo`)
 - Supabase CLI
 - Conta no [Supabase](https://supabase.com)
 - Chave de API do [Google AI Studio](https://aistudio.google.com/apikey) (Gemini)
@@ -42,18 +42,28 @@ Crie um arquivo `.env` na raiz:
 ```env
 EXPO_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=sua-anon-key
+EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=sua-chave-restrita-do-google-maps
 ```
 
-### 3. Configurar o segredo Gemini no Supabase
+> A chave do Google Maps é incluída no app cliente. Restrinja-a no Google Cloud
+> aos aplicativos, domínios e APIs usados pelo Journi.
+
+### 3. Aplicar as migrations do Supabase
+
+```bash
+supabase db push
+```
+
+### 4. Configurar o segredo Gemini no Supabase
 
 ```bash
 supabase secrets set GEMINI_API_KEY=AIzaSy...
 ```
 
-### 4. Deploy da Edge Function
+### 5. Deploy da Edge Function
 
 ```bash
-supabase functions deploy travel-assistant --no-verify-jwt
+supabase functions deploy travel-assistant
 ```
 
 ## Rodando o app

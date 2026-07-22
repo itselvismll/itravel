@@ -1,8 +1,7 @@
 ﻿import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Image, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SIZES } from '../../utils/constants';
 import { signUp } from '../../services/supabase';
 import { checkUsernameAvailable } from '../../services/profileService';
@@ -18,7 +17,6 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [profileImage, setProfileImage] = useState(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
@@ -41,26 +39,6 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
       hasLowerCase,
       hasNumber,
     };
-  };
-
-  const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    
-    if (status !== 'granted') {
-      Alert.alert('Permissão negada', 'Precisamos de permissão para acessar suas fotos!');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.5,
-    });
-
-    if (!result.canceled) {
-      setProfileImage(result.assets[0].uri);
-    }
   };
 
   const showTerms = () => {
@@ -184,26 +162,6 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
         </LinearGradient>
 
         <View style={styles.card}>
-          {/* Foto de Perfil */}
-          <View style={styles.profileImageContainer}>
-            <TouchableOpacity 
-              style={styles.profileImageButton}
-              onPress={pickImage}
-            >
-              {profileImage ? (
-                <Image source={{ uri: profileImage }} style={styles.profileImage} />
-              ) : (
-                <View style={styles.profileImagePlaceholder}>
-                  <Ionicons name="camera" size={32} color={COLORS.gray} />
-                </View>
-              )}
-              <View style={styles.profileImageBadge}>
-                <Ionicons name="add" size={16} color="#FFFFFF" />
-              </View>
-            </TouchableOpacity>
-            <Text style={styles.profileImageText}>Adicionar foto (opcional)</Text>
-          </View>
-
           {/* Nome Completo */}
           <View style={styles.inputContainer}>
             <View style={styles.inputWrapper}>
@@ -482,7 +440,7 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
 
 const styles = StyleSheet.create({
   wrapper: {
-    minHeight: '100vh',
+    minHeight: '100%',
     backgroundColor: '#FFFFFF',
   },
   header: {
@@ -515,47 +473,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     padding: 24,
     paddingBottom: 60,
-  },
-  profileImageContainer: {
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  profileImageButton: {
-    position: 'relative',
-  },
-  profileImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-  },
-  profileImagePlaceholder: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: COLORS.background,
-    borderWidth: 2,
-    borderColor: COLORS.border,
-    borderStyle: 'dashed',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  profileImageBadge: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-  },
-  profileImageText: {
-    marginTop: 8,
-    fontSize: 12,
-    color: COLORS.gray,
   },
   inputContainer: {
     marginBottom: 16,

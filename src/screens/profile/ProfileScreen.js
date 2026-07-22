@@ -24,6 +24,7 @@ import { getAlpha2, getStampRotation, getCountryNamePt } from '../../utils/count
 import StarRating from '../../components/StarRating';
 import { useUpload } from '../../context/UploadContext';
 import { getLevelInfo } from '../../utils/travelerLevels';
+import { confirm, notify } from '../../utils/dialogs';
 
 export default function ProfileScreen({ navigation }) {
   const [profile, setProfile] = useState(null);
@@ -110,20 +111,18 @@ export default function ProfileScreen({ navigation }) {
   );
 
   const handleLogout = async () => {
-    const confirmacao = window.confirm('Tem certeza que deseja sair da sua conta?');
+    const confirmacao = await confirm('Sair da conta', 'Tem certeza que deseja sair da sua conta?');
     if (!confirmacao) return;
 
     try {
       const result = await signOut();
       if (result.success) {
-        setTimeout(() => {
-          window.location.href = '/';
-        }, 100);
+        // AppNavigator reage à mudança de sessão e mostra a tela de login.
       } else {
-        window.alert('Erro ao sair: ' + (result.error || 'Desconhecido'));
+        notify('Erro ao sair', result.error || 'Não foi possível sair da conta.');
       }
     } catch (error) {
-      window.alert('Erro ao sair da conta: ' + error.message);
+      notify('Erro ao sair', error.message || 'Não foi possível sair da conta.');
     }
   };
 

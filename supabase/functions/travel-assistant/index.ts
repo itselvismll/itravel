@@ -10,10 +10,24 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
+
+  if (req.method !== 'POST') {
+    return new Response(
+      JSON.stringify({ success: false, error: 'Método não permitido' }),
+      { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json', Allow: 'POST' } }
+    )
+  }
+
   try {
+    const authorization = req.headers.get('Authorization')
+    if (!authorization?.startsWith('Bearer ')) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Não autenticado' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
     const apiKey = Deno.env.get('GEMINI_API_KEY')
-    console.log('API key present:', !!apiKey)
-    console.log('API key prefix:', apiKey ? apiKey.substring(0, 8) : 'MISSING')
 
     if (!apiKey) {
       return new Response(
@@ -23,8 +37,35 @@ serve(async (req) => {
     }
 
     const body = await req.json()
-    console.log('Body received:', JSON.stringify(body).substring(0, 200))
-    const { promptType, destination, userContext } = body
+    const { promptType, destination, userContext = {} } = body
+
+    if (typeof destination !== 'string' || !destination.trim() || destination.length > 120) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Destino inválido' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const allowedPromptTypes = new Set(['guide', 'itinerary', 'budget', 'weather', 'scams', 'summary'])
+    if (!allowedPromptTypes.has(promptType)) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Tipo de solicitação inválido' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const sanitizeList = (value: unknown) => Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === 'string').slice(0, 195).map(item => item.slice(0, 80))
+      : []
+
+    const safeContext = {
+      visitedCountries: sanitizeList(userContext?.visitedCountries),
+      wishlistCountries: sanitizeList(userContext?.wishlistCountries),
+      level: typeof userContext?.level === 'string' ? userContext.level.slice(0, 40) : 'Iniciante',
+      totalCountries: Number.isFinite(userContext?.totalCountries)
+        ? Math.max(0, Math.min(195, Number(userContext.totalCountries)))
+        : 0,
+    }
 
     const systemContext = `Você é um assistente de viagem especializado
 integrado ao app Journi. Responda sempre em português brasileiro,
@@ -32,10 +73,10 @@ de forma clara, prática e bem organizada com seções definidas.
 Use emojis moderadamente.
 
 Contexto do usuário:
-- Países visitados: ${userContext.visitedCountries?.join(', ') || 'nenhum ainda'}
-- Wishlist: ${userContext.wishlistCountries?.join(', ') || 'nenhum ainda'}
-- Nível: ${userContext.level || 'Iniciante'}
-- Total de países: ${userContext.totalCountries || 0}`
+- Países visitados: ${safeContext.visitedCountries.join(', ') || 'nenhum ainda'}
+- Wishlist: ${safeContext.wishlistCountries.join(', ') || 'nenhum ainda'}
+- Nível: ${safeContext.level}
+- Total de países: ${safeContext.totalCountries}`
 
     const prompts: Record<string, string> = {
       guide: `${systemContext}\n\nCrie um guia completo de 1 página para
@@ -70,9 +111,7 @@ checklist do que levar.`,
     const userMessage = prompts[promptType] ||
       `${systemContext}\n\nDê informações úteis sobre ${destination}.`
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`
-    console.log('Calling Gemini URL (without key):', geminiUrl.split('?')[0])
-
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`
     const geminiResponse = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -86,8 +125,6 @@ checklist do que levar.`,
     })
 
     const rawData = await geminiResponse.text()
-    console.log('Gemini status:', geminiResponse.status)
-    console.log('Gemini raw response:', rawData.substring(0, 500))
 
     let data
     try {
@@ -100,13 +137,12 @@ checklist do que levar.`,
       )
     }
 
-    console.log('Gemini data keys:', Object.keys(data))
 
-    if (data.error) {
+    if (!geminiResponse.ok || data.error) {
       console.error('Gemini API error:', JSON.stringify(data.error))
       return new Response(
-        JSON.stringify({ success: false, error: `Gemini: ${data.error.message}` }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, error: 'O assistente está temporariamente indisponível' }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
@@ -130,7 +166,7 @@ checklist do que levar.`,
   } catch (error) {
     console.error('Erro geral:', (error as Error).message, (error as Error).stack)
     return new Response(
-      JSON.stringify({ success: false, error: (error as Error).message }),
+      JSON.stringify({ success: false, error: 'Não foi possível processar a solicitação' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }

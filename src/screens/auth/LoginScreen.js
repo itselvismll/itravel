@@ -248,7 +248,7 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
 
 const styles = StyleSheet.create({
   container: {
-    minHeight: '100vh',
+    minHeight: '100%',
     backgroundColor: '#FFFFFF',
   },
   header: {
@@ -300,14 +300,18 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFFFFF',
     marginBottom: 8,
-    textShadow: '0px 3px 6px rgba(0,0,0,0.8)',
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 6,
     letterSpacing: 1,
   },
   tagline: {
     fontSize: 17,
     color: '#FFFFFF',
     fontWeight: '600',
-    textShadow: '0px 2px 4px rgba(0,0,0,0.7)',
+    textShadowColor: 'rgba(0,0,0,0.7)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
   card: {
     backgroundColor: '#FFFFFF',

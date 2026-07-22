@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -51,9 +51,8 @@ export default function NotificationsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      let active = true;
       loadNotifications().then(() => {}).catch(() => {});
-      return () => { active = false; };
+      return undefined;
     }, [loadNotifications])
   );
 
@@ -63,7 +62,7 @@ export default function NotificationsScreen() {
     return (
       <View style={[styles.row, !item.read && styles.unread]}>
         <View style={styles.avatarWrap}>
-          <Avatar uri={actor?.avatar_url} size={44} />
+          <Avatar profile={actor} size={44} />
           <View style={[styles.badge, { backgroundColor: icon.color }]}>
             <Ionicons name={icon.name} size={11} color="white" />
           </View>

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState } from 'react';
 
 const UploadContext = createContext(null);
 
+/** @param {{ children?: import('react').ReactNode }} props */
 export function UploadProvider({ children }) {
   const [visible, setVisible] = useState(false);
   const [initialData, setInitialData] = useState(null);

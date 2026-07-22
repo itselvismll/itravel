@@ -38,6 +38,13 @@
           "locationWhenInUsePermission": "Permitir que o Journi acesse sua localização para sugerir a cidade automaticamente ao postar fotos."
         }
       ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permitir que o Journi acesse suas fotos para adicionar imagens às suas viagens.",
+          "microphonePermission": false
+        }
+      ],
       "expo-sharing",
       "expo-font"
     ],

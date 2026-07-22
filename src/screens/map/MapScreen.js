@@ -7,13 +7,14 @@ import { supabase, getCurrentUser, getVisitedCountries, markCountryAsVisited, un
 import { isInWishlist, addToWishlist, removeFromWishlist, getWishlist } from '../../services/socialService';
 import { getCountryInfo, formatPopulation, formatArea, getBorderCountries } from '../../services/countriesApi';
 import { getCountryCulturalData } from '../../data/countriesData';
-import { ALPHA3_TO_ALPHA2, getAlpha2 } from '../../utils/countryUtils';
+import { ALPHA3_TO_ALPHA2, getAlpha2, getCountryNamePt } from '../../utils/countryUtils';
 import { getFlagEmoji } from '../../utils/flagUtils';
 import { PROMPT_TYPES, askTravelAssistant } from '../../services/assistantService';
 import PhotoGallery from '../../components/PhotoGallery';
 import PhotoUploader from '../../components/PhotoUploader';
 import { useUpload } from '../../context/UploadContext';
 import { getCoverPhoto, getTopPlacesByCountry } from '../../services/photoService';
+import { getWorldGeoData } from '../../services/geoService';
 import Svg, { Path, Circle } from 'react-native-svg';
 
 const ALPHA2_TO_ALPHA3 = Object.fromEntries(
@@ -226,8 +227,7 @@ export default function MapScreen({ navigation }) {
         }
       }
 
-      const response = await fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson');
-      const geoData = await response.json();
+      const geoData = await getWorldGeoData();
       setCountries(geoData);
 
     } catch (error) {
@@ -384,7 +384,7 @@ export default function MapScreen({ navigation }) {
 
   const visitedCount = visitedCountries.length;
   const totalCountries = 195;
-  const visitedPercentage = totalCountries > 0 ? ((visitedCount / totalCountries) * 100).toFixed(1) : 0;
+  const visitedPercentage = totalCountries > 0 ? (visitedCount / totalCountries) * 100 : 0;
   const notVisitedCount = totalCountries - visitedCount;
   console.log('📊 visitedCountries:', visitedCountries);
   console.log('📊 visitedCount:', visitedCount);
@@ -449,8 +449,6 @@ export default function MapScreen({ navigation }) {
     );
   }
 
-  if (typeof window === 'undefined') return null;
-
   return (
     <View style={styles.container}>
       {/* Badge do país em hover */}
@@ -487,25 +485,22 @@ export default function MapScreen({ navigation }) {
       {/* Gráfico circular de estatísticas */}
       <View style={styles.statsCard}>
         <View style={styles.circleChart}>
-          <svg width="80" height="80">
-            <circle cx="40" cy="40" r="32" fill="none" stroke="#E0E0E0" strokeWidth="8" />
-            <circle
-              cx="40" cy="40" r="32"
+          <Svg width="80" height="80">
+            <Circle cx={40} cy={40} r={32} fill="none" stroke="#E0E0E0" strokeWidth={8} />
+            <Circle
+              cx={40} cy={40} r={32}
               fill="none"
               stroke={COLORS.primary}
-              strokeWidth="8"
+              strokeWidth={8}
               strokeDasharray={`${(visitedPercentage / 100) * 201} 201`}
-              strokeDashoffset="0"
+              strokeDashoffset={0}
               transform="rotate(-90 40 40)"
-              style={{ transition: 'stroke-dasharray 0.5s ease' }}
             />
-            <text x="40" y="38" textAnchor="middle" fontSize="16" fontWeight="700" fill={COLORS.text}>
-              {visitedPercentage}%
-            </text>
-            <text x="40" y="50" textAnchor="middle" fontSize="8" fill={COLORS.gray}>
-              do mundo
-            </text>
-          </svg>
+          </Svg>
+          <View style={{ position: 'absolute', alignItems: 'center' }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.text }}>{visitedPercentage.toFixed(1)}%</Text>
+            <Text style={{ fontSize: 8, color: COLORS.gray }}>do mundo</Text>
+          </View>
         </View>
         <View style={styles.statsDetails}>
           <View style={styles.statRow}>
@@ -540,12 +535,56 @@ export default function MapScreen({ navigation }) {
 
       {/* Mapa Leaflet */}
       <View style={{ flex: 1 }}>
-        {Platform.OS !== 'web' ? (
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0D1326' }}>
-            <Ionicons name="map-outline" size={48} color="#6C2BD9" />
-            <Text style={{ color: 'rgba(255,255,255,0.5)', marginTop: 12, fontSize: 13 }}>
-              Mapa disponível na versão web
-            </Text>
+        {process.env.EXPO_OS !== 'web' ? (
+          <View style={{ flex: 1, backgroundColor: '#0D1326', paddingTop: 12 }}>
+            <View style={{ paddingHorizontal: 16, paddingBottom: 10, gap: 4 }}>
+              <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '700' }}>Explore os países</Text>
+              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>
+                Selecione um destino para ver detalhes e registrar sua viagem.
+              </Text>
+            </View>
+            <ScrollView
+              contentInsetAdjustmentBehavior="automatic"
+              contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120, gap: 8 }}
+            >
+              {(countries?.features || [])
+                .filter(feature => {
+                  const code = feature.properties?.['ISO3166-1-Alpha-3'];
+                  return code && code !== '-99';
+                })
+                .sort((a, b) => (a.properties?.name || '').localeCompare(b.properties?.name || ''))
+                .map(feature => {
+                  const code = feature.properties['ISO3166-1-Alpha-3'];
+                  const alpha2 = ALPHA3_TO_ALPHA2[code] || code;
+                  const isVisited = visitedCountries.includes(alpha2);
+                  const sourceName = feature.properties.name || feature.properties.ADMIN || code;
+                  const name = getCountryNamePt(sourceName);
+                  return (
+                    <TouchableOpacity
+                      key={code}
+                      onPress={() => handleCountryClick(feature)}
+                      activeOpacity={0.75}
+                      style={{
+                        minHeight: 52,
+                        borderRadius: 14,
+                        borderCurve: 'continuous',
+                        paddingHorizontal: 14,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 12,
+                        backgroundColor: isVisited ? 'rgba(108,43,217,0.28)' : 'rgba(255,255,255,0.07)',
+                        borderWidth: 1,
+                        borderColor: isVisited ? '#6C2BD9' : 'rgba(255,255,255,0.08)',
+                      }}
+                    >
+                      <Text style={{ fontSize: 24 }}>{getFlagEmoji(code)}</Text>
+                      <Text style={{ flex: 1, color: '#FFFFFF', fontSize: 15, fontWeight: '600' }}>{name}</Text>
+                      {isVisited && <Ionicons name="checkmark-circle" size={20} color="#00D1C1" />}
+                      <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.45)" />
+                    </TouchableOpacity>
+                  );
+                })}
+            </ScrollView>
           </View>
         ) : (
         <MapContainer
@@ -628,10 +667,9 @@ export default function MapScreen({ navigation }) {
                   </TouchableOpacity>
 
                   {countryDetails.flag ? (
-                    <img
-                      src={countryDetails.flag}
-                      alt="flag"
-                      style={{ width: 72, height: 48, objectFit: 'cover', borderRadius: 6, marginBottom: 8 }}
+                    <Image
+                      source={{ uri: countryDetails.flag }}
+                      style={{ width: 72, height: 48, resizeMode: 'cover', borderRadius: 6, marginBottom: 8 }}
                     />
                   ) : (
                     <Text style={styles.modalFlag}>🌍</Text>
@@ -780,10 +818,9 @@ export default function MapScreen({ navigation }) {
                           {borderCountries.slice(0, 3).map((border, i) => (
                             <View key={i} style={styles.neighborRow}>
                               {border.flag && (
-                                <img
-                                  src={border.flag}
-                                  alt={border.name}
-                                  style={{ width: 24, height: 16, objectFit: 'cover', borderRadius: 2, marginRight: 8 }}
+                                <Image
+                                  source={{ uri: border.flag }}
+                                  style={{ width: 24, height: 16, resizeMode: 'cover', borderRadius: 2, marginRight: 8 }}
                                 />
                               )}
                               <Text style={styles.neighborName}>{border.name}</Text>
@@ -1509,18 +1546,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.background,
-  },
-  infoLabel: {
-    fontSize: 14,
-    color: COLORS.gray,
-    fontWeight: '500',
-  },
-  infoValue: {
-    fontSize: 14,
-    color: COLORS.text,
-    fontWeight: '600',
-    flex: 1,
-    textAlign: 'right',
   },
   chipsContainer: {
     flexDirection: 'row',

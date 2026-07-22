@@ -1,8 +1,19 @@
 import { supabase } from './supabase';
+import { fetch as expoFetch } from 'expo/fetch';
 import { getAlpha2, getAlpha3 } from '../utils/countryUtils';
 
 const BUCKET = 'country-photos';
 const TABLE = 'country_photos';
+
+const countryCodeVariants = (countryCode) => {
+  const variants = [
+    getAlpha3(countryCode)?.toUpperCase(),
+    getAlpha2(countryCode)?.toUpperCase(),
+    countryCode?.toUpperCase(),
+  ].filter(Boolean);
+
+  return [...new Set(variants)];
+};
 
 export const uploadPhoto = async (userId, countryCode, countryName, file, caption = '', cityData = {}) => {
   // Garante sempre alpha-3 no banco, independente do formato recebido
@@ -13,12 +24,21 @@ export const uploadPhoto = async (userId, countryCode, countryName, file, captio
   console.log('🌍 countryCode original:', countryCode, '| normalizado:', normalizedCountryCode);
 
   try {
-    const path = `${userId}/${normalizedCountryCode}/${Date.now()}.jpg`;
+    const contentType = file?.type || file?.mimeType || 'image/jpeg';
+    const extension = contentType.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
+    const path = `${userId}/${normalizedCountryCode}/${Date.now()}.${extension}`;
     console.log('📁 Path do upload:', path);
+
+    let uploadBody = file;
+    if (file?.uri) {
+      const response = await expoFetch(file.uri);
+      if (!response.ok) throw new Error('Não foi possível ler a imagem selecionada.');
+      uploadBody = await response.arrayBuffer();
+    }
 
     const { error: uploadError } = await supabase.storage
       .from(BUCKET)
-      .upload(path, file, { contentType: 'image/jpeg', upsert: false });
+      .upload(path, uploadBody, { contentType, upsert: false });
 
     if (uploadError) {
       console.error('❌ Erro no upload:', uploadError);
@@ -53,6 +73,7 @@ export const uploadPhoto = async (userId, countryCode, countryName, file, captio
 
     if (insertError) {
       console.error('❌ Erro ao salvar no banco:', insertError);
+      await supabase.storage.from(BUCKET).remove([path]);
       return { success: false, error: insertError.message };
     }
 
@@ -100,28 +121,32 @@ export const deletePhoto = async (photoId, photoPath) => {
   console.log('🗑️ deletePhoto - photoId:', photoId, '| path:', photoPath);
 
   try {
-    const { error: storageError } = await supabase.storage
-      .from(BUCKET)
-      .remove([photoPath]);
-
-    if (storageError) {
-      console.error('❌ Erro ao deletar do storage:', storageError);
-      return { success: false, error: storageError.message };
-    }
-
-    console.log('✅ Arquivo removido do storage');
-
-    const { error: dbError } = await supabase
+    const { data: deletedRows, error: dbError } = await supabase
       .from(TABLE)
       .delete()
-      .eq('id', photoId);
+      .eq('id', photoId)
+      .select('id');
 
     if (dbError) {
       console.error('❌ Erro ao deletar do banco:', dbError);
       return { success: false, error: dbError.message };
     }
 
+    if (!deletedRows?.length) {
+      return { success: false, error: 'Foto não encontrada ou sem permissão para excluir.' };
+    }
+
     console.log('✅ Registro removido do banco');
+
+    const { error: storageError } = await supabase.storage
+      .from(BUCKET)
+      .remove([photoPath]);
+
+    if (storageError) {
+      console.error('❌ Registro removido, mas o arquivo ficou órfão no storage:', storageError);
+      return { success: true, warning: 'O registro foi excluído, mas o arquivo requer limpeza no storage.' };
+    }
+
     return { success: true };
   } catch (error) {
     console.error('❌ Exceção em deletePhoto:', error);
@@ -154,38 +179,7 @@ export const getAllUserPhotos = async (userId) => {
 
 export const setCoverPhoto = async (userId, countryCode, photoId, photoUrl) => {
   try {
-    console.log('🖼️ Definindo foto de capa...', { userId, countryCode, photoId });
-
-    const alpha3ToAlpha2 = {
-      'BRA': 'BR', 'USA': 'US', 'ARG': 'AR', 'PRT': 'PT', 'ESP': 'ES',
-      'FRA': 'FR', 'ITA': 'IT', 'DEU': 'DE', 'GBR': 'GB', 'JPN': 'JP',
-      'CHN': 'CN', 'MEX': 'MX', 'COL': 'CO', 'CHL': 'CL', 'URY': 'UY',
-      'BOL': 'BO', 'PER': 'PE', 'VEN': 'VE', 'ECU': 'EC', 'PRY': 'PY',
-    };
-
-    const countryCodeNormalized = alpha3ToAlpha2[countryCode] || countryCode;
-    console.log('🔍 setCoverPhoto recebeu countryCode:', countryCode, '→ normalizado:', countryCodeNormalized);
-
-    const countryNames = {
-      'BR': 'Brasil', 'US': 'Estados Unidos', 'AR': 'Argentina',
-      'PT': 'Portugal', 'ES': 'Espanha', 'FR': 'França',
-      'IT': 'Itália', 'DE': 'Alemanha', 'GB': 'Reino Unido',
-      'JP': 'Japão', 'CN': 'China', 'MX': 'México',
-      'CO': 'Colômbia', 'CL': 'Chile', 'UY': 'Uruguai',
-      'BO': 'Bolívia', 'PE': 'Peru', 'VE': 'Venezuela',
-      'EC': 'Equador', 'PY': 'Paraguai',
-    };
-
-    const countryName = countryNames[countryCodeNormalized] || countryCodeNormalized;
-    console.log('🔍 country_name resolvido:', countryName);
-
-    const { data: existing } = await supabase
-      .from('visited_countries')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('country_code', countryCodeNormalized);
-
-    console.log('🔍 País encontrado na tabela visited_countries:', existing);
+    const possibleCodes = countryCodeVariants(countryCode);
 
     const { data, error } = await supabase
       .from('visited_countries')
@@ -194,10 +188,8 @@ export const setCoverPhoto = async (userId, countryCode, photoId, photoUrl) => {
         cover_photo_url: photoUrl,
       })
       .eq('user_id', userId)
-      .eq('country_code', countryCodeNormalized)
+      .in('country_code', possibleCodes)
       .select();
-
-    console.log('🔍 UPDATE result - data:', data, 'error:', error);
 
     if (error) {
       console.error('❌ Erro ao atualizar capa:', error);
@@ -205,7 +197,7 @@ export const setCoverPhoto = async (userId, countryCode, photoId, photoUrl) => {
     }
 
     if (!data || data.length === 0) {
-      console.error('❌ Nenhuma linha atualizada - país não encontrado com code:', countryCodeNormalized);
+      console.error('❌ Nenhuma linha atualizada - país não encontrado com code:', possibleCodes);
       return { success: false, error: 'País não encontrado na tabela' };
     }
 
@@ -219,7 +211,7 @@ export const setCoverPhoto = async (userId, countryCode, photoId, photoUrl) => {
 
 export const removeCoverPhoto = async (userId, countryCode) => {
   try {
-    console.log('🗑️ Removendo foto de capa...', { userId, countryCode });
+    const possibleCodes = countryCodeVariants(countryCode);
 
     const { data, error } = await supabase
       .from('visited_countries')
@@ -228,7 +220,7 @@ export const removeCoverPhoto = async (userId, countryCode) => {
         cover_photo_url: null,
       })
       .eq('user_id', userId)
-      .eq('country_code', countryCode)
+      .in('country_code', possibleCodes)
       .select();
 
     if (error) {
@@ -250,7 +242,13 @@ export const getFavoritePhotos = async (userId) => {
     .select('photo_id, country_photos(id, photo_url, city, city_lat, city_lng, country_code)')
     .eq('user_id', userId);
   if (error) return { success: false, error: error.message };
-  return { success: true, data: data.map(f => ({ ...f.country_photos, isFavorite: true })) };
+  const photos = (data || []).flatMap(favorite => {
+    const relatedPhoto = Array.isArray(favorite.country_photos)
+      ? favorite.country_photos[0]
+      : favorite.country_photos;
+    return relatedPhoto ? [{ ...relatedPhoto, isFavorite: true }] : [];
+  });
+  return { success: true, data: photos };
 };
 
 export const updatePhotoPrivacy = async (photoId, isPublic) => {
@@ -331,11 +329,13 @@ export const getTopPlacesByCountry = async (countryCode) => {
 
 export const getCoverPhoto = async (userId, countryCode) => {
   try {
+    const possibleCodes = countryCodeVariants(countryCode);
     const { data, error } = await supabase
       .from('visited_countries')
       .select('cover_photo_url, cover_photo_id')
       .eq('user_id', userId)
-      .eq('country_code', countryCode)
+      .in('country_code', possibleCodes)
+      .limit(1)
       .maybeSingle();
 
     if (error) {

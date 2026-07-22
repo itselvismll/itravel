@@ -1,4 +1,9 @@
 {
-  "compilerOptions": {},
-  "extends": "expo/tsconfig.base"
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noImplicitAny": false
+  },
+  "extends": "expo/tsconfig.base",
+  "exclude": ["dist", "supabase/functions"]
 }

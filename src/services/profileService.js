@@ -73,10 +73,10 @@ export const uploadAvatar = async (userId, imageUri) => {
 };
 
 export const checkUsernameAvailable = async (username) => {
-  const { data } = await supabase
-    .from('profiles')
-    .select('username')
-    .eq('username', username)
-    .maybeSingle();
-  return !data;
+  const candidate = username?.trim().toLowerCase();
+  if (!candidate) return false;
+
+  const { data, error } = await supabase.rpc('is_username_available', { candidate });
+  if (error) return false;
+  return data === true;
 };

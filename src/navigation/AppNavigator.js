@@ -110,6 +110,7 @@ function TabNavigator() {
         }}
         listeners={{
           tabPress: (e) => {
+            // @ts-expect-error React Navigation's JS event supports cancellation here.
             e.preventDefault();
             openUploader();
           },
@@ -267,6 +268,7 @@ export default function AppNavigator() {
 
   return (
     <View style={{ flex: 1 }}>
+      {/* @ts-expect-error React Navigation's JS children typing is overly strict under checkJs. */}
       <NavigationContainer>
         {!user ? (
           <Stack.Navigator screenOptions={{ headerShown: false }}>
