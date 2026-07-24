@@ -21,6 +21,9 @@ const ALPHA2_TO_ALPHA3 = Object.fromEntries(
   Object.entries(ALPHA3_TO_ALPHA2).map(([k, v]) => [v, k])
 );
 
+const normalizeToAlpha2 = (code) =>
+  getAlpha2(code)?.toUpperCase() || code?.toUpperCase();
+
 const COUNTRIES_LIST = [
   { code: 'BR', name: 'Brasil' }, { code: 'AR', name: 'Argentina' },
   { code: 'US', name: 'Estados Unidos' }, { code: 'FR', name: 'França' },
@@ -155,7 +158,6 @@ export default function MapScreen({ navigation }) {
   useEffect(() => {
     if (refreshTrigger > 0) {
       loadData();
-      loadCityPins();
     }
   }, [refreshTrigger]);
 
@@ -200,7 +202,7 @@ export default function MapScreen({ navigation }) {
         const result = await getVisitedCountries(currentUser.id);
         if (result.success) {
           visitedCountriesDataRef.current = result.data;
-          const codes = result.data.map(v => ALPHA3_TO_ALPHA2[v.country_code] || v.country_code);
+          const codes = result.data.map(v => normalizeToAlpha2(v.country_code));
           setVisitedCountries([...new Set(codes)]);
 
           const coverEntries = await Promise.all(
@@ -248,13 +250,13 @@ export default function MapScreen({ navigation }) {
     if (photosWithCity) {
       const citiesMap = {};
       photosWithCity.forEach(photo => {
-        const key = photo.city;
+        const key = `${normalizeToAlpha2(photo.country_code)}:${photo.city}`;
         if (!citiesMap[key]) {
           citiesMap[key] = {
             city: photo.city,
             lat: photo.city_lat,
             lng: photo.city_lng,
-            countryCode: ALPHA3_TO_ALPHA2[photo.country_code] || photo.country_code,
+            countryCode: normalizeToAlpha2(photo.country_code),
             photos: [],
           };
         }
@@ -277,13 +279,13 @@ export default function MapScreen({ navigation }) {
     if (photosWithCity) {
       const citiesMap = {};
       photosWithCity.forEach(photo => {
-        const key = photo.city;
+        const key = `${normalizeToAlpha2(photo.country_code)}:${photo.city}`;
         if (!citiesMap[key]) {
           citiesMap[key] = {
             city: photo.city,
             lat: photo.city_lat,
             lng: photo.city_lng,
-            countryCode: ALPHA3_TO_ALPHA2[photo.country_code] || photo.country_code,
+            countryCode: normalizeToAlpha2(photo.country_code),
             photos: [],
           };
         }
@@ -306,7 +308,9 @@ export default function MapScreen({ navigation }) {
     setSelectedCountry({ code: countryCode, name: countryName });
 
     const countryCodeAlpha2 = ALPHA3_TO_ALPHA2[countryCode] || countryCode;
-    const visitedEntry = visitedCountriesDataRef.current.find(v => v.country_code === countryCodeAlpha2);
+    const visitedEntry = visitedCountriesDataRef.current.find(
+      v => normalizeToAlpha2(v.country_code) === countryCodeAlpha2
+    );
     setCurrentCoverPhotoId(visitedEntry?.cover_photo_id ?? null);
 
     setModalVisible(true);
@@ -497,7 +501,7 @@ export default function MapScreen({ navigation }) {
               transform="rotate(-90 40 40)"
             />
           </Svg>
-          <View style={{ position: 'absolute', alignItems: 'center' }}>
+          <View style={styles.circleChartLabel} pointerEvents="none">
             <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.text }}>{visitedPercentage.toFixed(1)}%</Text>
             <Text style={{ fontSize: 8, color: COLORS.gray }}>do mundo</Text>
           </View>
@@ -1179,7 +1183,6 @@ export default function MapScreen({ navigation }) {
                 userId={user?.id}
                 onPhotoUploaded={() => {
                   setShowUploader(false);
-                  loadCityPins();
                   loadData();
                 }}
               />
@@ -1269,8 +1272,21 @@ const styles = StyleSheet.create({
     minWidth: 140,
   },
   circleChart: {
+    width: 80,
+    height: 80,
     alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
     marginBottom: 12,
+  },
+  circleChartLabel: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statsDetails: {
     gap: 6,

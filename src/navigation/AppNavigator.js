@@ -244,6 +244,11 @@ export default function AppNavigator() {
       }
 
       if (detected) {
+        detected = {
+          ...detected,
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        };
         console.log('📍 Localização detectada:', detected);
         setDetectedLocation(detected);
       } else {
@@ -346,6 +351,8 @@ export default function AppNavigator() {
                   prefilledCity={detectedLocation?.city}
                   prefilledCountryName={detectedLocation?.countryName}
                   prefilledCountryCode={detectedLocation?.isoCountryCode}
+                  prefilledCityLat={detectedLocation?.latitude}
+                  prefilledCityLng={detectedLocation?.longitude}
                   onPhotoUploaded={notifyUploadComplete}
                 />
               </View>

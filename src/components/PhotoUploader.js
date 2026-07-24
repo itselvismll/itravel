@@ -13,8 +13,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { API_CONFIG, COLORS, SIZES } from '../utils/constants';
 import { uploadPhoto } from '../services/photoService';
-import { getAlpha3 } from '../utils/countryUtils';
-import { supabase } from '../services/supabase';
+import { getAlpha2, getAlpha3 } from '../utils/countryUtils';
+import { markCountryAsVisited } from '../services/supabase';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 
 const GOOGLE_PLACES_KEY = API_CONFIG.GOOGLE_MAPS_API_KEY;
@@ -25,6 +25,7 @@ const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
 export default function PhotoUploader({
   countryCode = null, countryName = null, countryNameEn = null, userId, onPhotoUploaded,
   prefilledCity = null, prefilledCountryName = null, prefilledCountryCode = null,
+  prefilledCityLat = null, prefilledCityLng = null,
 }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -48,6 +49,17 @@ export default function PhotoUploader({
   const effectiveCountryCode = countryCode || (prefilledCountryCode ? getAlpha3(prefilledCountryCode) : '') || '';
   const effectiveCountryName = countryName || prefilledCountryName || '';
   const effectiveCountryNameEn = countryNameEn || prefilledCountryName || '';
+  const effectiveCountryAlpha2 = getAlpha2(effectiveCountryCode)?.toLowerCase() || '';
+
+  const getPrefilledCity = () => {
+    if (countryCode || !prefilledCity) return null;
+    return {
+      shortName: prefilledCity,
+      country: prefilledCountryName || '',
+      lat: Number.isFinite(prefilledCityLat) ? prefilledCityLat : null,
+      lng: Number.isFinite(prefilledCityLng) ? prefilledCityLng : null,
+    };
+  };
 
   console.log('📦 PhotoUploader props recebidas:', {
     prefilledCity,
@@ -59,17 +71,19 @@ export default function PhotoUploader({
   // Inicializar cidade a partir do GPS quando não há countryCode (fluxo global)
   useEffect(() => {
     console.log('📦 useEffect prefill disparou — prefilledCity:', prefilledCity, '| countryCode:', countryCode);
-    if (!countryCode && prefilledCity) {
+    const detectedCity = getPrefilledCity();
+    if (detectedCity) {
       console.log('📦 Aplicando prefill - city:', prefilledCity, '| country:', prefilledCountryName);
       setCitySearch(prefilledCity);
-      setSelectedCity({
-        shortName: prefilledCity,
-        country: prefilledCountryName || '',
-        lat: 0,
-        lng: 0,
-      });
+      setSelectedCity(detectedCity);
     }
-  }, [prefilledCity, prefilledCountryName, countryCode]);
+  }, [
+    prefilledCity,
+    prefilledCountryName,
+    prefilledCityLat,
+    prefilledCityLng,
+    countryCode,
+  ]);
 
   useEffect(() => () => {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -87,12 +101,16 @@ export default function PhotoUploader({
       const response = await fetch(
         `https://photon.komoot.io/api/?q=${encodeURIComponent(searchQuery)}&limit=8`
       );
+      if (!response.ok) throw new Error(`Busca de cidades indisponível (${response.status})`);
       const data = await response.json();
       const cities = (data.features || [])
-        .filter(f =>
-          ['city', 'town', 'village'].includes(f.properties?.type) &&
-          (!effectiveCountryNameEn || f.properties?.country?.toLowerCase() === effectiveCountryNameEn.toLowerCase())
-        )
+        .filter((feature) => {
+          if (!['city', 'town', 'village'].includes(feature.properties?.type)) return false;
+          const featureCountryCode = feature.properties?.countrycode?.toLowerCase();
+          return !effectiveCountryAlpha2 ||
+            !featureCountryCode ||
+            featureCountryCode === effectiveCountryAlpha2;
+        })
         .map(f => ({
           name: `${f.properties.name}, ${f.properties.country}`,
           shortName: f.properties.name,
@@ -164,9 +182,10 @@ export default function PhotoUploader({
     setSelectedFile(null);
     setPreview(null);
     setCaption('');
-    setCitySearch('');
+    const detectedCity = getPrefilledCity();
+    setCitySearch(detectedCity?.shortName || '');
     setCitySuggestions([]);
-    setSelectedCity(null);
+    setSelectedCity(detectedCity);
     setCityError(false);
     setUploadSuccess(false);
     setLocationName('');
@@ -201,20 +220,24 @@ export default function PhotoUploader({
     setUploading(false);
 
     if (result.success) {
-      setUploadSuccess(true);
-      // Mark country as visited
-      const { data: authData } = await supabase.auth.getUser();
-      const currentUser = authData?.user;
-      if (currentUser && effectiveCountryCode) {
-        const alpha3 = getAlpha3(effectiveCountryCode)?.toUpperCase();
-        if (!alpha3) throw new Error('Código de país inválido');
-        await supabase
-          .from('visited_countries')
-          .upsert(
-            { user_id: currentUser.id, country_code: alpha3, country_name: effectiveCountryName },
-            { onConflict: 'user_id,country_code', ignoreDuplicates: true }
-          );
+      let visitResult = { success: true };
+      if (userId && effectiveCountryCode) {
+        visitResult = await markCountryAsVisited(
+          userId,
+          effectiveCountryCode,
+          effectiveCountryName
+        );
       }
+
+      if (!visitResult.success) {
+        console.error('Erro ao relacionar foto ao país:', visitResult.error);
+        Alert.alert(
+          'Foto enviada',
+          'A foto foi salva, mas não foi possível atualizar o país visitado agora.'
+        );
+      }
+
+      setUploadSuccess(true);
       if (onPhotoUploaded) onPhotoUploaded(result.data);
       setTimeout(() => {
         handleRemovePreview();

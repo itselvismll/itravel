@@ -64,6 +64,22 @@ test('profile updates create a missing profile row and comments return inserted 
   assert.match(socialService, /\.single\(\)/);
 });
 
+test('photo uploads always synchronize their country as visited', () => {
+  const migration = read('supabase/migrations/20260724150000_sync_photo_country_visits.sql');
+  const uploader = read('src/components/PhotoUploader.js');
+  assert.match(migration, /after insert or update/);
+  assert.match(migration, /insert into public\.visited_countries/);
+  assert.match(uploader, /markCountryAsVisited/);
+  assert.doesNotMatch(uploader, /lat:\s*0/);
+});
+
+test('map refreshes visits after uploads and centers the chart label', () => {
+  const map = read('src/screens/map/MapScreen.js');
+  assert.match(map, /normalizeToAlpha2/);
+  assert.match(map, /circleChartLabel/);
+  assert.match(map, /justifyContent: 'center'/);
+});
+
 test('README keeps JWT verification enabled for the AI function', () => {
   const readme = read('README.md');
   assert.doesNotMatch(readme, /functions deploy travel-assistant --no-verify-jwt/);
