@@ -15,6 +15,7 @@ import { followUser, unfollowUser, getFollowing, getRecentPublicPhotos, getUsers
 import { searchTravelers, getSuggestedTravelers, getTravelersByCountry, addToWishlist, removeFromWishlist, isInWishlist } from '../../services/socialService';
 import StarRating from '../../components/StarRating';
 import Avatar from '../../components/Avatar';
+import CountryFlag from '../../components/CountryFlag';
 import { useUpload } from '../../context/UploadContext';
 import { COUNTRIES_STATIC } from '../../data/countriesStaticData';
 
@@ -450,22 +451,17 @@ export default function ExploreScreen({ navigation }) {
                   {popularCountries.map((country, i) => (
                     <TouchableOpacity
                       key={i}
-                      style={{
-                        width: '47.5%',
-                        backgroundColor: '#1b1f3a',
-                        borderRadius: 16,
-                        padding: 16,
-                        alignItems: 'center',
-                        gap: 8,
-                        borderWidth: 1,
-                        borderColor: 'rgba(255,255,255,0.08)',
-                      }}
+                      style={styles.destinationCard}
                       onPress={() => handleCountryPress(country)}
                       activeOpacity={0.85}
                     >
-                      <Text style={{ fontSize: 48 }}>
-                        {getFlagEmoji(country.country_code)}
-                      </Text>
+                      <CountryFlag
+                        countryCode={country.country_code}
+                        width={96}
+                        height={64}
+                        borderRadius={10}
+                        style={styles.destinationFlag}
+                      />
                       <Text style={styles.destName} numberOfLines={1}>
                         {getCountryNamePtByCode(country.country_code, country.country_name)}
                       </Text>
@@ -491,22 +487,17 @@ export default function ExploreScreen({ navigation }) {
                   {topDestinations.map((country, i) => (
                     <TouchableOpacity
                       key={i}
-                      style={{
-                        width: '47.5%',
-                        backgroundColor: '#1b1f3a',
-                        borderRadius: 16,
-                        padding: 16,
-                        alignItems: 'center',
-                        gap: 8,
-                        borderWidth: 1,
-                        borderColor: 'rgba(255,255,255,0.08)',
-                      }}
+                      style={styles.destinationCard}
                       onPress={() => setDestCountry(country)}
                       activeOpacity={0.85}
                     >
-                      <Text style={{ fontSize: 48 }}>
-                        {getFlagEmoji(country.country_code)}
-                      </Text>
+                      <CountryFlag
+                        countryCode={country.country_code}
+                        width={96}
+                        height={64}
+                        borderRadius={10}
+                        style={styles.destinationFlag}
+                      />
                       <Text style={styles.destName} numberOfLines={1}>
                         {getCountryNamePtByCode(country.country_code, country.country_name)}
                       </Text>
@@ -881,6 +872,22 @@ const styles = StyleSheet.create({
   section: { padding: 12, paddingBottom: 0 },
   sectionTitle: { fontSize: 11, fontWeight: '700', color: '#999', letterSpacing: 1, marginBottom: 10 },
   destGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  destinationCard: {
+    width: '47.5%',
+    minHeight: 164,
+    backgroundColor: '#1b1f3a',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  destinationFlag: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
   destCard: { width: '47.5%', height: 100, borderRadius: 10, overflow: 'hidden', backgroundColor: '#ddd' },
   destFlag: { width: '100%', height: '100%' },
   destOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.55)', padding: 8 },

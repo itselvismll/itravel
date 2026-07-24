@@ -27,6 +27,7 @@ import {
 } from '../../utils/countryUtils';
 import { getFlagEmoji } from '../../utils/flagUtils';
 import StarRating from '../../components/StarRating';
+import CountryFlag from '../../components/CountryFlag';
 import { useUpload } from '../../context/UploadContext';
 import { getLevelInfo } from '../../utils/travelerLevels';
 import { confirm, notify } from '../../utils/dialogs';
@@ -290,7 +291,17 @@ export default function ProfileScreen({ navigation }) {
                   style={[styles.travelTag, { transform: [{ rotate: `${rotation}deg` }] }]}
                 >
                   <View style={styles.tagHole} />
-                  <Text style={styles.tagFlagEmoji}>{getFlagEmoji(country.country_code)}</Text>
+                  <View style={styles.tagCountryMark}>
+                    <CountryFlag
+                      countryCode={country.country_code}
+                      width={24}
+                      height={16}
+                      borderRadius={2}
+                    />
+                    <Text style={styles.tagCountryCode}>
+                      {getAlpha2(country.country_code).toUpperCase()}
+                    </Text>
+                  </View>
                   <View style={styles.tagDivider} />
                   <View style={styles.tagFooter}>
                     <Text style={styles.tagName} numberOfLines={1}>
@@ -298,9 +309,6 @@ export default function ProfileScreen({ navigation }) {
                         country.country_code,
                         country.country_name
                       ).toUpperCase()}
-                    </Text>
-                    <Text style={styles.tagCode}>
-                      {getAlpha2(country.country_code).toUpperCase()}
                     </Text>
                   </View>
                 </View>
@@ -327,7 +335,17 @@ export default function ProfileScreen({ navigation }) {
                   style={[styles.travelTag, { transform: [{ rotate: `${rotation}deg` }] }]}
                 >
                   <View style={[styles.tagHole, { backgroundColor: '#00D1C1', borderColor: '#00A89C' }]} />
-                  <Text style={styles.tagFlagEmoji}>{getFlagEmoji(item.country_code)}</Text>
+                  <View style={styles.tagCountryMark}>
+                    <CountryFlag
+                      countryCode={item.country_code}
+                      width={24}
+                      height={16}
+                      borderRadius={2}
+                    />
+                    <Text style={[styles.tagCountryCode, { color: '#00A89C' }]}>
+                      {getAlpha2(item.country_code).toUpperCase()}
+                    </Text>
+                  </View>
                   <View style={styles.tagDivider} />
                   <View style={styles.tagFooter}>
                     <Text style={styles.tagName} numberOfLines={1}>
@@ -335,9 +353,6 @@ export default function ProfileScreen({ navigation }) {
                         item.country_code,
                         item.country_name
                       ).toUpperCase()}
-                    </Text>
-                    <Text style={[styles.tagCode, { color: '#00D1C1' }]}>
-                      {getAlpha2(item.country_code).toUpperCase()}
                     </Text>
                   </View>
                 </View>
@@ -658,11 +673,19 @@ const styles = StyleSheet.create({
     borderColor: '#A0906C',
     zIndex: 2,
   },
-  tagFlagEmoji: {
+  tagCountryMark: {
     position: 'absolute',
-    top: 1,
+    top: 8,
     right: 8,
-    fontSize: 25,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  tagCountryCode: {
+    color: '#D97706',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   countryFlagEmoji: { width: 30, fontSize: 24 },
   tagDivider: {
@@ -688,12 +711,6 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: '#46371E',
     flex: 1,
-  },
-  tagCode: {
-    fontWeight: '700',
-    fontSize: 8,
-    color: '#FF9A00',
-    marginLeft: 4,
   },
   emptyPassport: { alignItems: 'center', paddingVertical: 20, gap: 10 },
   emptyPassportText: { fontSize: 12, color: '#bbb', textAlign: 'center', lineHeight: 18 },

@@ -92,7 +92,7 @@ test('follow events create notifications and connection lists are navigable', ()
   assert.match(connections, /getFollowingProfiles/);
 });
 
-test('client source is free of console calls and remote flag images', () => {
+test('client source is free of console calls and centralizes remote flag images', () => {
   const sourceRoot = path.join(root, 'src');
   const files = [];
   const visit = (directory) => {
@@ -104,8 +104,21 @@ test('client source is free of console calls and remote flag images', () => {
   };
   visit(sourceRoot);
   const source = files.map(file => fs.readFileSync(file, 'utf8')).join('\n');
+  const countryFlag = read('src/components/CountryFlag.js');
   assert.doesNotMatch(source, /console\.(log|debug|info|warn|error)\s*\(/);
-  assert.doesNotMatch(source, /flagcdn\.com/);
+  assert.match(countryFlag, /flagcdn\.com/);
+  assert.equal((source.match(/flagcdn\.com/g) || []).length, 1);
+});
+
+test('explore, feed, and passport keep their responsive visual treatment', () => {
+  const explore = read('src/screens/explore/ExploreScreen.js');
+  const feed = read('src/screens/feed/FeedScreen.js');
+  const profile = read('src/screens/profile/ProfileScreen.js');
+  assert.match(explore, /<CountryFlag/);
+  assert.match(feed, /maxWidth: 760/);
+  assert.match(feed, /aspectRatio: 4 \/ 3/);
+  assert.match(profile, /tagCountryMark/);
+  assert.match(profile, /<CountryFlag/);
 });
 
 test('README keeps JWT verification enabled for the AI function', () => {
