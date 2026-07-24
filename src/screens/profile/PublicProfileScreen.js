@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../services/supabase';
 import { followUser, unfollowUser, getFollowing, getFollowCounts } from '../../services/followService';
-import { getFlagEmoji } from '../../utils/flagUtils';
+import CountryFlag from '../../components/CountryFlag';
 
 const { width } = Dimensions.get('window');
 const PHOTO_SIZE = (width - 4) / 3;
@@ -200,9 +200,13 @@ export default function PublicProfileScreen({ route, navigation }) {
             <Text style={styles.sectionTitle}>PAÍSES VISITADOS</Text>
             <View style={styles.flagGrid}>
               {visitedCountries.map((c, i) => (
-                <Text key={i} style={styles.flagEmoji}>
-                  {getFlagEmoji(c.country_code)}
-                </Text>
+                <CountryFlag
+                  key={`${c.country_code}-${i}`}
+                  countryCode={c.country_code}
+                  width={38}
+                  height={25}
+                  borderRadius={4}
+                />
               ))}
             </View>
           </View>
@@ -320,7 +324,6 @@ const styles = StyleSheet.create({
   levelName: { fontSize: 15, fontWeight: '700', color: '#F7F7F2' },
   levelSub: { fontSize: 11, color: '#9aa0c6', marginTop: 2 },
   flagGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  flagEmoji: { fontSize: 28 },
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
   photoThumb: { width: PHOTO_SIZE, height: PHOTO_SIZE },
   modalOverlay: {

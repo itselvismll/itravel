@@ -25,7 +25,6 @@ import {
   getStampRotation,
   getCountryNamePtByCode,
 } from '../../utils/countryUtils';
-import { getFlagEmoji } from '../../utils/flagUtils';
 import StarRating from '../../components/StarRating';
 import CountryFlag from '../../components/CountryFlag';
 import { useUpload } from '../../context/UploadContext';
@@ -451,7 +450,12 @@ export default function ProfileScreen({ navigation }) {
           </View>
           {visitedCountries.map((country, i) => (
             <View key={i} style={styles.countryRow}>
-              <Text style={styles.countryFlagEmoji}>{getFlagEmoji(country.country_code)}</Text>
+              <CountryFlag
+                countryCode={country.country_code}
+                width={30}
+                height={20}
+                borderRadius={3}
+              />
               <View style={{ flex: 1 }}>
                 <Text style={styles.countryName}>
                   {getCountryNamePtByCode(country.country_code, country.country_name)}
@@ -687,7 +691,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.5,
   },
-  countryFlagEmoji: { width: 30, fontSize: 24 },
   tagDivider: {
     position: 'absolute',
     bottom: 18,

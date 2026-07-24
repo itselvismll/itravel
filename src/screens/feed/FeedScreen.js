@@ -9,10 +9,10 @@ import { getCurrentUser } from '../../services/supabase';
 import { getFeedPhotos, getFollowingProfiles } from '../../services/followService';
 import { getComments, addComment } from '../../services/socialService';
 import { getCountryNamePtByCode } from '../../utils/countryUtils';
-import { getFlagEmoji } from '../../utils/flagUtils';
 import { useUpload } from '../../context/UploadContext';
 import StarRating from '../../components/StarRating';
 import Avatar from '../../components/Avatar';
+import CountryFlag from '../../components/CountryFlag';
 import { notify } from '../../utils/dialogs';
 
 const timeAgo = (dateStr) => {
@@ -204,9 +204,12 @@ export default function FeedScreen({ navigation }) {
                         </Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                           {post.country_code && (
-                            <Text style={{ fontSize: 13 }}>
-                              {getFlagEmoji(post.country_code)}
-                            </Text>
+                            <CountryFlag
+                              countryCode={post.country_code}
+                              width={20}
+                              height={13}
+                              borderRadius={2}
+                            />
                           )}
                           <Text style={styles.postAuthorMeta}>
                             {[post.city, getCountryNamePtByCode(post.country_code, post.country_name)]

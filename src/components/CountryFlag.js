@@ -45,7 +45,10 @@ export default function CountryFlag({
   return (
     <View style={containerStyle}>
       <Image
-        source={{ uri: `https://flagcdn.com/w160/${alpha2}.png` }}
+        source={{
+          uri: `https://flagcdn.com/w160/${alpha2}.png`,
+          cache: 'force-cache',
+        }}
         style={styles.image}
         resizeMode="cover"
         accessibilityLabel={`Bandeira ${alpha2.toUpperCase()}`}

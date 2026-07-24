@@ -10,7 +10,6 @@ import {
   ALPHA3_TO_ALPHA2,
   getCountryNamePtByCode,
 } from '../../utils/countryUtils';
-import { getFlagEmoji } from '../../utils/flagUtils';
 import { followUser, unfollowUser, getFollowing, getRecentPublicPhotos, getUsersToDiscover } from '../../services/followService';
 import { searchTravelers, getSuggestedTravelers, getTravelersByCountry, addToWishlist, removeFromWishlist, isInWishlist } from '../../services/socialService';
 import StarRating from '../../components/StarRating';
@@ -393,7 +392,7 @@ export default function ExploreScreen({ navigation }) {
                   setSearchQuery('');
                 }}
               >
-                <Text style={{ fontSize: 22 }}>{getFlagEmoji(country.code)}</Text>
+                <CountryFlag countryCode={country.code} width={28} height={19} borderRadius={3} />
                 <Text style={styles.searchResultText}>{country.name}</Text>
                 <Ionicons name="chevron-forward" size={13} color="rgba(255,255,255,0.3)" />
               </TouchableOpacity>
@@ -615,9 +614,12 @@ export default function ExploreScreen({ navigation }) {
             </TouchableOpacity>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               {selectedCountry && (
-                <Text style={{ fontSize: 25 }}>
-                  {getFlagEmoji(selectedCountry.country_code)}
-                </Text>
+                <CountryFlag
+                  countryCode={selectedCountry.country_code}
+                  width={32}
+                  height={21}
+                  borderRadius={3}
+                />
               )}
               <Text style={styles.modalHeaderTitle}>
                 {selectedCountry
@@ -727,9 +729,12 @@ export default function ExploreScreen({ navigation }) {
             </TouchableOpacity>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               {destCountry && (
-                <Text style={{ fontSize: 25 }}>
-                  {getFlagEmoji(destCountry.country_code)}
-                </Text>
+                <CountryFlag
+                  countryCode={destCountry.country_code}
+                  width={32}
+                  height={21}
+                  borderRadius={3}
+                />
               )}
               <Text style={styles.modalHeaderTitle}>
                 {destCountry
@@ -869,7 +874,13 @@ const styles = StyleSheet.create({
   searchResultItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 },
   searchResultText: { flex: 1, color: 'white', fontSize: 13, fontWeight: '500' },
   body: { flex: 1 },
-  section: { padding: 12, paddingBottom: 0 },
+  section: {
+    width: '100%',
+    maxWidth: 1100,
+    alignSelf: 'center',
+    padding: 12,
+    paddingBottom: 0,
+  },
   sectionTitle: { fontSize: 11, fontWeight: '700', color: '#999', letterSpacing: 1, marginBottom: 10 },
   destGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   destinationCard: {

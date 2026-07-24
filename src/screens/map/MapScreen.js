@@ -12,10 +12,15 @@ import {
   getAlpha2,
   getCountryNamePtByCode,
 } from '../../utils/countryUtils';
-import { getFlagEmoji } from '../../utils/flagUtils';
+import {
+  getGeoCountryAlpha2,
+  getGeoCountryAlpha3,
+  getGeoCountryName,
+} from '../../utils/geo-country-utils';
 import { PROMPT_TYPES, askTravelAssistant } from '../../services/assistantService';
 import PhotoGallery from '../../components/PhotoGallery';
 import PhotoUploader from '../../components/PhotoUploader';
+import CountryFlag from '../../components/CountryFlag';
 import { useUpload } from '../../context/UploadContext';
 import { getCoverPhoto, getTopPlacesByCountry } from '../../services/photoService';
 import { getWorldGeoData } from '../../services/geoService';
@@ -264,13 +269,13 @@ export default function MapScreen({ navigation }) {
   };
 
   const handleCountryClick = useCallback(async (feature) => {
-    const countryCode = feature.properties['ISO3166-1-Alpha-3'];
+    const countryCode = getGeoCountryAlpha3(feature);
     const countryName = getCountryNamePtByCode(
       countryCode,
-      feature.properties.name
+      getGeoCountryName(feature)
     );
 
-    if (!countryCode || countryCode === '-99') {
+    if (!countryCode) {
       Alert.alert('País não identificado', 'Não foi possível identificar este país.');
       return;
     }
@@ -349,8 +354,8 @@ export default function MapScreen({ navigation }) {
   const searchResults = countrySearch.length >= 2 && countries
     ? countries.features
         .filter(f =>
-          f.properties?.ADMIN?.toLowerCase().includes(countrySearch.toLowerCase()) ||
-          f.properties?.['ISO3166-1-Alpha-3']?.toLowerCase().includes(countrySearch.toLowerCase())
+          getGeoCountryName(f).toLowerCase().includes(countrySearch.toLowerCase()) ||
+          getGeoCountryAlpha3(f)?.toLowerCase().includes(countrySearch.toLowerCase())
         )
         .slice(0, 5)
     : [];
@@ -360,8 +365,8 @@ export default function MapScreen({ navigation }) {
   const visitedPercentage = totalCountries > 0 ? (visitedCount / totalCountries) * 100 : 0;
   const notVisitedCount = totalCountries - visitedCount;
   const geoJsonStyle = (feature) => {
-    const code = feature.properties['ISO3166-1-Alpha-3'];
-    const alpha2 = ALPHA3_TO_ALPHA2[code] || code;
+    const code = getGeoCountryAlpha3(feature);
+    const alpha2 = getGeoCountryAlpha2(feature);
     const isVisited = visitedCountries.includes(alpha2);
     const isWishlist = wishlistCodes.includes(code);
     return {
@@ -373,8 +378,8 @@ export default function MapScreen({ navigation }) {
   };
 
   const onEachFeature = (feature, layer) => {
-    const code = feature.properties['ISO3166-1-Alpha-3'];
-    const alpha2 = ALPHA3_TO_ALPHA2[code] || code;
+    const code = getGeoCountryAlpha3(feature);
+    const alpha2 = getGeoCountryAlpha2(feature);
     const isVisited = visitedCountries.includes(alpha2);
     const isWishlist = wishlistCodes.includes(code);
 
@@ -384,7 +389,7 @@ export default function MapScreen({ navigation }) {
           fillOpacity: 0.9,
           fillColor: isVisited ? COLORS.primary : isWishlist ? '#F0F0F0' : '#2a2a4e',
         });
-        setHoveredCountry(feature.properties.name);
+        setHoveredCountry(getGeoCountryName(feature));
       },
       mouseout: (e) => {
         e.target.setStyle({
@@ -399,8 +404,8 @@ export default function MapScreen({ navigation }) {
 
   const handlePinClick = useCallback((pin) => {
     const countryFeature = countries?.features?.find(c => {
-      const alpha3 = c.properties['ISO3166-1-Alpha-3'];
-      const alpha2 = ALPHA3_TO_ALPHA2[alpha3] || alpha3;
+      const alpha3 = getGeoCountryAlpha3(c);
+      const alpha2 = getGeoCountryAlpha2(c);
       return alpha2 === pin.countryCode || alpha3 === pin.countryCode;
     });
 
@@ -528,15 +533,14 @@ export default function MapScreen({ navigation }) {
             >
               {(countries?.features || [])
                 .filter(feature => {
-                  const code = feature.properties?.['ISO3166-1-Alpha-3'];
-                  return code && code !== '-99';
+                  return Boolean(getGeoCountryAlpha3(feature));
                 })
-                .sort((a, b) => (a.properties?.name || '').localeCompare(b.properties?.name || ''))
+                .sort((a, b) => getGeoCountryName(a).localeCompare(getGeoCountryName(b)))
                 .map(feature => {
-                  const code = feature.properties['ISO3166-1-Alpha-3'];
-                  const alpha2 = ALPHA3_TO_ALPHA2[code] || code;
+                  const code = getGeoCountryAlpha3(feature);
+                  const alpha2 = getGeoCountryAlpha2(feature);
                   const isVisited = visitedCountries.includes(alpha2);
-                  const sourceName = feature.properties.name || feature.properties.ADMIN || code;
+                  const sourceName = getGeoCountryName(feature) || code;
                   const name = getCountryNamePtByCode(code, sourceName);
                   return (
                     <TouchableOpacity
@@ -556,7 +560,7 @@ export default function MapScreen({ navigation }) {
                         borderColor: isVisited ? '#6C2BD9' : 'rgba(255,255,255,0.08)',
                       }}
                     >
-                      <Text style={{ fontSize: 24 }}>{getFlagEmoji(code)}</Text>
+                      <CountryFlag countryCode={code} width={28} height={19} borderRadius={3} />
                       <Text style={{ flex: 1, color: '#FFFFFF', fontSize: 15, fontWeight: '600' }}>{name}</Text>
                       {isVisited && <Ionicons name="checkmark-circle" size={20} color="#00D1C1" />}
                       <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.45)" />
@@ -645,9 +649,13 @@ export default function MapScreen({ navigation }) {
                     <Ionicons name="close" size={18} color="white" />
                   </TouchableOpacity>
 
-                  <Text style={styles.modalFlag}>
-                    {getFlagEmoji(selectedCountry?.code)}
-                  </Text>
+                  <CountryFlag
+                    countryCode={selectedCountry?.code}
+                    width={72}
+                    height={48}
+                    borderRadius={8}
+                    style={styles.modalFlag}
+                  />
 
                   <Text style={styles.modalCountryName}>{countryDetails.name}</Text>
                   <Text style={styles.modalCountrySub}>
@@ -791,9 +799,13 @@ export default function MapScreen({ navigation }) {
                           <Text style={styles.infoSectionTitle}>🌍 Países vizinhos ({borderCountries.length})</Text>
                           {borderCountries.slice(0, 3).map((border, i) => (
                             <View key={i} style={styles.neighborRow}>
-                              <Text style={{ fontSize: 20, marginRight: 8 }}>
-                                {getFlagEmoji(border.code)}
-                              </Text>
+                              <CountryFlag
+                                countryCode={border.code}
+                                width={24}
+                                height={16}
+                                borderRadius={2}
+                                style={{ marginRight: 8 }}
+                              />
                               <Text style={styles.neighborName}>{border.name}</Text>
                             </View>
                           ))}
@@ -1015,7 +1027,12 @@ export default function MapScreen({ navigation }) {
                             borderTopColor: 'rgba(255,255,255,0.06)'
                           }}
                         >
-                          <Text style={{ fontSize: 24 }}>{getFlagEmoji(country.code)}</Text>
+                          <CountryFlag
+                            countryCode={country.code}
+                            width={28}
+                            height={19}
+                            borderRadius={3}
+                          />
                           <Text style={{ fontSize: 14, color: '#F7F7F2', fontWeight: '600' }}>
                             {country.name}
                           </Text>
@@ -1310,8 +1327,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   modalFlag: {
-    fontSize: 52,
     marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
   },
   modalCountryName: {
     fontSize: 22,

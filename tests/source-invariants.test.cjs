@@ -81,6 +81,15 @@ test('map refreshes visits after uploads and centers the chart label', () => {
   assert.match(map, /justifyContent: 'center'/);
 });
 
+test('map resolves sovereign countries that arrive without ISO codes', () => {
+  const geoCountryUtils = read('src/utils/geo-country-utils.js');
+  const map = read('src/screens/map/MapScreen.js');
+  assert.match(geoCountryUtils, /France: 'FRA'/);
+  assert.match(geoCountryUtils, /Norway: 'NOR'/);
+  assert.match(map, /getGeoCountryAlpha3\(feature\)/);
+  assert.doesNotMatch(map, /countryCode === '-99'/);
+});
+
 test('follow events create notifications and connection lists are navigable', () => {
   const migration = read('supabase/migrations/20260724190000_follow_notifications.sql');
   const navigation = read('src/navigation/AppNavigator.js');
@@ -107,6 +116,7 @@ test('client source is free of console calls and centralizes remote flag images'
   const countryFlag = read('src/components/CountryFlag.js');
   assert.doesNotMatch(source, /console\.(log|debug|info|warn|error)\s*\(/);
   assert.match(countryFlag, /flagcdn\.com/);
+  assert.match(countryFlag, /cache: 'force-cache'/);
   assert.equal((source.match(/flagcdn\.com/g) || []).length, 1);
 });
 
@@ -119,6 +129,8 @@ test('explore, feed, and passport keep their responsive visual treatment', () =>
   assert.match(feed, /aspectRatio: 4 \/ 3/);
   assert.match(profile, /tagCountryMark/);
   assert.match(profile, /<CountryFlag/);
+  assert.match(explore, /maxWidth: 1100/);
+  assert.match(feed, /countryCode=\{post\.country_code\}/);
 });
 
 test('README keeps JWT verification enabled for the AI function', () => {
