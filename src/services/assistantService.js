@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
 
+const ASSISTANT_TIMEOUT_MS = 45000;
+
 export const PROMPT_TYPES = [
   { id: 'guide',     emoji: '📋', title: 'Guia Completo',
     description: 'Tudo sobre o destino em 1 página',     color: '#6C2BD9' },
@@ -16,8 +18,17 @@ export const PROMPT_TYPES = [
 ];
 
 export const askTravelAssistant = async ({ promptType, destination, userContext }) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ASSISTANT_TIMEOUT_MS);
+
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    let { data: { session } } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      const refreshResult = await supabase.auth.refreshSession();
+      session = refreshResult.data.session;
+    }
+
     if (!session?.access_token) {
       return { success: false, error: 'Sua sessão expirou. Entre novamente para usar o assistente.' };
     }
@@ -27,8 +38,16 @@ export const askTravelAssistant = async ({ promptType, destination, userContext 
       {
         body: { promptType, destination, userContext },
         headers: { Authorization: `Bearer ${session.access_token}` },
+        signal: controller.signal,
       }
     );
+
+    if (controller.signal.aborted) {
+      return {
+        success: false,
+        error: 'A resposta demorou mais que o esperado. Tente novamente.',
+      };
+    }
 
     if (error) {
       let functionError;
@@ -51,10 +70,19 @@ export const askTravelAssistant = async ({ promptType, destination, userContext 
     }
 
     return { success: true, response: data.response };
-  } catch {
+  } catch (error) {
+    if (controller.signal.aborted || error?.name === 'AbortError') {
+      return {
+        success: false,
+        error: 'A resposta demorou mais que o esperado. Tente novamente.',
+      };
+    }
+
     return {
       success: false,
       error: 'Não foi possível conectar ao assistente. Tente novamente.',
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
 };

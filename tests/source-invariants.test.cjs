@@ -22,6 +22,18 @@ test('AI function validates authentication and destination input', () => {
   assert.doesNotMatch(handler, /temperature:/);
 });
 
+test('travel assistant exposes every prompt and handles session, timeout, and inline errors', () => {
+  const assistant = read('src/services/assistantService.js');
+  const map = read('src/screens/map/MapScreen.js');
+  for (const promptType of ['guide', 'itinerary', 'budget', 'weather', 'scams', 'summary']) {
+    assert.match(assistant, new RegExp(`id: '${promptType}'`));
+  }
+  assert.match(assistant, /refreshSession/);
+  assert.match(assistant, /AbortController/);
+  assert.match(map, /handleGenerateAssistant/);
+  assert.match(map, /assistantErrorText/);
+});
+
 test('client source does not contain Google API keys', () => {
   const uploader = read('src/components/PhotoUploader.js');
   assert.doesNotMatch(uploader, /AIza[0-9A-Za-z_-]{20,}/);
@@ -79,6 +91,15 @@ test('map refreshes visits after uploads and centers the chart label', () => {
   assert.match(map, /normalizeToAlpha2/);
   assert.match(map, /circleChartLabel/);
   assert.match(map, /justifyContent: 'center'/);
+});
+
+test('web map is constrained to one world without blank polar areas', () => {
+  const map = read('src/screens/map/MapScreen.js');
+  assert.match(map, /WEB_MERCATOR_LATITUDE_LIMIT/);
+  assert.match(map, /maxBounds=\{WORLD_BOUNDS\}/);
+  assert.match(map, /maxBoundsViscosity=\{1\}/);
+  assert.match(map, /noWrap/);
+  assert.match(map, /getMinimumWorldZoom/);
 });
 
 test('map resolves sovereign countries that arrive without ISO codes', () => {

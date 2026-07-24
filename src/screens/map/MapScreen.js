@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, ActivityIndicator, Alert, Platform, TextInput, Image, KeyboardAvoidingView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, ActivityIndicator, Alert, Platform, TextInput, Image, KeyboardAvoidingView, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../utils/constants';
 import { supabase, getCurrentUser, getVisitedCountries, markCountryAsVisited, unmarkCountryAsVisited } from '../../services/supabase';
@@ -32,6 +32,15 @@ const ALPHA2_TO_ALPHA3 = Object.fromEntries(
 
 const normalizeToAlpha2 = (code) =>
   getAlpha2(code)?.toUpperCase() || code?.toUpperCase();
+
+const WEB_MERCATOR_LATITUDE_LIMIT = 85.05112878;
+const WORLD_BOUNDS = [
+  [-WEB_MERCATOR_LATITUDE_LIMIT, -180],
+  [WEB_MERCATOR_LATITUDE_LIMIT, 180],
+];
+
+const getMinimumWorldZoom = (viewportWidth) =>
+  Math.max(2, Math.ceil(Math.log2(Math.max(viewportWidth, 1) / 256)));
 
 const COUNTRIES_LIST = [
   { code: 'BR', name: 'Brasil' }, { code: 'AR', name: 'Argentina' },
@@ -89,6 +98,7 @@ if (Platform.OS === 'web') {
 
 
 export default function MapScreen({ navigation }) {
+  const { width: viewportWidth } = useWindowDimensions();
   const [countries, setCountries] = useState(null);
   const [visitedCountries, setVisitedCountries] = useState([]);
   const [selectedCountry, setSelectedCountry] = useState(null);
@@ -117,8 +127,10 @@ export default function MapScreen({ navigation }) {
   const [assistantLoading, setAssistantLoading] = useState(false);
   const [assistantStep, setAssistantStep] = useState('select');
   const [countrySuggestions, setCountrySuggestions] = useState([]);
+  const [assistantError, setAssistantError] = useState('');
 
   const visitedCountriesDataRef = useRef([]);
+  const minimumWorldZoom = getMinimumWorldZoom(viewportWidth);
 
   const { refreshTrigger } = useUpload();
 
@@ -415,6 +427,61 @@ export default function MapScreen({ navigation }) {
     }
   }, [countries, handleCountryClick]);
 
+  const handleGenerateAssistant = useCallback(async () => {
+    const destination = assistantDestination.trim();
+    if (!destination || !selectedPromptType || assistantLoading) return;
+
+    setAssistantError('');
+    setAssistantLoading(true);
+
+    try {
+      const visited = visitedCountriesDataRef.current
+        .map(country => country.country_name)
+        .filter(Boolean);
+      const wishlist = wishlistCodes.map(code => getCountryNamePtByCode(code, code));
+      const levels = [
+        { max: 2, name: 'Iniciante' },
+        { max: 5, name: 'Viajante' },
+        { max: 10, name: 'Explorador' },
+        { max: 20, name: 'Globetrotter' },
+        { max: 999, name: 'Lenda Viajante' },
+      ];
+      const level = levels.find(item => visited.length <= item.max)?.name || 'Lenda Viajante';
+      const result = await askTravelAssistant({
+        promptType: selectedPromptType.id,
+        destination,
+        userContext: {
+          visitedCountries: visited,
+          wishlistCountries: wishlist,
+          totalCountries: visited.length,
+          level,
+        },
+      });
+
+      if (!result.success) {
+        setAssistantError(result.error);
+        return;
+      }
+
+      setAssistantVisible(false);
+      navigation.navigate('AssistantResult', {
+        promptType: selectedPromptType.id,
+        destination,
+        response: result.response,
+      });
+    } catch {
+      setAssistantError('Não foi possível gerar o conteúdo agora. Tente novamente.');
+    } finally {
+      setAssistantLoading(false);
+    }
+  }, [
+    assistantDestination,
+    assistantLoading,
+    navigation,
+    selectedPromptType,
+    wishlistCodes,
+  ]);
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -439,6 +506,7 @@ export default function MapScreen({ navigation }) {
           setAssistantStep('select');
           setSelectedPromptType(null);
           setAssistantDestination('');
+          setAssistantError('');
           setAssistantVisible(true);
         }}
         style={{
@@ -571,11 +639,14 @@ export default function MapScreen({ navigation }) {
           </View>
         ) : (
         <MapContainer
+          key={`world-${minimumWorldZoom}`}
           center={[20, 0]}
-          zoom={2}
-          minZoom={2}
+          zoom={minimumWorldZoom}
+          minZoom={minimumWorldZoom}
           maxZoom={8}
-          style={{ width: '100%', height: '100%' }}
+          maxBounds={WORLD_BOUNDS}
+          maxBoundsViscosity={1}
+          style={{ width: '100%', height: '100%', backgroundColor: '#0D1326' }}
           worldCopyJump={false}
         >
           <TileLayer
@@ -583,6 +654,8 @@ export default function MapScreen({ navigation }) {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
             subdomains='abcd'
             maxZoom={20}
+            noWrap
+            bounds={WORLD_BOUNDS}
           />
           {countries && (
             <GeoJSON
@@ -938,6 +1011,7 @@ export default function MapScreen({ navigation }) {
                         onPress={() => {
                           setSelectedPromptType(type);
                           setAssistantStep('destination');
+                          setAssistantError('');
                         }}
                         style={{
                           width: '47%', backgroundColor: '#1b1f3a',
@@ -985,6 +1059,7 @@ export default function MapScreen({ navigation }) {
                     value={assistantDestination}
                     onChangeText={(text) => {
                       setAssistantDestination(text);
+                      setAssistantError('');
                       if (text.length >= 1) {
                         const filtered = COUNTRIES_LIST.filter(c =>
                           c.name.toLowerCase().includes(text.toLowerCase()) ||
@@ -1019,6 +1094,7 @@ export default function MapScreen({ navigation }) {
                           onPress={() => {
                             setAssistantDestination(country.name);
                             setCountrySuggestions([]);
+                            setAssistantError('');
                           }}
                           style={{
                             flexDirection: 'row', alignItems: 'center',
@@ -1043,65 +1119,15 @@ export default function MapScreen({ navigation }) {
                       ))}
                     </View>
                   )}
+                  {!!assistantError && (
+                    <View style={styles.assistantError}>
+                      <Ionicons name="alert-circle-outline" size={18} color="#FF8AA0" />
+                      <Text selectable style={styles.assistantErrorText}>{assistantError}</Text>
+                    </View>
+                  )}
                   <TouchableOpacity
                     disabled={!assistantDestination.trim() || assistantLoading}
-                    onPress={async () => {
-                      if (!assistantDestination.trim() || !selectedPromptType) return;
-                      setAssistantLoading(true);
-                      try {
-                        const { data: { user: authUser } } = await supabase.auth.getUser();
-                        if (!authUser) {
-                          Alert.alert(
-                            'Sessão expirada',
-                            'Entre novamente para usar o assistente de viagem.'
-                          );
-                          return;
-                        }
-
-                        const [countriesRes, wishlistRes] = await Promise.all([
-                          supabase.from('visited_countries')
-                            .select('country_name').eq('user_id', authUser.id),
-                          getWishlist(authUser.id),
-                        ]);
-                        const visited = (countriesRes.data || []).map(c => c.country_name);
-                        const wishlist = (wishlistRes.data || []).map(c => c.country_name);
-                        const levels = [
-                          { max: 2, name: 'Iniciante' },
-                          { max: 5, name: 'Viajante' },
-                          { max: 10, name: 'Explorador' },
-                          { max: 20, name: 'Globetrotter' },
-                          { max: 999, name: 'Lenda Viajante' },
-                        ];
-                        const level = levels.find(l => visited.length <= l.max)?.name || 'Lenda Viajante';
-                        const result = await askTravelAssistant({
-                          promptType: selectedPromptType.id,
-                          destination: assistantDestination.trim(),
-                          userContext: {
-                            visitedCountries: visited,
-                            wishlistCountries: wishlist,
-                            totalCountries: visited.length,
-                            level,
-                          },
-                        });
-                        if (result.success) {
-                          setAssistantVisible(false);
-                          navigation.navigate('AssistantResult', {
-                            promptType: selectedPromptType.id,
-                            destination: assistantDestination.trim(),
-                            response: result.response,
-                          });
-                        } else {
-                          Alert.alert('Erro', result.error);
-                        }
-                      } catch {
-                        Alert.alert(
-                          'Erro',
-                          'Não foi possível gerar o conteúdo agora. Tente novamente.'
-                        );
-                      } finally {
-                        setAssistantLoading(false);
-                      }
-                    }}
+                    onPress={handleGenerateAssistant}
                     style={{
                       backgroundColor: assistantDestination.trim() ? '#6C2BD9' : '#2a2f50',
                       borderRadius: 12, padding: 15,
@@ -1175,6 +1201,23 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  assistantError: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255,77,109,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,77,109,0.35)',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 12,
+  },
+  assistantErrorText: {
+    flex: 1,
+    color: '#FFB3C1',
+    fontSize: 12,
+    lineHeight: 17,
   },
   searchContainer: {
     position: 'absolute',
