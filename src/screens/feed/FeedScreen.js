@@ -12,6 +12,7 @@ import { getAlpha2 } from '../../utils/countryUtils';
 import { useUpload } from '../../context/UploadContext';
 import StarRating from '../../components/StarRating';
 import Avatar from '../../components/Avatar';
+import { notify } from '../../utils/dialogs';
 
 const timeAgo = (dateStr) => {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -78,6 +79,7 @@ export default function FeedScreen({ navigation }) {
     setCommentModal(true);
     const result = await getComments(photo.id);
     if (result.success) setComments(result.data);
+    else notify('Erro ao carregar comentários', result.error || 'Tente novamente.');
   };
 
   const submitComment = async () => {
@@ -90,7 +92,7 @@ export default function FeedScreen({ navigation }) {
       if (updated.success) setComments(updated.data);
     } else {
       console.error('Erro ao salvar comentário:', result.error);
-      alert('Erro ao salvar comentário. Tente novamente.');
+      notify('Erro ao salvar comentário', result.error || 'Tente novamente.');
     }
     setCommentLoading(false);
   };
@@ -332,6 +334,7 @@ export default function FeedScreen({ navigation }) {
                 placeholder="Adicionar comentário..."
                 placeholderTextColor="#aaa"
                 style={styles.commentTextInput}
+                maxLength={1000}
                 onSubmitEditing={submitComment}
                 returnKeyType="send"
               />

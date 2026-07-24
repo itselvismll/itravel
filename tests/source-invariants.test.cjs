@@ -48,6 +48,22 @@ test('email-confirmation signup creates profiles through a database trigger', ()
   assert.match(migration, /security definer/);
 });
 
+test('legacy users are backfilled before comments reference profiles', () => {
+  const migration = read('supabase/migrations/20260724120000_repair_profiles_and_comments.sql');
+  assert.match(migration, /from auth\.users/);
+  assert.match(migration, /references public\.profiles \(id\)/);
+  assert.match(migration, /validate constraint comments_user_id_fkey/);
+});
+
+test('profile updates create a missing profile row and comments return inserted data', () => {
+  const profileService = read('src/services/profileService.js');
+  const socialService = read('src/services/socialService.js');
+  assert.match(profileService, /\.upsert\(/);
+  assert.match(profileService, /supabase\.auth\.updateUser/);
+  assert.match(socialService, /profiles!comments_user_id_fkey/);
+  assert.match(socialService, /\.single\(\)/);
+});
+
 test('README keeps JWT verification enabled for the AI function', () => {
   const readme = read('README.md');
   assert.doesNotMatch(readme, /functions deploy travel-assistant --no-verify-jwt/);

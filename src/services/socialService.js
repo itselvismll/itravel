@@ -8,27 +8,54 @@ const countryCodeVariants = (code) => [...new Set([
 ].filter(Boolean))];
 
 export const getComments = async (photoId) => {
+  if (!photoId) return { success: false, data: [], error: 'Foto inválida.' };
+
   const { data, error } = await supabase
     .from('comments')
-    .select('id, content, created_at, user_id, profiles:user_id(username, avatar_url)')
+    .select(`
+      id,
+      content,
+      created_at,
+      user_id,
+      profiles!comments_user_id_fkey(id, username, display_name, avatar_url)
+    `)
     .eq('photo_id', photoId)
     .order('created_at', { ascending: true });
+
   return { success: !error, data: data || [], error: error?.message };
 };
 
 export const addComment = async (photoId, content) => {
+  const normalizedContent = content?.trim();
+  if (!photoId) return { success: false, error: 'Foto inválida.' };
+  if (!normalizedContent) return { success: false, error: 'Escreva um comentário.' };
+  if (normalizedContent.length > 1000) {
+    return { success: false, error: 'O comentário deve ter no máximo 1000 caracteres.' };
+  }
+
   const { data: authData } = await supabase.auth.getUser();
   const user = authData?.user;
-  if (!user) return { success: false, error: 'Usuário não autenticado' };
-  const { error } = await supabase
+  if (!user) return { success: false, error: 'Usuário não autenticado.' };
+
+  const { data, error } = await supabase
     .from('comments')
-    .insert({ photo_id: photoId, user_id: user.id, content });
-  return { success: !error, error: error?.message };
+    .insert({ photo_id: photoId, user_id: user.id, content: normalizedContent })
+    .select('id, photo_id, user_id, content, created_at')
+    .single();
+
+  if (error?.code === '23503') {
+    return {
+      success: false,
+      error: 'Seu perfil ainda não foi sincronizado. Saia e entre novamente antes de comentar.',
+    };
+  }
+
+  return { success: !error, data, error: error?.message };
 };
 
 export const deleteComment = async (commentId) => {
   const { error } = await supabase.from('comments').delete().eq('id', commentId);
-  return { success: !error };
+  return { success: !error, error: error?.message };
 };
 
 export const getTravelersByCountry = async (countryCode, currentUserId) => {
