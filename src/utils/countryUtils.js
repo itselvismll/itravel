@@ -102,6 +102,22 @@ export const COUNTRY_NAMES_PT = {
 
 export const getCountryNamePt = (name) => COUNTRY_NAMES_PT[name] || name;
 
+let regionNamesPt;
+
+export const getCountryNamePtByCode = (code, fallbackName = '') => {
+  const alpha2 = getAlpha2(code);
+  if (!alpha2 || alpha2.length !== 2) {
+    return getCountryNamePt(fallbackName || code);
+  }
+
+  try {
+    regionNamesPt ||= new Intl.DisplayNames(['pt-BR'], { type: 'region' });
+    return regionNamesPt.of(alpha2.toUpperCase()) || getCountryNamePt(fallbackName);
+  } catch {
+    return getCountryNamePt(fallbackName || code);
+  }
+};
+
 export const getAlpha3 = (input) => {
   if (!input) return null;
   const code = input.trim();

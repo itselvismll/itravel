@@ -43,6 +43,7 @@ export default function PhotoUploader({
   const [review, setReview] = useState('');
   const fileInputRef = useRef(null);
   const searchTimerRef = useRef(null);
+  const citySearchAbortRef = useRef(null);
 
   // Valores efetivos: fluxo do mapa tem prioridade sobre prefill do GPS
   // prefilledCountryCode vem como alpha-2 do GPS (ex: 'BR') — converte para alpha-3 (ex: 'BRA')
@@ -61,19 +62,10 @@ export default function PhotoUploader({
     };
   };
 
-  console.log('📦 PhotoUploader props recebidas:', {
-    prefilledCity,
-    prefilledCountryName,
-    prefilledCountryCode,
-    countryCode,
-  });
-
   // Inicializar cidade a partir do GPS quando não há countryCode (fluxo global)
   useEffect(() => {
-    console.log('📦 useEffect prefill disparou — prefilledCity:', prefilledCity, '| countryCode:', countryCode);
     const detectedCity = getPrefilledCity();
     if (detectedCity) {
-      console.log('📦 Aplicando prefill - city:', prefilledCity, '| country:', prefilledCountryName);
       setCitySearch(prefilledCity);
       setSelectedCity(detectedCity);
     }
@@ -87,42 +79,65 @@ export default function PhotoUploader({
 
   useEffect(() => () => {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    citySearchAbortRef.current?.abort();
     if (IS_WEB && preview?.startsWith('blob:')) URL.revokeObjectURL(preview);
   }, [preview]);
 
   const searchCities = async (query) => {
     if (query.length < 3) {
+      citySearchAbortRef.current?.abort();
       setCitySuggestions([]);
+      setLoadingCities(false);
       return;
     }
+
+    citySearchAbortRef.current?.abort();
+    const controller = new AbortController();
+    citySearchAbortRef.current = controller;
     setLoadingCities(true);
+
     try {
-      const searchQuery = effectiveCountryNameEn ? `${query} ${effectiveCountryNameEn}` : query;
+      const countryQuery = effectiveCountryNameEn || effectiveCountryName;
+      const searchQuery = countryQuery ? `${query}, ${countryQuery}` : query;
       const response = await fetch(
-        `https://photon.komoot.io/api/?q=${encodeURIComponent(searchQuery)}&limit=8`
+        `https://photon.komoot.io/api/?q=${encodeURIComponent(searchQuery)}&limit=12&lang=pt`,
+        { signal: controller.signal }
       );
       if (!response.ok) throw new Error(`Busca de cidades indisponível (${response.status})`);
       const data = await response.json();
+      const seen = new Set();
       const cities = (data.features || [])
         .filter((feature) => {
-          if (!['city', 'town', 'village'].includes(feature.properties?.type)) return false;
+          if (!['city', 'town', 'village', 'locality', 'municipality']
+            .includes(feature.properties?.type)) return false;
           const featureCountryCode = feature.properties?.countrycode?.toLowerCase();
           return !effectiveCountryAlpha2 ||
             !featureCountryCode ||
             featureCountryCode === effectiveCountryAlpha2;
         })
-        .map(f => ({
-          name: `${f.properties.name}, ${f.properties.country}`,
-          shortName: f.properties.name,
-          country: f.properties.country,
-          lat: f.geometry.coordinates[1],
-          lng: f.geometry.coordinates[0],
-        }));
+        .map((feature) => {
+          const shortName = feature.properties.name;
+          const country = feature.properties.country || effectiveCountryName;
+          const key = `${shortName}|${country}`.toLocaleLowerCase('pt-BR');
+          if (!shortName || seen.has(key)) return null;
+          seen.add(key);
+          return {
+            name: `${shortName}, ${country}`,
+            shortName,
+            country,
+            lat: feature.geometry.coordinates[1],
+            lng: feature.geometry.coordinates[0],
+          };
+        })
+        .filter(Boolean)
+        .slice(0, 8);
       setCitySuggestions(cities);
     } catch (error) {
-      console.error('Erro ao buscar cidades:', error);
+      if (error?.name !== 'AbortError') setCitySuggestions([]);
     } finally {
-      setLoadingCities(false);
+      if (citySearchAbortRef.current === controller) {
+        setLoadingCities(false);
+      }
     }
   };
 
@@ -171,8 +186,7 @@ export default function PhotoUploader({
       setSelectedFile(asset);
       setUploadSuccess(false);
       setPreview(asset.uri);
-    } catch (error) {
-      console.error('Erro ao selecionar imagem:', error);
+    } catch {
       Alert.alert('Erro', 'Não foi possível abrir sua biblioteca de fotos.');
     }
   };
@@ -205,8 +219,6 @@ export default function PhotoUploader({
 
     setUploading(true);
 
-    console.log('🌍 country_code final para salvar:', effectiveCountryCode);
-
     const result = await uploadPhoto(userId, effectiveCountryCode, effectiveCountryName, selectedFile, caption, {
       city: selectedCity?.shortName || null,
       city_lat: selectedCity?.lat || null,
@@ -230,7 +242,6 @@ export default function PhotoUploader({
       }
 
       if (!visitResult.success) {
-        console.error('Erro ao relacionar foto ao país:', visitResult.error);
         Alert.alert(
           'Foto enviada',
           'A foto foi salva, mas não foi possível atualizar o país visitado agora.'

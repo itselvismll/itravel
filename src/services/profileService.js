@@ -91,8 +91,6 @@ export const uploadAvatar = async (userId, imageUri) => {
     const timestamp = Date.now();
     const filePath = `${userId}_${timestamp}.${ext}`;
 
-    console.log('📸 Uploading avatar:', { filePath, mimeType, size: blob.size });
-
     const { error: uploadError } = await supabase.storage
       .from('avatars')
       .upload(filePath, blob, {
@@ -101,7 +99,6 @@ export const uploadAvatar = async (userId, imageUri) => {
       });
 
     if (uploadError) {
-      console.error('❌ Upload error:', uploadError);
       return { success: false, error: uploadError.message };
     }
 
@@ -110,14 +107,12 @@ export const uploadAvatar = async (userId, imageUri) => {
       .getPublicUrl(filePath);
 
     const avatarUrl = data.publicUrl;
-    console.log('✅ Avatar URL:', avatarUrl);
 
     const updateResult = await updateProfile(userId, { avatar_url: avatarUrl });
     if (!updateResult.success) return updateResult;
 
     return { success: true, avatarUrl };
   } catch (e) {
-    console.error('❌ Avatar upload exception:', e);
     return { success: false, error: e.message };
   }
 };

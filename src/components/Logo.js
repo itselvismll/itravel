@@ -5,7 +5,8 @@ export default function Logo({ size = 80 }) {
   return (
     <Image
       source={require('../../assets/journi_simbolo.png')}
-      style={{ width: size, height: size, resizeMode: 'contain' }}
+      style={{ width: size, height: size }}
+      resizeMode="contain"
     />
   );
 }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity,
-  StyleSheet, ActivityIndicator, Modal, Dimensions,
+  StyleSheet, ActivityIndicator, Modal, Dimensions, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../services/supabase';
@@ -68,23 +68,28 @@ export default function PublicProfileScreen({ route, navigation }) {
           followingRes.success && Array.isArray(followingRes.data) && followingRes.data.includes(userId)
         );
       }
-    } catch (e) {
-      console.error('Erro ao carregar perfil público:', e);
+    } catch {
+      setProfile(null);
     }
     setLoading(false);
   };
 
   const toggleFollow = async () => {
     if (!currentUserId) return;
-    if (isFollowing) {
-      await unfollowUser(currentUserId, userId);
-      setIsFollowing(false);
-      setFollowCounts(prev => ({ ...prev, followers: Math.max(0, prev.followers - 1) }));
-    } else {
-      await followUser(currentUserId, userId);
-      setIsFollowing(true);
-      setFollowCounts(prev => ({ ...prev, followers: prev.followers + 1 }));
+    const result = isFollowing
+      ? await unfollowUser(currentUserId, userId)
+      : await followUser(currentUserId, userId);
+
+    if (!result.success) {
+      Alert.alert('Erro', result.error || 'Não foi possível atualizar este perfil.');
+      return;
     }
+
+    setIsFollowing(!isFollowing);
+    setFollowCounts(prev => ({
+      ...prev,
+      followers: Math.max(0, prev.followers + (isFollowing ? -1 : 1)),
+    }));
   };
 
   if (loading) {
@@ -143,10 +148,27 @@ export default function PublicProfileScreen({ route, navigation }) {
               <Text style={styles.statLabel}>Fotos</Text>
             </View>
             <View style={styles.statDivider} />
-            <View style={styles.statItem}>
+            <TouchableOpacity
+              style={styles.statItem}
+              onPress={() => navigation.navigate('Connections', {
+                userId,
+                mode: 'followers',
+              })}
+            >
               <Text style={styles.statValue}>{followCounts.followers}</Text>
               <Text style={styles.statLabel}>Seguidores</Text>
-            </View>
+            </TouchableOpacity>
+            <View style={styles.statDivider} />
+            <TouchableOpacity
+              style={styles.statItem}
+              onPress={() => navigation.navigate('Connections', {
+                userId,
+                mode: 'following',
+              })}
+            >
+              <Text style={styles.statValue}>{followCounts.following}</Text>
+              <Text style={styles.statLabel}>Seguindo</Text>
+            </TouchableOpacity>
           </View>
 
           {!isOwnProfile && (

@@ -11,6 +11,7 @@ import {
   StyleSheet,
   Dimensions,
   Platform,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES } from '../utils/constants';
@@ -87,12 +88,8 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
     if (!scrollToCity || Platform.OS !== 'web') return;
 
     setTimeout(() => {
-      console.log('🔍 Tentando scroll para:', scrollToCity);
-
       const elementId = `city-section-${scrollToCity.replace(/\s/g, '-')}`;
       const element = document.getElementById(elementId);
-
-      console.log('🔍 Elemento encontrado:', element);
 
       if (element) {
         element.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -204,7 +201,7 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
         >
           <Image
             source={{ uri: item.photo_url }}
-            style={[styles.photoImage, { pointerEvents: 'none' }]}
+            style={styles.photoImage}
             resizeMode="cover"
           />
         </TouchableOpacity>
@@ -324,8 +321,12 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
           photos.length === 0 && styles.listContentEmpty,
         ]}
         showsVerticalScrollIndicator={false}
-        onRefresh={() => loadPhotos(true)}
-        refreshing={refreshing}
+        refreshControl={(
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadPhotos(true)}
+          />
+        )}
       >
         {photos.length === 0 ? (
           <View style={styles.emptyContainer}>

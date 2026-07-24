@@ -17,8 +17,9 @@ test('AI function validates authentication and destination input', () => {
   const handler = read('supabase/functions/travel-assistant/index.ts');
   assert.match(handler, /Authorization/);
   assert.match(handler, /Destino inv/);
-  assert.match(handler, /gemini-3\.5-flash/);
+  assert.match(handler, /gemini-3\.6-flash/);
   assert.doesNotMatch(handler, /gemini-1\.5-flash/);
+  assert.doesNotMatch(handler, /temperature:/);
 });
 
 test('client source does not contain Google API keys', () => {
@@ -78,6 +79,33 @@ test('map refreshes visits after uploads and centers the chart label', () => {
   assert.match(map, /normalizeToAlpha2/);
   assert.match(map, /circleChartLabel/);
   assert.match(map, /justifyContent: 'center'/);
+});
+
+test('follow events create notifications and connection lists are navigable', () => {
+  const migration = read('supabase/migrations/20260724190000_follow_notifications.sql');
+  const navigation = read('src/navigation/AppNavigator.js');
+  const connections = read('src/screens/profile/ConnectionsScreen.js');
+  assert.match(migration, /after insert on public\.followers/);
+  assert.match(migration, /insert into public\.notifications/);
+  assert.match(navigation, /name="Connections"/);
+  assert.match(connections, /getFollowerProfiles/);
+  assert.match(connections, /getFollowingProfiles/);
+});
+
+test('client source is free of console calls and remote flag images', () => {
+  const sourceRoot = path.join(root, 'src');
+  const files = [];
+  const visit = (directory) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(absolute);
+      else if (/\.[jt]sx?$/.test(entry.name)) files.push(absolute);
+    }
+  };
+  visit(sourceRoot);
+  const source = files.map(file => fs.readFileSync(file, 'utf8')).join('\n');
+  assert.doesNotMatch(source, /console\.(log|debug|info|warn|error)\s*\(/);
+  assert.doesNotMatch(source, /flagcdn\.com/);
 });
 
 test('README keeps JWT verification enabled for the AI function', () => {

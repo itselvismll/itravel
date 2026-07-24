@@ -32,13 +32,38 @@ export const getFollowingProfiles = async (userId) => {
     .from('followers')
     .select('following_id')
     .eq('follower_id', userId);
-  if (error || !follows?.length) return { success: true, data: [] };
+  if (error) return { success: false, data: [], error: error.message };
+  if (!follows?.length) return { success: true, data: [] };
   const ids = follows.map(f => f.following_id);
-  const { data: profiles } = await supabase
+  const { data: profiles, error: profilesError } = await supabase
     .from('profiles')
     .select('id, username, display_name, avatar_url')
     .in('id', ids);
-  return { success: true, data: profiles || [] };
+  return {
+    success: !profilesError,
+    data: profiles || [],
+    error: profilesError?.message,
+  };
+};
+
+export const getFollowerProfiles = async (userId) => {
+  const { data: follows, error } = await supabase
+    .from('followers')
+    .select('follower_id')
+    .eq('following_id', userId);
+  if (error) return { success: false, data: [], error: error.message };
+  if (!follows?.length) return { success: true, data: [] };
+
+  const ids = follows.map(f => f.follower_id);
+  const { data: profiles, error: profilesError } = await supabase
+    .from('profiles')
+    .select('id, username, display_name, avatar_url')
+    .in('id', ids);
+  return {
+    success: !profilesError,
+    data: profiles || [],
+    error: profilesError?.message,
+  };
 };
 
 export const getFeedPhotos = async (userId) => {

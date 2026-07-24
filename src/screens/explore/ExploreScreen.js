@@ -1,49 +1,22 @@
 ﻿import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Image, TextInput,
-  StyleSheet, ActivityIndicator, Modal, FlatList
+  StyleSheet, ActivityIndicator, Modal, FlatList, Alert, Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../services/supabase';
 import { getCurrentUser } from '../../services/supabase';
-import { getAlpha2, ALPHA3_TO_ALPHA2, getCountryNamePt } from '../../utils/countryUtils';
+import {
+  ALPHA3_TO_ALPHA2,
+  getCountryNamePtByCode,
+} from '../../utils/countryUtils';
 import { getFlagEmoji } from '../../utils/flagUtils';
 import { followUser, unfollowUser, getFollowing, getRecentPublicPhotos, getUsersToDiscover } from '../../services/followService';
 import { searchTravelers, getSuggestedTravelers, getTravelersByCountry, addToWishlist, removeFromWishlist, isInWishlist } from '../../services/socialService';
-import { logger } from '../../utils/logger';
 import StarRating from '../../components/StarRating';
 import Avatar from '../../components/Avatar';
 import { useUpload } from '../../context/UploadContext';
-
-const ALPHA3_TO_NAMEEN = {
-  'BRA':'Brazil','USA':'United States of America','ARG':'Argentina',
-  'PRT':'Portugal','ESP':'Spain','FRA':'France','ITA':'Italy',
-  'DEU':'Germany','GBR':'United Kingdom','JPN':'Japan','CHN':'China',
-  'MEX':'Mexico','COL':'Colombia','CHL':'Chile','URY':'Uruguay',
-  'BOL':'Bolivia','PER':'Peru','VEN':'Venezuela','ECU':'Ecuador',
-  'PRY':'Paraguay','CAN':'Canada','AUS':'Australia','NZL':'New Zealand',
-  'ZAF':'South Africa','EGY':'Egypt','MAR':'Morocco','NGA':'Nigeria',
-  'KEN':'Kenya','THA':'Thailand','VNM':'Vietnam','IDN':'Indonesia',
-  'MYS':'Malaysia','SGP':'Singapore','IND':'India','PAK':'Pakistan',
-  'RUS':'Russia','UKR':'Ukraine','POL':'Poland','NLD':'Netherlands',
-  'BEL':'Belgium','CHE':'Switzerland','AUT':'Austria','SWE':'Sweden',
-  'NOR':'Norway','DNK':'Denmark','FIN':'Finland','GRC':'Greece',
-  'TUR':'Türkiye','ISR':'Israel','SAU':'Saudi Arabia','ARE':'United Arab Emirates',
-  'QAT':'Qatar','KOR':'South Korea','TWN':'Taiwan','HKG':'Hong Kong',
-  'CUB':'Cuba','DOM':'Dominican Republic','GTM':'Guatemala',
-  'CRI':'Costa Rica','PAN':'Panama','CZE':'Czechia','HUN':'Hungary',
-  'ROU':'Romania','BGR':'Bulgaria','HRV':'Croatia','SRB':'Serbia',
-  'SVK':'Slovakia','SVN':'Slovenia','PHL':'Philippines','BGD':'Bangladesh',
-  'ETH':'Ethiopia','DZA':'Algeria','LBY':'Libya','TUN':'Tunisia',
-  'SDN':'Sudan','SOM':'Somalia','GHA':'Ghana','TZA':'Tanzania',
-  'UGA':'Uganda','MOZ':'Mozambique','CMR':'Cameroon','ALB':'Albania',
-  'BIH':'Bosnia and Herzegovina','MNE':'Montenegro','MDA':'Moldova',
-  'BLR':'Belarus','LTU':'Lithuania','LVA':'Latvia','EST':'Estonia',
-  'GEO':'Georgia','ARM':'Armenia','AZE':'Azerbaijan','IRL':'Ireland',
-  'JAM':'Jamaica','IRN':'Iran','IRQ':'Iraq','SYR':'Syria','JOR':'Jordan',
-  'KWT':'Kuwait','AFG':'Afghanistan','NPL':'Nepal','LKA':'Sri Lanka',
-  'MMR':'Myanmar','KHM':'Cambodia','LAO':'Laos','PRK':'North Korea',
-};
+import { COUNTRIES_STATIC } from '../../data/countriesStaticData';
 
 const MOCK_RECENT_PHOTOS = [
   {
@@ -190,29 +163,16 @@ export default function ExploreScreen({ navigation }) {
   };
 
   const buildFallbackCountries = () =>
-    Object.entries(ALPHA3_TO_NAMEEN)
-      .map(([code, nameEn]) => ({ code, nameEn, name: getCountryNamePt(nameEn) }))
+    Object.entries(COUNTRIES_STATIC)
+      .map(([code, country]) => ({
+        code,
+        nameEn: country.name,
+        name: getCountryNamePtByCode(code, country.name),
+      }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
-  const loadAllCountries = async () => {
-    try {
-      const response = await fetch(
-        'https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson'
-      );
-      const geoData = await response.json();
-      const countries = geoData.features
-        .filter(f => f.properties?.ADMIN && f.properties?.['ISO3166-1-Alpha-3'])
-        .map(f => ({
-          nameEn: f.properties.ADMIN,
-          name: getCountryNamePt(f.properties.ADMIN),
-          code: f.properties['ISO3166-1-Alpha-3'],
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name));
-      setAllCountries(countries.length > 0 ? countries : buildFallbackCountries());
-    } catch (e) {
-      console.error('Erro ao carregar países, usando fallback local:', e);
-      setAllCountries(buildFallbackCountries());
-    }
+  const loadAllCountries = () => {
+    setAllCountries(buildFallbackCountries());
   };
 
   const loadPopularCountries = async () => {
@@ -291,18 +251,23 @@ export default function ExploreScreen({ navigation }) {
 
   const handleFollowToggle = async (userId) => {
     const isFollowing = following.includes(userId);
-    if (isFollowing) {
-      setFollowing(prev => prev.filter(id => id !== userId));
-    } else {
-      setFollowing(prev => [...prev, userId]);
-    }
     const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
-    if (!isValidUUID || !currentUser) return;
-    if (isFollowing) {
-      await unfollowUser(currentUser.id, userId);
-    } else {
-      await followUser(currentUser.id, userId);
+    if (!isValidUUID || !currentUser) {
+      return;
     }
+
+    const result = isFollowing
+      ? await unfollowUser(currentUser.id, userId)
+      : await followUser(currentUser.id, userId);
+
+    if (!result.success) {
+      Alert.alert('Erro', result.error || 'Não foi possível atualizar este perfil.');
+      return;
+    }
+
+    setFollowing(prev => isFollowing
+      ? prev.filter(id => id !== userId)
+      : [...prev, userId]);
   };
 
   useEffect(() => {
@@ -361,7 +326,6 @@ export default function ExploreScreen({ navigation }) {
     }
   };
 
-  logger.log('🔍 searchQuery:', searchQuery, '| allCountries:', allCountries.length);
   const searchResults = searchQuery.length >= 2
     ? allCountries.filter(c =>
         c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -428,10 +392,7 @@ export default function ExploreScreen({ navigation }) {
                   setSearchQuery('');
                 }}
               >
-                <Image
-                  source={{ uri: `https://flagcdn.com/w40/${getAlpha2(country.code)}.png` }}
-                  style={{ width: 22, height: 15, borderRadius: 2 }}
-                />
+                <Text style={{ fontSize: 22 }}>{getFlagEmoji(country.code)}</Text>
                 <Text style={styles.searchResultText}>{country.name}</Text>
                 <Ionicons name="chevron-forward" size={13} color="rgba(255,255,255,0.3)" />
               </TouchableOpacity>
@@ -506,7 +467,7 @@ export default function ExploreScreen({ navigation }) {
                         {getFlagEmoji(country.country_code)}
                       </Text>
                       <Text style={styles.destName} numberOfLines={1}>
-                        {getCountryNamePt(country.country_name)}
+                        {getCountryNamePtByCode(country.country_code, country.country_name)}
                       </Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={styles.destCount}>
@@ -547,7 +508,7 @@ export default function ExploreScreen({ navigation }) {
                         {getFlagEmoji(country.country_code)}
                       </Text>
                       <Text style={styles.destName} numberOfLines={1}>
-                        {getCountryNamePt(country.country_name)}
+                        {getCountryNamePtByCode(country.country_code, country.country_name)}
                       </Text>
                       <Text style={{ color: '#9aa0c6', fontSize: 11 }}>
                         {country.travelerCount} {country.travelerCount === 1 ? 'viajante' : 'viajantes'}
@@ -663,13 +624,17 @@ export default function ExploreScreen({ navigation }) {
             </TouchableOpacity>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               {selectedCountry && (
-                <Image
-                  source={{ uri: `https://flagcdn.com/w40/${getAlpha2(selectedCountry.country_code)}.png` }}
-                  style={{ width: 26, height: 18, borderRadius: 2 }}
-                />
+                <Text style={{ fontSize: 25 }}>
+                  {getFlagEmoji(selectedCountry.country_code)}
+                </Text>
               )}
               <Text style={styles.modalHeaderTitle}>
-                {selectedCountry ? getCountryNamePt(selectedCountry.country_name) : ''}
+                {selectedCountry
+                  ? getCountryNamePtByCode(
+                      selectedCountry.country_code,
+                      selectedCountry.country_name
+                    )
+                  : ''}
               </Text>
             </View>
             <TouchableOpacity onPress={toggleCountryWishlist} style={{ padding: 4 }}>
@@ -771,13 +736,14 @@ export default function ExploreScreen({ navigation }) {
             </TouchableOpacity>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               {destCountry && (
-                <Image
-                  source={{ uri: `https://flagcdn.com/w40/${getAlpha2(destCountry.country_code)}.png` }}
-                  style={{ width: 26, height: 18, borderRadius: 2 }}
-                />
+                <Text style={{ fontSize: 25 }}>
+                  {getFlagEmoji(destCountry.country_code)}
+                </Text>
               )}
               <Text style={styles.modalHeaderTitle}>
-                {destCountry ? getCountryNamePt(destCountry.country_name) : ''}
+                {destCountry
+                  ? getCountryNamePtByCode(destCountry.country_code, destCountry.country_name)
+                  : ''}
               </Text>
             </View>
             <TouchableOpacity onPress={toggleDestWishlist} style={{ padding: 4 }}>
@@ -961,7 +927,24 @@ const styles = StyleSheet.create({
   recentLocationName: { fontSize: 12, fontWeight: '600', color: '#6C2BD9', flex: 1 },
   recentCity: { fontSize: 11, color: '#aaa' },
   recentReview: { fontSize: 12, color: '#666', fontStyle: 'italic', lineHeight: 18 },
-  suggestedCard: { width: 120, backgroundColor: 'white', borderRadius: 12, padding: 12, alignItems: 'center', gap: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 },
+  suggestedCard: {
+    width: 120,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'center',
+    gap: 6,
+    ...Platform.select({
+      web: { boxShadow: '0 1px 4px rgba(0,0,0,0.08)' },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.08,
+        shadowRadius: 4,
+        elevation: 2,
+      },
+    }),
+  },
   suggestedName: { fontSize: 12, fontWeight: '700', color: '#0D1326', textAlign: 'center' },
   suggestedMeta: { fontSize: 10, color: '#aaa', textAlign: 'center' },
 });

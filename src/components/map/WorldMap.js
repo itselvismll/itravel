@@ -18,7 +18,6 @@ export default function WorldMap({ onCountryPress }) {
   const loadMapData = async () => {
     const data = await loadWorldCountries();
     if (data && data.features) {
-      console.log('Países carregados:', data.features.length);
       setCountries(data.features);
     }
     setLoading(false);
@@ -50,7 +49,6 @@ export default function WorldMap({ onCountryPress }) {
     const countryCode = country.properties['ISO3166-1-Alpha-3'];
     const countryName = country.properties.name;
     
-    console.log('País clicado:', countryName, countryCode);
     setSelectedCountry(countryCode);
     
     if (onCountryPress) {

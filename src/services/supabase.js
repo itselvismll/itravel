@@ -35,7 +35,6 @@ export async function signUp(email, password, username, fullName) {
 
     return { success: true, user: authData.user };
   } catch (error) {
-    console.error('Erro no cadastro:', error);
     return { success: false, error: error.message };
   }
 }
@@ -52,7 +51,6 @@ export async function signIn(email, password) {
 
     return { success: true, user: data.user };
   } catch (error) {
-    console.error('Erro no login:', error);
     return { success: false, error: error.message };
   }
 }
@@ -64,7 +62,6 @@ export async function signOut() {
     if (error) throw error;
     return { success: true };
   } catch (error) {
-    console.error('Erro no logout:', error);
     return { success: false, error: error.message };
   }
 }
@@ -74,8 +71,7 @@ export async function getCurrentUser() {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     return user;
-  } catch (error) {
-    console.error('Erro ao buscar usuário:', error);
+  } catch {
     return null;
   }
 }
@@ -91,8 +87,7 @@ export async function getUserProfile(userId) {
 
     if (error) throw error;
     return data;
-  } catch (error) {
-    console.error('Erro ao buscar perfil:', error);
+  } catch {
     return null;
   }
 }
@@ -109,7 +104,6 @@ export async function getVisitedCountries(userId) {
     if (error) throw error;
     return { success: true, data };
   } catch (error) {
-    console.error('Erro ao buscar países visitados:', error);
     return { success: false, error: error.message, data: [] };
   }
 }
@@ -132,7 +126,6 @@ export async function markCountryAsVisited(userId, countryCode, countryName) {
     if (error) throw error;
     return { success: true, data: data[0] };
   } catch (error) {
-    console.error('Erro ao marcar país:', error);
     return { success: false, error: error.message };
   }
 }
@@ -154,7 +147,6 @@ export async function unmarkCountryAsVisited(userId, countryCode) {
     if (error) throw error;
     return { success: true };
   } catch (error) {
-    console.error('Erro ao desmarcar país:', error);
     return { success: false, error: error.message };
   }
 }

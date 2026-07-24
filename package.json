@@ -43,6 +43,7 @@
   },
   "private": true,
   "devDependencies": {
+    "@types/react": "~19.2.10",
     "typescript": "~5.9.2"
   }
 }

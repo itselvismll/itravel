@@ -7,7 +7,11 @@ import { supabase, getCurrentUser, getVisitedCountries, markCountryAsVisited, un
 import { isInWishlist, addToWishlist, removeFromWishlist, getWishlist } from '../../services/socialService';
 import { getCountryInfo, formatPopulation, formatArea, getBorderCountries } from '../../services/countriesApi';
 import { getCountryCulturalData } from '../../data/countriesData';
-import { ALPHA3_TO_ALPHA2, getAlpha2, getCountryNamePt } from '../../utils/countryUtils';
+import {
+  ALPHA3_TO_ALPHA2,
+  getAlpha2,
+  getCountryNamePtByCode,
+} from '../../utils/countryUtils';
 import { getFlagEmoji } from '../../utils/flagUtils';
 import { PROMPT_TYPES, askTravelAssistant } from '../../services/assistantService';
 import PhotoGallery from '../../components/PhotoGallery';
@@ -111,8 +115,6 @@ export default function MapScreen({ navigation }) {
 
   const visitedCountriesDataRef = useRef([]);
 
-  console.log('RENDER step:', assistantStep, 'loading:', assistantLoading, 'dest:', assistantDestination);
-
   const { refreshTrigger } = useUpload();
 
   useEffect(() => {
@@ -121,10 +123,7 @@ export default function MapScreen({ navigation }) {
     const leaflet = require('leaflet');
     const L = leaflet.default || leaflet;
 
-    console.log('📍 L dentro do useEffect:', typeof L, L?.version);
-
     if (!L || !L.divIcon) {
-      console.error('❌ L.divIcon não disponível');
       return;
     }
 
@@ -145,9 +144,8 @@ export default function MapScreen({ navigation }) {
         popupAnchor: [0, -32],
       });
       setCityIcon(icon);
-      console.log('✅ cityIcon criado com sucesso!');
-    } catch (e) {
-      console.error('❌ Erro ao criar cityIcon:', e);
+    } catch {
+      setCityIcon(null);
     }
   }, []);
 
@@ -183,8 +181,8 @@ export default function MapScreen({ navigation }) {
             });
             setWishlistCodes(codes);
           }
-        } catch (error) {
-          console.error('Erro ao carregar wishlist:', error);
+        } catch {
+          setWishlistCodes([]);
         }
       };
       loadWishlist();
@@ -232,8 +230,7 @@ export default function MapScreen({ navigation }) {
       const geoData = await getWorldGeoData();
       setCountries(geoData);
 
-    } catch (error) {
-      console.error('❌ Erro ao carregar dados:', error);
+    } catch {
       Alert.alert('Erro', 'Não foi possível carregar o mapa');
     } finally {
       setLoading(false);
@@ -266,39 +263,12 @@ export default function MapScreen({ navigation }) {
     }
   };
 
-  const loadCityPins = useCallback(async () => {
-    if (!user) return;
-    const { data: photosWithCity, error } = await supabase
-      .from('country_photos')
-      .select('city, city_lat, city_lng, photo_url, country_code')
-      .eq('user_id', user.id)
-      .not('city_lat', 'is', null);
-
-    console.log('📍 photosWithCity:', photosWithCity?.length, error?.message);
-
-    if (photosWithCity) {
-      const citiesMap = {};
-      photosWithCity.forEach(photo => {
-        const key = `${normalizeToAlpha2(photo.country_code)}:${photo.city}`;
-        if (!citiesMap[key]) {
-          citiesMap[key] = {
-            city: photo.city,
-            lat: photo.city_lat,
-            lng: photo.city_lng,
-            countryCode: normalizeToAlpha2(photo.country_code),
-            photos: [],
-          };
-        }
-        citiesMap[key].photos.push(photo.photo_url);
-      });
-      console.log('📍 pins criados:', Object.values(citiesMap).length);
-      setCityPins(Object.values(citiesMap));
-    }
-  }, [user]);
-
   const handleCountryClick = useCallback(async (feature) => {
     const countryCode = feature.properties['ISO3166-1-Alpha-3'];
-    const countryName = feature.properties.name;
+    const countryName = getCountryNamePtByCode(
+      countryCode,
+      feature.properties.name
+    );
 
     if (!countryCode || countryCode === '-99') {
       Alert.alert('País não identificado', 'Não foi possível identificar este país.');
@@ -331,8 +301,8 @@ export default function MapScreen({ navigation }) {
       setCountryDetails({ ...apiData, cultural: culturalData });
       setBorderCountries(borders);
       if (topResult.success) setTopPlaces(topResult.data);
-    } catch (error) {
-      console.error('❌ Erro ao buscar detalhes:', error);
+    } catch {
+      Alert.alert('Erro', 'Não foi possível carregar os detalhes deste país.');
     } finally {
       setModalLoading(false);
     }
@@ -358,8 +328,7 @@ export default function MapScreen({ navigation }) {
           Alert.alert('🎉 Marcado!', `${selectedCountry.name} foi adicionado aos países visitados!`);
         }
       }
-    } catch (error) {
-      console.error('❌ Erro ao atualizar país:', error);
+    } catch {
       Alert.alert('Erro', 'Não foi possível atualizar o país');
     }
   };
@@ -390,9 +359,6 @@ export default function MapScreen({ navigation }) {
   const totalCountries = 195;
   const visitedPercentage = totalCountries > 0 ? (visitedCount / totalCountries) * 100 : 0;
   const notVisitedCount = totalCountries - visitedCount;
-  console.log('📊 visitedCountries:', visitedCountries);
-  console.log('📊 visitedCount:', visitedCount);
-
   const geoJsonStyle = (feature) => {
     const code = feature.properties['ISO3166-1-Alpha-3'];
     const alpha2 = ALPHA3_TO_ALPHA2[code] || code;
@@ -476,8 +442,16 @@ export default function MapScreen({ navigation }) {
           backgroundColor: 'rgba(13,19,38,0.92)',
           borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12,
           borderWidth: 1, borderColor: 'rgba(108,43,217,0.4)',
-          shadowColor: '#6C2BD9', shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.3, shadowRadius: 8, elevation: 5,
+          ...Platform.select({
+            web: { boxShadow: '0 2px 8px rgba(108,43,217,0.3)' },
+            default: {
+              shadowColor: '#6C2BD9',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.3,
+              shadowRadius: 8,
+              elevation: 5,
+            },
+          }),
         }}
       >
         <Ionicons name="sparkles-outline" size={18} color="#6C2BD9" />
@@ -530,7 +504,8 @@ export default function MapScreen({ navigation }) {
       }}>
         <Image
           source={require('../../../assets/journi_simbolo.png')}
-          style={{ width: 28, height: 28, resizeMode: 'contain' }}
+          style={{ width: 28, height: 28 }}
+          resizeMode="contain"
         />
         <Text style={{ fontSize: 16, fontWeight: '900', color: 'white', letterSpacing: -0.5 }}>
           Journi
@@ -562,7 +537,7 @@ export default function MapScreen({ navigation }) {
                   const alpha2 = ALPHA3_TO_ALPHA2[code] || code;
                   const isVisited = visitedCountries.includes(alpha2);
                   const sourceName = feature.properties.name || feature.properties.ADMIN || code;
-                  const name = getCountryNamePt(sourceName);
+                  const name = getCountryNamePtByCode(code, sourceName);
                   return (
                     <TouchableOpacity
                       key={code}
@@ -670,14 +645,9 @@ export default function MapScreen({ navigation }) {
                     <Ionicons name="close" size={18} color="white" />
                   </TouchableOpacity>
 
-                  {countryDetails.flag ? (
-                    <Image
-                      source={{ uri: countryDetails.flag }}
-                      style={{ width: 72, height: 48, resizeMode: 'cover', borderRadius: 6, marginBottom: 8 }}
-                    />
-                  ) : (
-                    <Text style={styles.modalFlag}>🌍</Text>
-                  )}
+                  <Text style={styles.modalFlag}>
+                    {getFlagEmoji(selectedCountry?.code)}
+                  </Text>
 
                   <Text style={styles.modalCountryName}>{countryDetails.name}</Text>
                   <Text style={styles.modalCountrySub}>
@@ -821,12 +791,9 @@ export default function MapScreen({ navigation }) {
                           <Text style={styles.infoSectionTitle}>🌍 Países vizinhos ({borderCountries.length})</Text>
                           {borderCountries.slice(0, 3).map((border, i) => (
                             <View key={i} style={styles.neighborRow}>
-                              {border.flag && (
-                                <Image
-                                  source={{ uri: border.flag }}
-                                  style={{ width: 24, height: 16, resizeMode: 'cover', borderRadius: 2, marginRight: 8 }}
-                                />
-                              )}
+                              <Text style={{ fontSize: 20, marginRight: 8 }}>
+                                {getFlagEmoji(border.code)}
+                              </Text>
                               <Text style={styles.neighborName}>{border.name}</Text>
                             </View>
                           ))}
@@ -885,8 +852,6 @@ export default function MapScreen({ navigation }) {
                       onScrollToCityDone={() => setPinSelectedCity(null)}
                       onStatsUpdate={(stats) => setModalPhotoStats(stats)}
                       onCoverPhotoSet={(newPhotoId, newPhotoUrl) => {
-                        console.log('⭐ onCoverPhotoSet recebido:', { newPhotoId, newPhotoUrl });
-
                         setCurrentCoverPhotoId(newPhotoId);
 
                         const alpha2 = ALPHA3_TO_ALPHA2[selectedCountry.code] || selectedCountry.code;
@@ -898,7 +863,6 @@ export default function MapScreen({ navigation }) {
                           } else {
                             delete updated[alpha2];
                           }
-                          console.log('🗺️ coverPhotos atualizado:', updated);
                           return updated;
                         });
 
@@ -1065,23 +1029,23 @@ export default function MapScreen({ navigation }) {
                   <TouchableOpacity
                     disabled={!assistantDestination.trim() || assistantLoading}
                     onPress={async () => {
-                      console.log('=== BOTÃO GERAR CLICADO ===');
-                      if (!assistantDestination.trim()) {
-                        console.log('Destino vazio, abortando');
-                        return;
-                      }
+                      if (!assistantDestination.trim() || !selectedPromptType) return;
                       setAssistantLoading(true);
-                      console.log('Loading iniciado');
                       try {
                         const { data: { user: authUser } } = await supabase.auth.getUser();
-                        console.log('User ID:', authUser?.id);
+                        if (!authUser) {
+                          Alert.alert(
+                            'Sessão expirada',
+                            'Entre novamente para usar o assistente de viagem.'
+                          );
+                          return;
+                        }
+
                         const [countriesRes, wishlistRes] = await Promise.all([
                           supabase.from('visited_countries')
                             .select('country_name').eq('user_id', authUser.id),
                           getWishlist(authUser.id),
                         ]);
-                        console.log('Countries:', countriesRes.data?.length);
-                        console.log('Wishlist:', wishlistRes.data?.length);
                         const visited = (countriesRes.data || []).map(c => c.country_name);
                         const wishlist = (wishlistRes.data || []).map(c => c.country_name);
                         const levels = [
@@ -1092,11 +1056,6 @@ export default function MapScreen({ navigation }) {
                           { max: 999, name: 'Lenda Viajante' },
                         ];
                         const level = levels.find(l => visited.length <= l.max)?.name || 'Lenda Viajante';
-                        console.log('Chamando askTravelAssistant...');
-                        console.log('Params:', {
-                          promptType: selectedPromptType?.id,
-                          destination: assistantDestination.trim(),
-                        });
                         const result = await askTravelAssistant({
                           promptType: selectedPromptType.id,
                           destination: assistantDestination.trim(),
@@ -1107,10 +1066,8 @@ export default function MapScreen({ navigation }) {
                             level,
                           },
                         });
-                        console.log('Resultado:', JSON.stringify(result));
-                        setAssistantLoading(false);
-                        setAssistantVisible(false);
                         if (result.success) {
+                          setAssistantVisible(false);
                           navigation.navigate('AssistantResult', {
                             promptType: selectedPromptType.id,
                             destination: assistantDestination.trim(),
@@ -1119,10 +1076,13 @@ export default function MapScreen({ navigation }) {
                         } else {
                           Alert.alert('Erro', result.error);
                         }
-                      } catch (error) {
-                        console.error('=== ERRO NO ONPRESS ===', error);
+                      } catch {
+                        Alert.alert(
+                          'Erro',
+                          'Não foi possível gerar o conteúdo agora. Tente novamente.'
+                        );
+                      } finally {
                         setAssistantLoading(false);
-                        Alert.alert('Erro', error.message);
                       }
                     }}
                     style={{

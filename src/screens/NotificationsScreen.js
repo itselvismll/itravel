@@ -23,25 +23,34 @@ function timeAgo(dateStr) {
   return `${Math.floor(diff / 86400)}d`;
 }
 
-export default function NotificationsScreen() {
+export default function NotificationsScreen({ navigation }) {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const loadNotifications = useCallback(async () => {
+    setLoading(true);
+    setError('');
     const user = await getCurrentUser();
     if (!user) { setLoading(false); return; }
 
-    const { data } = await supabase
+    const { data, error: loadError } = await supabase
       .from('notifications')
       .select('id, type, message, read, created_at, actor:actor_id(id, username, display_name, avatar_url)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(50);
 
+    if (loadError) {
+      setNotifications([]);
+      setError('Não foi possível carregar as notificações.');
+      setLoading(false);
+      return;
+    }
+
     setNotifications(data || []);
     setLoading(false);
 
-    // mark all as read
     await supabase
       .from('notifications')
       .update({ read: true })
@@ -51,7 +60,7 @@ export default function NotificationsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadNotifications().then(() => {}).catch(() => {});
+      loadNotifications();
       return undefined;
     }, [loadNotifications])
   );
@@ -60,7 +69,14 @@ export default function NotificationsScreen() {
     const icon = TYPE_ICON[item.type] || { name: 'notifications', color: '#6C2BD9' };
     const actor = item.actor;
     return (
-      <View style={[styles.row, !item.read && styles.unread]}>
+      <TouchableOpacity
+        style={[styles.row, !item.read && styles.unread]}
+        disabled={!actor?.id}
+        onPress={() => navigation.navigate('PublicProfile', {
+          userId: actor.id,
+          username: actor.username,
+        })}
+      >
         <View style={styles.avatarWrap}>
           <Avatar profile={actor} size={44} />
           <View style={[styles.badge, { backgroundColor: icon.color }]}>
@@ -74,17 +90,32 @@ export default function NotificationsScreen() {
           </Text>
           <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
+        <TouchableOpacity
+          accessibilityLabel="Voltar"
+          onPress={() => navigation.goBack()}
+          style={styles.backButton}
+        >
+          <Ionicons name="arrow-back" size={22} color="#0D1326" />
+        </TouchableOpacity>
         <Text style={styles.title}>Notificações</Text>
+        <View style={styles.headerSpacer} />
       </View>
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={COLORS.primary} />
+      ) : error ? (
+        <View style={styles.empty}>
+          <Text style={styles.emptyText}>{error}</Text>
+          <TouchableOpacity onPress={loadNotifications} style={styles.retryButton}>
+            <Text style={styles.retryText}>Tentar novamente</Text>
+          </TouchableOpacity>
+        </View>
       ) : notifications.length === 0 ? (
         <View style={styles.empty}>
           <Ionicons name="notifications-outline" size={48} color="#ccc" />
@@ -106,9 +137,15 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   header: {
     paddingTop: 50, paddingHorizontal: 16, paddingBottom: 14,
+    flexDirection: 'row', alignItems: 'center',
     borderBottomWidth: 0.5, borderBottomColor: '#f0f0f0',
   },
-  title: { fontSize: 20, fontWeight: '700', color: '#0D1326' },
+  backButton: { padding: 6 },
+  headerSpacer: { width: 34 },
+  title: {
+    flex: 1, textAlign: 'center',
+    fontSize: 20, fontWeight: '700', color: '#0D1326',
+  },
   row: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 12,
@@ -128,4 +165,9 @@ const styles = StyleSheet.create({
   time: { fontSize: 12, color: '#999', marginTop: 2 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   emptyText: { fontSize: 15, color: '#999' },
+  retryButton: {
+    backgroundColor: '#6C2BD9', borderRadius: 10,
+    paddingHorizontal: 18, paddingVertical: 10,
+  },
+  retryText: { color: '#fff', fontWeight: '700' },
 });

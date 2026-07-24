@@ -111,15 +111,18 @@ checklist do que levar.`,
     const userMessage = prompts[promptType] ||
       `${systemContext}\n\nDê informações úteis sobre ${destination}.`
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`
+    const geminiUrl =
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent'
     const geminiResponse = await fetch(geminiUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
       body: JSON.stringify({
         contents: [{ parts: [{ text: userMessage }] }],
         generationConfig: {
           maxOutputTokens: 1500,
-          temperature: 0.7
         },
       }),
     })

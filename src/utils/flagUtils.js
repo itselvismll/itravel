@@ -1,7 +1,7 @@
 import { ALPHA3_TO_ALPHA2 } from './countryUtils';
 
 export const getFlagEmoji = (code) => {
-  if (!code || typeof code !== 'string') return '🌍';
+  if (!code || typeof code !== 'string') return '🌐';
   const upper = code.trim().toUpperCase();
 
   if (upper.length === 2) {
@@ -21,5 +21,5 @@ export const getFlagEmoji = (code) => {
     }
   }
 
-  return '🌍';
+  return '🌐';
 };

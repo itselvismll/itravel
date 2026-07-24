@@ -77,21 +77,13 @@ export default function EditProfileScreen({ navigation, route }) {
   };
 
   const handleSave = async () => {
-    console.log('💾 handleSave chamado');
-    console.log('💾 displayName:', displayName);
-    console.log('💾 username:', username);
-    console.log('💾 contemPalavraProibida(displayName):', contemPalavraProibida(displayName));
-    console.log('💾 contemPalavraProibida(username):', contemPalavraProibida(username));
-
     if (!displayName.trim()) {
-      console.log('❌ Nome vazio');
       setErrorMessage('O nome não pode estar vazio.');
       return;
     }
     const normalizedUsername = username.trim().toLowerCase();
 
     if (normalizedUsername.length < 3) {
-      console.log('❌ Username curto');
       setErrorMessage('O username deve ter pelo menos 3 caracteres.');
       return;
     }
@@ -108,11 +100,9 @@ export default function EditProfileScreen({ navigation, route }) {
       return;
     }
     if (contemPalavraProibida(displayName) || contemPalavraProibida(username)) {
-      console.log('❌ Palavra proibida detectada');
       setErrorMessage('⚠️ Nome inadequado. Por favor escolha outro nome.');
       return;
     }
-    console.log('✅ Passou todas as validações, salvando...');
     setErrorMessage('');
     setSaving(true);
     try {

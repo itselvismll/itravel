@@ -19,7 +19,9 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState({});
+  const [errors, setErrors] = useState(
+    /** @type {Record<string, string | null>} */ ({})
+  );
 
   const validateEmail = (email) => {
     const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -58,9 +60,8 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
   };
 
   const handleRegister = async () => {
-    console.log('🔵 Cadastro iniciado');
     setErrors({});
-    const newErrors = {};
+    const newErrors = /** @type {Record<string, string>} */ ({});
 
     if (!fullName.trim()) {
       newErrors.fullName = 'Nome completo é obrigatório';
@@ -98,34 +99,26 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
     }
 
     if (Object.keys(newErrors).length > 0) {
-      console.log('❌ Erros de validação:', newErrors);
       setErrors(newErrors);
       return;
     }
 
-    console.log('✅ Validação OK, criando conta...');
     setLoading(true);
     const result = await signUp(email, password, username, fullName);
-    console.log('📦 Resultado:', result);
     setLoading(false);
 
     if (result.success) {
-      console.log('✅ Conta criada com sucesso!');
       Alert.alert(
         'Conta criada! 🎉',
         'Verifique seu email para confirmar sua conta antes de fazer login.',
         [
           {
             text: 'OK',
-            onPress: () => {
-              console.log('🔄 Navegando para Login...');
-              navigation.navigate('Login');
-            }
+            onPress: () => navigation.navigate('Login'),
           }
         ]
       );
     } else {
-      console.log('❌ Erro ao criar conta:', result.error);
       let errorMessage = result.error;
       
       if (errorMessage.includes('already registered')) {
@@ -178,8 +171,6 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
                 autoCapitalize="words"
                 autoComplete="off"
                 autoCorrect={false}
-                name="register-fullname"
-                id="register-fullname"
               />
             </View>
             {errors.fullName && <Text style={styles.errorText}>{errors.fullName}</Text>}
@@ -210,8 +201,6 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
                 autoCapitalize="none"
                 autoCorrect={false}
                 autoComplete="off"
-                name="register-username"
-                id="register-username"
               />
             </View>
             {checkingUsername && (
@@ -243,8 +232,6 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
                 autoCapitalize="none"
                 autoCorrect={false}
                 autoComplete="off"
-                name="register-email"
-                id="register-email"
               />
             </View>
             {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
@@ -267,8 +254,6 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
                 autoCapitalize="none"
                 autoComplete="new-password"
                 autoCorrect={false}
-                name="register-password"
-                id="register-password"
               />
               <TouchableOpacity 
                 onPress={() => setShowPassword(!showPassword)}
@@ -349,8 +334,6 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
                 autoCapitalize="none"
                 autoComplete="new-password"
                 autoCorrect={false}
-                name="register-confirm-password"
-                id="register-confirm-password"
               />
               <TouchableOpacity 
                 onPress={() => setShowConfirmPassword(!showConfirmPassword)}

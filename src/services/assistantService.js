@@ -18,26 +18,40 @@ export const PROMPT_TYPES = [
 export const askTravelAssistant = async ({ promptType, destination, userContext }) => {
   try {
     const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      return { success: false, error: 'Sua sessão expirou. Entre novamente para usar o assistente.' };
+    }
 
     const { data, error } = await supabase.functions.invoke(
       'travel-assistant',
       {
         body: { promptType, destination, userContext },
-        headers: session?.access_token ? {
-          Authorization: `Bearer ${session.access_token}`
-        } : {},
+        headers: { Authorization: `Bearer ${session.access_token}` },
       }
     );
 
     if (error) {
-      console.error('Erro invoke:', error);
-      throw error;
+      let functionError;
+      try {
+        functionError = await error.context?.json();
+      } catch {
+        functionError = null;
+      }
+      return {
+        success: false,
+        error: functionError?.error || 'O assistente está temporariamente indisponível.',
+      };
     }
 
-    console.log('Resposta da função:', data);
+    if (!data?.success || !data?.response) {
+      return {
+        success: false,
+        error: data?.error || 'O assistente não retornou uma resposta válida.',
+      };
+    }
+
     return { success: true, response: data.response };
-  } catch (error) {
-    console.error('Erro no assistente:', error);
+  } catch {
     return {
       success: false,
       error: 'Não foi possível conectar ao assistente. Tente novamente.',

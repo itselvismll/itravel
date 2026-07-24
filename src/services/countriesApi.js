@@ -1,6 +1,5 @@
-import { logger } from '../utils/logger';
 import { COUNTRIES_STATIC } from '../data/countriesStaticData';
-import { getAlpha2 } from '../utils/countryUtils';
+import { getCountryNamePtByCode } from '../utils/countryUtils';
 
 // Cache em memória (mantido para compatibilidade com código existente)
 const countryCache = new Map();
@@ -21,7 +20,6 @@ export async function getCountryInfo(countryCode) {
   const data = COUNTRIES_STATIC[code];
 
   if (!data) {
-    logger.log(`⚠️ País não encontrado no dataset local: ${code}`);
     return {
       name: 'Informações não disponíveis',
       officialName: '',
@@ -31,7 +29,6 @@ export async function getCountryInfo(countryCode) {
       currencies: [],
       region: 'N/A',
       subregion: 'N/A',
-      flag: '',
       borders: [],
       timezones: [],
       phoneCode: 'N/A',
@@ -41,17 +38,15 @@ export async function getCountryInfo(countryCode) {
     };
   }
 
-  const alpha2 = getAlpha2(code);
   const processedData = {
-    name: data.name,
-    officialName: data.name,
+    name: getCountryNamePtByCode(code, data.name),
+    officialName: getCountryNamePtByCode(code, data.name),
     capital: data.capital,
     population: data.population,
     languages: data.languages,
     currencies: data.currencies,
     region: data.region,
     subregion: data.subregion,
-    flag: alpha2 ? `https://flagcdn.com/${alpha2}.svg` : '',
     borders: [],
     timezones: [],
     phoneCode: data.phoneCode,
@@ -61,7 +56,6 @@ export async function getCountryInfo(countryCode) {
   };
 
   countryCache.set(code, processedData);
-  logger.log(`✅ Dados de ${code} carregados do dataset local`);
   return processedData;
 }
 
@@ -104,7 +98,6 @@ export async function getMultipleCountries(countryCodes) {
  */
 export function clearCountryCache() {
   countryCache.clear();
-  logger.log('🧹 Cache de países limpo');
 }
 
 /**
@@ -114,13 +107,11 @@ export async function getCountriesByRegion(region) {
   return Object.entries(COUNTRIES_STATIC)
     .filter(([, d]) => d.region === region)
     .map(([code, d]) => {
-      const a2 = getAlpha2(code);
       return {
-        name: d.name,
+        name: getCountryNamePtByCode(code, d.name),
         code,
         capital: d.capital,
         population: d.population,
-        flag: a2 ? `https://flagcdn.com/${a2}.svg` : '',
       };
     });
 }
@@ -135,11 +126,9 @@ export async function getBorderCountries(borderCodes) {
     .map(code => {
       const d = COUNTRIES_STATIC[code.toUpperCase()];
       if (!d) return null;
-      const a2 = getAlpha2(code);
       return {
-        name: d.name,
+        name: getCountryNamePtByCode(code, d.name),
         code: code.toUpperCase(),
-        flag: a2 ? `https://flagcdn.com/${a2}.svg` : '',
       };
     })
     .filter(Boolean);

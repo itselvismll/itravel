@@ -49,7 +49,24 @@ const FlagGrid = ({ codes, title, titleColor }) => {
   );
 };
 
-const ShareCard = forwardRef(({ profile, visitedCountryCodes, wishlistCodes, totalPhotos, totalCities }, ref) => {
+/**
+ * @typedef {Object} ShareCardProps
+ * @property {{ username?: string, avatar_url?: string } | null} [profile]
+ * @property {string[]} [visitedCountryCodes]
+ * @property {string[]} [wishlistCodes]
+ * @property {number} [totalPhotos]
+ * @property {number} [totalCities]
+ */
+
+const ShareCard = forwardRef(
+  /**
+   * @param {ShareCardProps} props
+   * @param {React.ForwardedRef<any>} ref
+   */
+  function ShareCard(
+    { profile, visitedCountryCodes, wishlistCodes, totalPhotos, totalCities },
+    ref
+  ) {
   const levelInfo = getLevelInfo((visitedCountryCodes || []).length);
   const initial = (profile?.username || 'V')[0].toUpperCase();
 
@@ -121,7 +138,8 @@ const ShareCard = forwardRef(({ profile, visitedCountryCodes, wishlistCodes, tot
       </View>
     </View>
   );
-});
+  }
+);
 
 export default ShareCard;
 

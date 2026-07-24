@@ -1,7 +1,7 @@
 // Dataset estático de países — substitui a chamada à restcountries.com (API descontinuada).
 // Campos: name, capital, population, languages[], currencies[{name,symbol}],
 //         region, subregion, area (km²), phoneCode
-// Flag URL é gerada dinamicamente em countriesApi.js via flagcdn.com.
+// Bandeiras são derivadas localmente dos códigos ISO, sem dependência de imagem externa.
 
 export const COUNTRIES_STATIC = {
   // ── AMÉRICAS ──────────────────────────────────────────────────────────────
