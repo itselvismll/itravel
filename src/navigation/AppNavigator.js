@@ -10,7 +10,6 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { COLORS } from '../utils/constants';
 import { getCurrentUser, supabase } from '../services/supabase';
-import { logger } from '../utils/logger';
 import { useUpload } from '../context/UploadContext';
 
 // Screens
@@ -26,13 +25,14 @@ import PhotoUploader from '../components/PhotoUploader';
 import PublicProfileScreen from '../screens/profile/PublicProfileScreen';
 import AssistantResultScreen from '../screens/assistant/AssistantResultScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
+import ConnectionsScreen from '../screens/profile/ConnectionsScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
 function ProfileStack() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator id="ProfileStack" screenOptions={{ headerShown: false }}>
       <Stack.Screen name="ProfileMain" component={ProfileScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
     </Stack.Navigator>
@@ -43,6 +43,7 @@ function TabNavigator() {
   const { openUploader } = useUpload();
   return (
     <Tab.Navigator
+      id="MainTabs"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: '#333',
@@ -98,11 +99,16 @@ function TabNavigator() {
               alignItems: 'center',
               justifyContent: 'center',
               marginTop: -16,
-              shadowColor: '#6C2BD9',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.4,
-              shadowRadius: 8,
-              elevation: 6,
+              ...Platform.select({
+                web: { boxShadow: '0 4px 8px rgba(108,43,217,0.4)' },
+                default: {
+                  shadowColor: '#6C2BD9',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.4,
+                  shadowRadius: 8,
+                  elevation: 6,
+                },
+              }),
             }}>
               <Ionicons name="add" size={28} color="white" />
             </View>
@@ -110,6 +116,7 @@ function TabNavigator() {
         }}
         listeners={{
           tabPress: (e) => {
+            // @ts-expect-error React Navigation's JS event supports cancellation here.
             e.preventDefault();
             openUploader();
           },
@@ -151,15 +158,11 @@ export default function AppNavigator() {
 
   useEffect(() => {
     const checkUser = async () => {
-      logger.log('🔍 Verificando usuário atual...');
       const result = await getCurrentUser();
-      logger.log('👤 Resultado getCurrentUser:', result);
 
       if (result && result.id) {
-        logger.log('✅ Usuário logado:', result.email);
         setUser(result);
       } else {
-        logger.log('❌ Nenhum usuário logado');
         setUser(null);
       }
       setLoading(false);
@@ -167,14 +170,10 @@ export default function AppNavigator() {
 
     checkUser();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      logger.log('🔐 Estado auth mudou:', event);
-
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
-        logger.log('✅ Auth mudou - usuário logado:', session.user.email);
         setUser(session.user);
       } else {
-        logger.log('❌ Auth mudou - usuário deslogado');
         setUser(null);
       }
       setLoading(false);
@@ -194,16 +193,12 @@ export default function AppNavigator() {
     setLocationLoading(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      console.log('📍 Permissão de localização:', status);
-
       if (status !== 'granted') {
-        console.log('❌ Permissão negada');
         setLocationLoading(false);
         return;
       }
 
       const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      console.log('📍 Coordenadas:', position.coords.latitude, position.coords.longitude);
 
       let detected = null;
 
@@ -214,8 +209,6 @@ export default function AppNavigator() {
           { headers: { 'Accept-Language': 'pt-BR' } }
         );
         const data = await response.json();
-        console.log('📍 Resultado Nominatim:', data);
-
         const address = data.address || {};
         const city = address.city || address.town || address.village || address.municipality || address.county || '';
         const countryName = address.country || '';
@@ -230,8 +223,6 @@ export default function AppNavigator() {
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
         });
-        console.log('📍 Resultado reverseGeocode:', JSON.stringify(geocode));
-
         if (geocode && geocode[0]) {
           const place = geocode[0];
           detected = {
@@ -243,13 +234,15 @@ export default function AppNavigator() {
       }
 
       if (detected) {
-        console.log('📍 Localização detectada:', detected);
+        detected = {
+          ...detected,
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        };
         setDetectedLocation(detected);
-      } else {
-        console.log('❌ Não foi possível detectar localização');
       }
-    } catch (e) {
-      console.error('❌ Erro ao detectar localização:', e);
+    } catch {
+      setDetectedLocation(null);
     } finally {
       setLocationLoading(false);
     }
@@ -269,12 +262,12 @@ export default function AppNavigator() {
     <View style={{ flex: 1 }}>
       <NavigationContainer>
         {!user ? (
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Navigator id="AuthStack" screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />
           </Stack.Navigator>
         ) : (
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Navigator id="RootStack" screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Main" component={TabNavigator} />
             <Stack.Screen name="PublicProfile" component={PublicProfileScreen} />
             <Stack.Screen
@@ -285,6 +278,11 @@ export default function AppNavigator() {
             <Stack.Screen
               name="Notificações"
               component={NotificationsScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="Connections"
+              component={ConnectionsScreen}
               options={{ headerShown: false }}
             />
           </Stack.Navigator>
@@ -344,6 +342,8 @@ export default function AppNavigator() {
                   prefilledCity={detectedLocation?.city}
                   prefilledCountryName={detectedLocation?.countryName}
                   prefilledCountryCode={detectedLocation?.isoCountryCode}
+                  prefilledCityLat={detectedLocation?.latitude}
+                  prefilledCityLng={detectedLocation?.longitude}
                   onPhotoUploaded={notifyUploadComplete}
                 />
               </View>

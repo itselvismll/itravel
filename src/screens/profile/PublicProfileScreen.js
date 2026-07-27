@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity,
-  StyleSheet, ActivityIndicator, Modal, Dimensions,
+  StyleSheet, ActivityIndicator, Modal, Dimensions, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../services/supabase';
 import { followUser, unfollowUser, getFollowing, getFollowCounts } from '../../services/followService';
-import { getFlagEmoji } from '../../utils/flagUtils';
+import CountryFlag from '../../components/CountryFlag';
 
 const { width } = Dimensions.get('window');
 const PHOTO_SIZE = (width - 4) / 3;
@@ -68,23 +68,28 @@ export default function PublicProfileScreen({ route, navigation }) {
           followingRes.success && Array.isArray(followingRes.data) && followingRes.data.includes(userId)
         );
       }
-    } catch (e) {
-      console.error('Erro ao carregar perfil público:', e);
+    } catch {
+      setProfile(null);
     }
     setLoading(false);
   };
 
   const toggleFollow = async () => {
     if (!currentUserId) return;
-    if (isFollowing) {
-      await unfollowUser(currentUserId, userId);
-      setIsFollowing(false);
-      setFollowCounts(prev => ({ ...prev, followers: Math.max(0, prev.followers - 1) }));
-    } else {
-      await followUser(currentUserId, userId);
-      setIsFollowing(true);
-      setFollowCounts(prev => ({ ...prev, followers: prev.followers + 1 }));
+    const result = isFollowing
+      ? await unfollowUser(currentUserId, userId)
+      : await followUser(currentUserId, userId);
+
+    if (!result.success) {
+      Alert.alert('Erro', result.error || 'Não foi possível atualizar este perfil.');
+      return;
     }
+
+    setIsFollowing(!isFollowing);
+    setFollowCounts(prev => ({
+      ...prev,
+      followers: Math.max(0, prev.followers + (isFollowing ? -1 : 1)),
+    }));
   };
 
   if (loading) {
@@ -143,10 +148,27 @@ export default function PublicProfileScreen({ route, navigation }) {
               <Text style={styles.statLabel}>Fotos</Text>
             </View>
             <View style={styles.statDivider} />
-            <View style={styles.statItem}>
+            <TouchableOpacity
+              style={styles.statItem}
+              onPress={() => navigation.navigate('Connections', {
+                userId,
+                mode: 'followers',
+              })}
+            >
               <Text style={styles.statValue}>{followCounts.followers}</Text>
               <Text style={styles.statLabel}>Seguidores</Text>
-            </View>
+            </TouchableOpacity>
+            <View style={styles.statDivider} />
+            <TouchableOpacity
+              style={styles.statItem}
+              onPress={() => navigation.navigate('Connections', {
+                userId,
+                mode: 'following',
+              })}
+            >
+              <Text style={styles.statValue}>{followCounts.following}</Text>
+              <Text style={styles.statLabel}>Seguindo</Text>
+            </TouchableOpacity>
           </View>
 
           {!isOwnProfile && (
@@ -178,9 +200,13 @@ export default function PublicProfileScreen({ route, navigation }) {
             <Text style={styles.sectionTitle}>PAÍSES VISITADOS</Text>
             <View style={styles.flagGrid}>
               {visitedCountries.map((c, i) => (
-                <Text key={i} style={styles.flagEmoji}>
-                  {getFlagEmoji(c.country_code)}
-                </Text>
+                <CountryFlag
+                  key={`${c.country_code}-${i}`}
+                  countryCode={c.country_code}
+                  width={38}
+                  height={25}
+                  borderRadius={4}
+                />
               ))}
             </View>
           </View>
@@ -298,7 +324,6 @@ const styles = StyleSheet.create({
   levelName: { fontSize: 15, fontWeight: '700', color: '#F7F7F2' },
   levelSub: { fontSize: 11, color: '#9aa0c6', marginTop: 2 },
   flagGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  flagEmoji: { fontSize: 28 },
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
   photoThumb: { width: PHOTO_SIZE, height: PHOTO_SIZE },
   modalOverlay: {

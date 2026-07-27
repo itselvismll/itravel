@@ -10,10 +10,13 @@ import {
   ActivityIndicator,
   StyleSheet,
   Dimensions,
+  Platform,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES } from '../utils/constants';
 import { getCountryPhotos, deletePhoto, setCoverPhoto, removeCoverPhoto, getFavoritePhotos, addFavorite, removeFavorite, updatePhotoPrivacy } from '../services/photoService';
+import { confirm, notify } from '../utils/dialogs';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const COLUMN_GAP = 12;
@@ -82,15 +85,11 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
   }, [loadPhotos]);
 
   useEffect(() => {
-    if (!scrollToCity) return;
+    if (!scrollToCity || Platform.OS !== 'web') return;
 
     setTimeout(() => {
-      console.log('🔍 Tentando scroll para:', scrollToCity);
-
       const elementId = `city-section-${scrollToCity.replace(/\s/g, '-')}`;
       const element = document.getElementById(elementId);
-
-      console.log('🔍 Elemento encontrado:', element);
 
       if (element) {
         element.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -100,26 +99,26 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
   }, [scrollToCity]);
 
   const handleDelete = async (photoId, photoPath) => {
-    const confirmacao = window.confirm('Tem certeza que deseja deletar esta foto?');
+    const confirmacao = await confirm('Excluir foto', 'Tem certeza que deseja deletar esta foto?');
     if (!confirmacao) return;
 
     const result = await deletePhoto(photoId, photoPath);
     if (result.success) {
-      window.alert('Foto deletada com sucesso!');
+      notify('Foto excluída', 'Foto deletada com sucesso!');
       loadPhotos();
     } else {
-      window.alert('Erro ao deletar: ' + result.error);
+      notify('Erro ao excluir', result.error || 'Não foi possível deletar a foto.');
     }
   };
 
   const handleSetCover = async (photoId, photoUrl) => {
     if (photoId === coverPhotoId) {
-      const confirmacao = window.confirm('Remover esta foto como capa do país?');
+      const confirmacao = await confirm('Remover capa', 'Remover esta foto como capa do país?');
       if (!confirmacao) return;
 
       const result = await removeCoverPhoto(userId, countryCode);
       if (result.success) {
-        window.alert('Foto removida como capa!');
+        notify('Capa removida', 'Foto removida como capa!');
         setCoverPhotoId(null);
         if (onCoverPhotoSet) onCoverPhotoSet(null, null);
         loadPhotos();
@@ -129,11 +128,11 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
       return;
     }
 
-    const confirmacao = window.confirm('Definir esta foto como capa do país no mapa?');
+    const confirmacao = await confirm('Definir capa', 'Definir esta foto como capa do país no mapa?');
     if (!confirmacao) return;
 
     if (coverPhotoId && coverPhotoId !== photoId) {
-      const substituir = window.confirm('Já existe uma foto de capa. Deseja substituir pela nova?');
+      const substituir = await confirm('Substituir capa', 'Já existe uma foto de capa. Deseja substituir pela nova?');
       if (!substituir) return;
     }
 
@@ -143,7 +142,7 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
       setCoverPhotoId(photoId);
       if (onCoverPhotoSet) onCoverPhotoSet(photoId, photoUrl);
       loadPhotos();
-      window.alert('Foto definida como capa! ⭐');
+      notify('Capa definida', 'Foto definida como capa! ⭐');
     } else {
       Alert.alert('Erro', 'Não foi possível definir a foto de capa.');
     }
@@ -202,7 +201,7 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
         >
           <Image
             source={{ uri: item.photo_url }}
-            style={[styles.photoImage, { pointerEvents: 'none' }]}
+            style={styles.photoImage}
             resizeMode="cover"
           />
         </TouchableOpacity>
@@ -322,8 +321,12 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
           photos.length === 0 && styles.listContentEmpty,
         ]}
         showsVerticalScrollIndicator={false}
-        onRefresh={() => loadPhotos(true)}
-        refreshing={refreshing}
+        refreshControl={(
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadPhotos(true)}
+          />
+        )}
       >
         {photos.length === 0 ? (
           <View style={styles.emptyContainer}>

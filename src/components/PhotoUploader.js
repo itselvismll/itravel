@@ -8,22 +8,24 @@ import {
   Alert,
   StyleSheet,
   Image,
-  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SIZES } from '../utils/constants';
+import * as ImagePicker from 'expo-image-picker';
+import { API_CONFIG, COLORS, SIZES } from '../utils/constants';
 import { uploadPhoto } from '../services/photoService';
-import { getAlpha3, getAlpha2 } from '../utils/countryUtils';
-import { supabase } from '../services/supabase';
+import { getAlpha2, getAlpha3 } from '../utils/countryUtils';
+import { markCountryAsVisited } from '../services/supabase';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 
-const GOOGLE_PLACES_KEY = 'AIzaSyC0UMp9B6JWuZMLM0m3E87xBqC4V0KU9m8';
+const GOOGLE_PLACES_KEY = API_CONFIG.GOOGLE_MAPS_API_KEY;
+const IS_WEB = process.env.EXPO_OS === 'web';
 
 const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
 
 export default function PhotoUploader({
-  countryCode, countryName, countryNameEn, userId, onPhotoUploaded,
-  prefilledCity, prefilledCountryName, prefilledCountryCode,
+  countryCode = null, countryName = null, countryNameEn = null, userId, onPhotoUploaded,
+  prefilledCity = null, prefilledCountryName = null, prefilledCountryCode = null,
+  prefilledCityLat = null, prefilledCityLng = null,
 }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -41,64 +43,101 @@ export default function PhotoUploader({
   const [review, setReview] = useState('');
   const fileInputRef = useRef(null);
   const searchTimerRef = useRef(null);
+  const citySearchAbortRef = useRef(null);
 
   // Valores efetivos: fluxo do mapa tem prioridade sobre prefill do GPS
   // prefilledCountryCode vem como alpha-2 do GPS (ex: 'BR') — converte para alpha-3 (ex: 'BRA')
   const effectiveCountryCode = countryCode || (prefilledCountryCode ? getAlpha3(prefilledCountryCode) : '') || '';
   const effectiveCountryName = countryName || prefilledCountryName || '';
   const effectiveCountryNameEn = countryNameEn || prefilledCountryName || '';
+  const effectiveCountryAlpha2 = getAlpha2(effectiveCountryCode)?.toLowerCase() || '';
 
-  console.log('📦 PhotoUploader props recebidas:', {
-    prefilledCity,
-    prefilledCountryName,
-    prefilledCountryCode,
-    countryCode,
-  });
+  const getPrefilledCity = () => {
+    if (countryCode || !prefilledCity) return null;
+    return {
+      shortName: prefilledCity,
+      country: prefilledCountryName || '',
+      lat: Number.isFinite(prefilledCityLat) ? prefilledCityLat : null,
+      lng: Number.isFinite(prefilledCityLng) ? prefilledCityLng : null,
+    };
+  };
 
   // Inicializar cidade a partir do GPS quando não há countryCode (fluxo global)
   useEffect(() => {
-    console.log('📦 useEffect prefill disparou — prefilledCity:', prefilledCity, '| countryCode:', countryCode);
-    if (!countryCode && prefilledCity) {
-      console.log('📦 Aplicando prefill - city:', prefilledCity, '| country:', prefilledCountryName);
+    const detectedCity = getPrefilledCity();
+    if (detectedCity) {
       setCitySearch(prefilledCity);
-      setSelectedCity({
-        shortName: prefilledCity,
-        country: prefilledCountryName || '',
-        lat: 0,
-        lng: 0,
-      });
+      setSelectedCity(detectedCity);
     }
-  }, [prefilledCity, prefilledCountryName, countryCode]);
+  }, [
+    prefilledCity,
+    prefilledCountryName,
+    prefilledCityLat,
+    prefilledCityLng,
+    countryCode,
+  ]);
+
+  useEffect(() => () => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    citySearchAbortRef.current?.abort();
+    if (IS_WEB && preview?.startsWith('blob:')) URL.revokeObjectURL(preview);
+  }, [preview]);
 
   const searchCities = async (query) => {
     if (query.length < 3) {
+      citySearchAbortRef.current?.abort();
       setCitySuggestions([]);
+      setLoadingCities(false);
       return;
     }
+
+    citySearchAbortRef.current?.abort();
+    const controller = new AbortController();
+    citySearchAbortRef.current = controller;
     setLoadingCities(true);
+
     try {
-      const searchQuery = effectiveCountryNameEn ? `${query} ${effectiveCountryNameEn}` : query;
+      const countryQuery = effectiveCountryNameEn || effectiveCountryName;
+      const searchQuery = countryQuery ? `${query}, ${countryQuery}` : query;
       const response = await fetch(
-        `https://photon.komoot.io/api/?q=${encodeURIComponent(searchQuery)}&limit=8`
+        `https://photon.komoot.io/api/?q=${encodeURIComponent(searchQuery)}&limit=12&lang=pt`,
+        { signal: controller.signal }
       );
+      if (!response.ok) throw new Error(`Busca de cidades indisponível (${response.status})`);
       const data = await response.json();
+      const seen = new Set();
       const cities = (data.features || [])
-        .filter(f =>
-          ['city', 'town', 'village'].includes(f.properties?.type) &&
-          (!effectiveCountryNameEn || f.properties?.country?.toLowerCase() === effectiveCountryNameEn.toLowerCase())
-        )
-        .map(f => ({
-          name: `${f.properties.name}, ${f.properties.country}`,
-          shortName: f.properties.name,
-          country: f.properties.country,
-          lat: f.geometry.coordinates[1],
-          lng: f.geometry.coordinates[0],
-        }));
+        .filter((feature) => {
+          if (!['city', 'town', 'village', 'locality', 'municipality']
+            .includes(feature.properties?.type)) return false;
+          const featureCountryCode = feature.properties?.countrycode?.toLowerCase();
+          return !effectiveCountryAlpha2 ||
+            !featureCountryCode ||
+            featureCountryCode === effectiveCountryAlpha2;
+        })
+        .map((feature) => {
+          const shortName = feature.properties.name;
+          const country = feature.properties.country || effectiveCountryName;
+          const key = `${shortName}|${country}`.toLocaleLowerCase('pt-BR');
+          if (!shortName || seen.has(key)) return null;
+          seen.add(key);
+          return {
+            name: `${shortName}, ${country}`,
+            shortName,
+            country,
+            lat: feature.geometry.coordinates[1],
+            lng: feature.geometry.coordinates[0],
+          };
+        })
+        .filter(Boolean)
+        .slice(0, 8);
       setCitySuggestions(cities);
     } catch (error) {
-      console.error('Erro ao buscar cidades:', error);
+      if (error?.name !== 'AbortError') setCitySuggestions([]);
     } finally {
-      setLoadingCities(false);
+      if (citySearchAbortRef.current === controller) {
+        setLoadingCities(false);
+      }
     }
   };
 
@@ -117,13 +156,50 @@ export default function PhotoUploader({
     setPreview(URL.createObjectURL(file));
   };
 
+  const handlePickPhoto = async () => {
+    if (IS_WEB) {
+      fileInputRef.current?.click();
+      return;
+    }
+
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permissão necessária', 'Permita o acesso às fotos para adicionar uma imagem.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.85,
+      });
+
+      if (result.canceled) return;
+
+      const asset = result.assets[0];
+      if (asset.fileSize && asset.fileSize > MAX_SIZE_BYTES) {
+        Alert.alert('Arquivo muito grande', 'A imagem deve ter no máximo 5MB.');
+        return;
+      }
+
+      setSelectedFile(asset);
+      setUploadSuccess(false);
+      setPreview(asset.uri);
+    } catch {
+      Alert.alert('Erro', 'Não foi possível abrir sua biblioteca de fotos.');
+    }
+  };
+
   const handleRemovePreview = () => {
+    if (IS_WEB && preview?.startsWith('blob:')) URL.revokeObjectURL(preview);
     setSelectedFile(null);
     setPreview(null);
     setCaption('');
-    setCitySearch('');
+    const detectedCity = getPrefilledCity();
+    setCitySearch(detectedCity?.shortName || '');
     setCitySuggestions([]);
-    setSelectedCity(null);
+    setSelectedCity(detectedCity);
     setCityError(false);
     setUploadSuccess(false);
     setLocationName('');
@@ -143,8 +219,6 @@ export default function PhotoUploader({
 
     setUploading(true);
 
-    console.log('🌍 country_code final para salvar:', effectiveCountryCode);
-
     const result = await uploadPhoto(userId, effectiveCountryCode, effectiveCountryName, selectedFile, caption, {
       city: selectedCity?.shortName || null,
       city_lat: selectedCity?.lat || null,
@@ -158,19 +232,23 @@ export default function PhotoUploader({
     setUploading(false);
 
     if (result.success) {
-      setUploadSuccess(true);
-      // Mark country as visited
-      const { data: authData } = await supabase.auth.getUser();
-      const currentUser = authData?.user;
-      if (currentUser && effectiveCountryCode) {
-        const alpha2 = getAlpha2(effectiveCountryCode).toUpperCase();
-        await supabase
-          .from('visited_countries')
-          .upsert(
-            { user_id: currentUser.id, country_code: alpha2, country_name: effectiveCountryName },
-            { onConflict: 'user_id,country_code', ignoreDuplicates: true }
-          );
+      let visitResult = { success: true };
+      if (userId && effectiveCountryCode) {
+        visitResult = await markCountryAsVisited(
+          userId,
+          effectiveCountryCode,
+          effectiveCountryName
+        );
       }
+
+      if (!visitResult.success) {
+        Alert.alert(
+          'Foto enviada',
+          'A foto foi salva, mas não foi possível atualizar o país visitado agora.'
+        );
+      }
+
+      setUploadSuccess(true);
       if (onPhotoUploaded) onPhotoUploaded(result.data);
       setTimeout(() => {
         handleRemovePreview();
@@ -183,18 +261,20 @@ export default function PhotoUploader({
   return (
     <View style={styles.container}>
       {/* Input file nativo web — oculto */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/jpg"
-        style={{ display: 'none' }}
-        onChange={handleFileChange}
-      />
+      {IS_WEB && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/jpg"
+          style={{ display: 'none' }}
+          onChange={handleFileChange}
+        />
+      )}
 
       {!selectedFile ? (
         <TouchableOpacity
           style={styles.addButton}
-          onPress={() => fileInputRef.current?.click()}
+          onPress={handlePickPhoto}
           activeOpacity={0.7}
         >
           <Ionicons name="camera" size={22} color={COLORS.primary} />
@@ -304,7 +384,7 @@ export default function PhotoUploader({
           {/* Local específico */}
           <View style={styles.formGroup}>
             <Text style={styles.formLabel}>Local específico <Text style={styles.formLabelOptional}>(opcional)</Text></Text>
-            {Platform.OS === 'web' ? (
+            {IS_WEB || !GOOGLE_PLACES_KEY ? (
               <TextInput
                 style={styles.formInput}
                 placeholder="Ex: Cristo Redentor, Pelourinho..."

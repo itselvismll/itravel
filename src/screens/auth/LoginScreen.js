@@ -1,5 +1,8 @@
 ﻿import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Image, ScrollView } from 'react-native';
+import {
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  Alert, Image, ScrollView, Platform,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES } from '../../utils/constants';
@@ -10,7 +13,9 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [errors, setErrors] = useState({});
+  const [errors, setErrors] = useState(
+    /** @type {Record<string, string | null>} */ ({})
+  );
 
   const validateEmail = (email) => {
     const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -18,48 +23,33 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
   };
 
   const handleLogin = async () => {
-    console.log('🔵 BOTÃO LOGIN CLICADO!');
-    console.log('Email:', email);
-    console.log('Password:', password ? '***' : 'vazio');
-    
     setErrors({});
-    const newErrors = {};
+    const newErrors = /** @type {Record<string, string>} */ ({});
     
     if (!email) {
-      console.log('❌ Email vazio');
       newErrors.email = 'Email é obrigatório';
     } else if (!validateEmail(email)) {
-      console.log('❌ Email inválido');
       newErrors.email = 'Email inválido';
     }
 
     if (!password) {
-      console.log('❌ Senha vazia');
       newErrors.password = 'Senha é obrigatória';
     }
 
     if (Object.keys(newErrors).length > 0) {
-      console.log('❌ Erros de validação:', newErrors);
       setErrors(newErrors);
       return;
     }
 
-    console.log('✅ Validação OK, chamando Supabase...');
     setLoading(true);
     const result = await signIn(email, password);
-    console.log('📦 Resultado Supabase:', result);
     setLoading(false);
 
     if (result.success) {
-      console.log('✅ Login bem-sucedido!');
       if (onLoginSuccess) {
-        console.log('🔄 Chamando onLoginSuccess...');
         onLoginSuccess(result.user);
-      } else {
-        console.log('⚠️ onLoginSuccess não existe!');
       }
     } else {
-      console.log('❌ Login falhou:', result.error);
       let errorMessage = 'Erro ao fazer login';
       
       if (result.error.includes('Invalid login credentials')) {
@@ -90,31 +80,37 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
             <Image 
               source={require('../../assets/images/travel1.jpeg')} 
               style={[styles.photoItem, { opacity: 0.8 }]}
+              resizeMode="cover"
               blurRadius={1.5}
             />
             <Image 
               source={require('../../assets/images/travel2.jpeg')} 
               style={[styles.photoItem, { opacity: 0.8 }]}
+              resizeMode="cover"
               blurRadius={1.5}
             />
             <Image 
               source={require('../../assets/images/travel3.jpeg')} 
               style={[styles.photoItem, { opacity: 0.8 }]}
+              resizeMode="cover"
               blurRadius={1.5}
             />
             <Image 
               source={require('../../assets/images/travel4.jpeg')} 
               style={[styles.photoItem, { opacity: 0.8 }]}
+              resizeMode="cover"
               blurRadius={1.5}
             />
             <Image 
               source={require('../../assets/images/travel5.jpeg')} 
               style={[styles.photoItem, { opacity: 0.8 }]}
+              resizeMode="cover"
               blurRadius={1.5}
             />
             <Image 
               source={require('../../assets/images/travel6.jpeg')} 
               style={[styles.photoItem, { opacity: 0.8 }]}
+              resizeMode="cover"
               blurRadius={1.5}
             />
           </View>
@@ -124,7 +120,8 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
             <View style={styles.logoContainer}>
               <Image
                 source={require('../../../assets/journi_logo_um_j_so_fundo_escuro.png')}
-                style={{ width: 220, height: 98, resizeMode: 'contain', alignSelf: 'center', marginBottom: 8 }}
+                style={{ width: 220, height: 98, alignSelf: 'center', marginBottom: 8 }}
+                resizeMode="contain"
               />
               <Text style={styles.tagline}>Suas viagens. Suas histórias. Suas conexões.</Text>
             </View>
@@ -229,12 +226,7 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
           {/* Link para Cadastro */}
           <TouchableOpacity
             style={styles.linkButton}
-            onPress={() => {
-              console.log('🔵 Botão Cadastro clicado!');
-              console.log('🔵 Navigation:', navigation);
-              console.log('🔵 Navigation.navigate:', navigation?.navigate);
-              navigation.navigate('Register');
-            }}
+            onPress={() => navigation.navigate('Register')}
           >
             <Text style={styles.linkText}>
               Não tem conta? <Text style={styles.linkTextBold}>Cadastre-se grátis</Text>
@@ -248,7 +240,7 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
 
 const styles = StyleSheet.create({
   container: {
-    minHeight: '100vh',
+    minHeight: '100%',
     backgroundColor: '#FFFFFF',
   },
   header: {
@@ -268,7 +260,6 @@ const styles = StyleSheet.create({
   photoItem: {
     width: '33.33%',
     height: '50%',
-    resizeMode: 'cover',
   },
   headerOverlay: {
     position: 'absolute',
@@ -300,14 +291,28 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFFFFF',
     marginBottom: 8,
-    textShadow: '0px 3px 6px rgba(0,0,0,0.8)',
+    ...Platform.select({
+      web: { textShadow: '0 3px 6px rgba(0,0,0,0.8)' },
+      default: {
+        textShadowColor: 'rgba(0,0,0,0.8)',
+        textShadowOffset: { width: 0, height: 3 },
+        textShadowRadius: 6,
+      },
+    }),
     letterSpacing: 1,
   },
   tagline: {
     fontSize: 17,
     color: '#FFFFFF',
     fontWeight: '600',
-    textShadow: '0px 2px 4px rgba(0,0,0,0.7)',
+    ...Platform.select({
+      web: { textShadow: '0 2px 4px rgba(0,0,0,0.7)' },
+      default: {
+        textShadowColor: 'rgba(0,0,0,0.7)',
+        textShadowOffset: { width: 0, height: 2 },
+        textShadowRadius: 4,
+      },
+    }),
   },
   card: {
     backgroundColor: '#FFFFFF',

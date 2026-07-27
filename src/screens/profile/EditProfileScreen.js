@@ -77,46 +77,48 @@ export default function EditProfileScreen({ navigation, route }) {
   };
 
   const handleSave = async () => {
-    console.log('💾 handleSave chamado');
-    console.log('💾 displayName:', displayName);
-    console.log('💾 username:', username);
-    console.log('💾 contemPalavraProibida(displayName):', contemPalavraProibida(displayName));
-    console.log('💾 contemPalavraProibida(username):', contemPalavraProibida(username));
-
     if (!displayName.trim()) {
-      console.log('❌ Nome vazio');
       setErrorMessage('O nome não pode estar vazio.');
       return;
     }
-    if (username.length < 3) {
-      console.log('❌ Username curto');
+    const normalizedUsername = username.trim().toLowerCase();
+
+    if (normalizedUsername.length < 3) {
       setErrorMessage('O username deve ter pelo menos 3 caracteres.');
+      return;
+    }
+    if (!/^[a-z0-9_]+$/.test(normalizedUsername)) {
+      setErrorMessage('Use apenas letras, números e underscore no username.');
       return;
     }
     if (displayName.length > 12) {
       setErrorMessage('O nome deve ter no máximo 12 caracteres.');
       return;
     }
-    if (username.length > 10) {
+    if (normalizedUsername.length > 10) {
       setErrorMessage('O username deve ter no máximo 10 caracteres.');
       return;
     }
     if (contemPalavraProibida(displayName) || contemPalavraProibida(username)) {
-      console.log('❌ Palavra proibida detectada');
       setErrorMessage('⚠️ Nome inadequado. Por favor escolha outro nome.');
       return;
     }
-    if (usernameAvailable === false) {
-      console.log('❌ Username indisponível');
-      setErrorMessage('Este username já está em uso.');
-      return;
-    }
-
-    console.log('✅ Passou todas as validações, salvando...');
     setErrorMessage('');
     setSaving(true);
     try {
       const user = await getCurrentUser();
+      if (!user) throw new Error('Usuário não autenticado.');
+
+      const usernameChanged = normalizedUsername !== profile?.username?.trim().toLowerCase();
+      if (usernameChanged) {
+        const available = await checkUsernameAvailable(normalizedUsername, user.id);
+        setUsernameAvailable(available);
+        if (!available) {
+          setErrorMessage('Este username já está em uso.');
+          return;
+        }
+      }
+
       let finalAvatarUrl = avatarUri;
 
       if (avatarFile) {
@@ -134,7 +136,7 @@ export default function EditProfileScreen({ navigation, route }) {
 
       const result = await updateProfile(user.id, {
         display_name: displayName.trim(),
-        username: username,
+        username: normalizedUsername,
         ...(avatarFile && { avatar_url: finalAvatarUrl }),
       });
 
@@ -228,7 +230,7 @@ export default function EditProfileScreen({ navigation, route }) {
                 setErrorMessage('');
                 if (sliced.length >= 3 && sliced !== profile?.username) {
                   setCheckingUsername(true);
-                  checkUsernameAvailable(sliced).then(available => {
+                  checkUsernameAvailable(sliced, profile?.id).then(available => {
                     setUsernameAvailable(available);
                     setCheckingUsername(false);
                   });

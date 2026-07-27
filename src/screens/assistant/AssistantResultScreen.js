@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView, Share, Platform
+  StyleSheet, SafeAreaView, Share, Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { PROMPT_TYPES } from '../../services/assistantService';
@@ -16,8 +16,8 @@ const AssistantResultScreen = ({ route, navigation }) => {
         message: `${type?.emoji} ${type?.title} — ${destination}\n\n${response}\n\nGerado pelo Journi ✈️`,
         title: `${type?.title} — ${destination}`,
       });
-    } catch (e) {
-      console.error(e);
+    } catch {
+      Alert.alert('Erro', 'Não foi possível compartilhar este conteúdo.');
     }
   };
 

@@ -1,35 +1,45 @@
 import { supabase } from './supabase';
+import { fetch as expoFetch } from 'expo/fetch';
 import { getAlpha2, getAlpha3 } from '../utils/countryUtils';
 
 const BUCKET = 'country-photos';
 const TABLE = 'country_photos';
 
+const countryCodeVariants = (countryCode) => {
+  const variants = [
+    getAlpha3(countryCode)?.toUpperCase(),
+    getAlpha2(countryCode)?.toUpperCase(),
+    countryCode?.toUpperCase(),
+  ].filter(Boolean);
+
+  return [...new Set(variants)];
+};
+
 export const uploadPhoto = async (userId, countryCode, countryName, file, caption = '', cityData = {}) => {
   // Garante sempre alpha-3 no banco, independente do formato recebido
   const normalizedCountryCode = getAlpha3(countryCode) || countryCode;
 
-  console.log('📸 uploadPhoto - iniciando...');
-  console.log('👤 userId:', userId);
-  console.log('🌍 countryCode original:', countryCode, '| normalizado:', normalizedCountryCode);
-
   try {
-    const path = `${userId}/${normalizedCountryCode}/${Date.now()}.jpg`;
-    console.log('📁 Path do upload:', path);
+    const contentType = file?.type || file?.mimeType || 'image/jpeg';
+    const extension = contentType.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
+    const path = `${userId}/${normalizedCountryCode}/${Date.now()}.${extension}`;
+    let uploadBody = file;
+    if (file?.uri) {
+      const response = await expoFetch(file.uri);
+      if (!response.ok) throw new Error('Não foi possível ler a imagem selecionada.');
+      uploadBody = await response.arrayBuffer();
+    }
 
     const { error: uploadError } = await supabase.storage
       .from(BUCKET)
-      .upload(path, file, { contentType: 'image/jpeg', upsert: false });
+      .upload(path, uploadBody, { contentType, upsert: false });
 
     if (uploadError) {
-      console.error('❌ Erro no upload:', uploadError);
       return { success: false, error: uploadError.message };
     }
 
-    console.log('✅ Upload concluído, pegando URL pública...');
-
     const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
     const publicUrl = urlData.publicUrl;
-    console.log('🔗 URL pública:', publicUrl);
 
     const { data, error: insertError } = await supabase
       .from(TABLE)
@@ -52,20 +62,17 @@ export const uploadPhoto = async (userId, countryCode, countryName, file, captio
       .single();
 
     if (insertError) {
-      console.error('❌ Erro ao salvar no banco:', insertError);
+      await supabase.storage.from(BUCKET).remove([path]);
       return { success: false, error: insertError.message };
     }
 
-    console.log('✅ Foto salva com sucesso:', data);
     return { success: true, data };
   } catch (error) {
-    console.error('❌ Exceção em uploadPhoto:', error);
     return { success: false, error: error.message };
   }
 };
 
 export const getCountryPhotos = async (userId, countryCode) => {
-  console.log('🚨🚨🚨 TESTE CANARIO ATIVO 🚨🚨🚨');
   const alpha2 = getAlpha2(countryCode);
   const possibleCodes = [countryCode];
   if (alpha2) {
@@ -73,8 +80,6 @@ export const getCountryPhotos = async (userId, countryCode) => {
     possibleCodes.push(alpha2.toLowerCase());
   }
   const uniqueCodes = [...new Set(possibleCodes)];
-  console.log('🔍 Buscando fotos com códigos possíveis:', uniqueCodes);
-
   try {
     const { data, error } = await supabase
       .from(TABLE)
@@ -84,54 +89,46 @@ export const getCountryPhotos = async (userId, countryCode) => {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('❌ Erro ao buscar fotos do país:', error);
       return { success: false, error: error.message };
     }
 
-    console.log('✅ Fotos encontradas:', data?.length ?? 0);
     return { success: true, data };
   } catch (error) {
-    console.error('❌ Exceção em getCountryPhotos:', error);
     return { success: false, error: error.message };
   }
 };
 
 export const deletePhoto = async (photoId, photoPath) => {
-  console.log('🗑️ deletePhoto - photoId:', photoId, '| path:', photoPath);
-
   try {
+    const { data: deletedRows, error: dbError } = await supabase
+      .from(TABLE)
+      .delete()
+      .eq('id', photoId)
+      .select('id');
+
+    if (dbError) {
+      return { success: false, error: dbError.message };
+    }
+
+    if (!deletedRows?.length) {
+      return { success: false, error: 'Foto não encontrada ou sem permissão para excluir.' };
+    }
+
     const { error: storageError } = await supabase.storage
       .from(BUCKET)
       .remove([photoPath]);
 
     if (storageError) {
-      console.error('❌ Erro ao deletar do storage:', storageError);
-      return { success: false, error: storageError.message };
+      return { success: true, warning: 'O registro foi excluído, mas o arquivo requer limpeza no storage.' };
     }
 
-    console.log('✅ Arquivo removido do storage');
-
-    const { error: dbError } = await supabase
-      .from(TABLE)
-      .delete()
-      .eq('id', photoId);
-
-    if (dbError) {
-      console.error('❌ Erro ao deletar do banco:', dbError);
-      return { success: false, error: dbError.message };
-    }
-
-    console.log('✅ Registro removido do banco');
     return { success: true };
   } catch (error) {
-    console.error('❌ Exceção em deletePhoto:', error);
     return { success: false, error: error.message };
   }
 };
 
 export const getAllUserPhotos = async (userId) => {
-  console.log('📂 getAllUserPhotos - userId:', userId);
-
   try {
     const { data, error } = await supabase
       .from(TABLE)
@@ -140,52 +137,18 @@ export const getAllUserPhotos = async (userId) => {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('❌ Erro ao buscar fotos do usuário:', error);
       return { success: false, error: error.message };
     }
 
-    console.log('✅ Total de fotos do usuário:', data?.length ?? 0);
     return { success: true, data };
   } catch (error) {
-    console.error('❌ Exceção em getAllUserPhotos:', error);
     return { success: false, error: error.message };
   }
 };
 
 export const setCoverPhoto = async (userId, countryCode, photoId, photoUrl) => {
   try {
-    console.log('🖼️ Definindo foto de capa...', { userId, countryCode, photoId });
-
-    const alpha3ToAlpha2 = {
-      'BRA': 'BR', 'USA': 'US', 'ARG': 'AR', 'PRT': 'PT', 'ESP': 'ES',
-      'FRA': 'FR', 'ITA': 'IT', 'DEU': 'DE', 'GBR': 'GB', 'JPN': 'JP',
-      'CHN': 'CN', 'MEX': 'MX', 'COL': 'CO', 'CHL': 'CL', 'URY': 'UY',
-      'BOL': 'BO', 'PER': 'PE', 'VEN': 'VE', 'ECU': 'EC', 'PRY': 'PY',
-    };
-
-    const countryCodeNormalized = alpha3ToAlpha2[countryCode] || countryCode;
-    console.log('🔍 setCoverPhoto recebeu countryCode:', countryCode, '→ normalizado:', countryCodeNormalized);
-
-    const countryNames = {
-      'BR': 'Brasil', 'US': 'Estados Unidos', 'AR': 'Argentina',
-      'PT': 'Portugal', 'ES': 'Espanha', 'FR': 'França',
-      'IT': 'Itália', 'DE': 'Alemanha', 'GB': 'Reino Unido',
-      'JP': 'Japão', 'CN': 'China', 'MX': 'México',
-      'CO': 'Colômbia', 'CL': 'Chile', 'UY': 'Uruguai',
-      'BO': 'Bolívia', 'PE': 'Peru', 'VE': 'Venezuela',
-      'EC': 'Equador', 'PY': 'Paraguai',
-    };
-
-    const countryName = countryNames[countryCodeNormalized] || countryCodeNormalized;
-    console.log('🔍 country_name resolvido:', countryName);
-
-    const { data: existing } = await supabase
-      .from('visited_countries')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('country_code', countryCodeNormalized);
-
-    console.log('🔍 País encontrado na tabela visited_countries:', existing);
+    const possibleCodes = countryCodeVariants(countryCode);
 
     const { data, error } = await supabase
       .from('visited_countries')
@@ -194,32 +157,26 @@ export const setCoverPhoto = async (userId, countryCode, photoId, photoUrl) => {
         cover_photo_url: photoUrl,
       })
       .eq('user_id', userId)
-      .eq('country_code', countryCodeNormalized)
+      .in('country_code', possibleCodes)
       .select();
 
-    console.log('🔍 UPDATE result - data:', data, 'error:', error);
-
     if (error) {
-      console.error('❌ Erro ao atualizar capa:', error);
       return { success: false, error: error.message };
     }
 
     if (!data || data.length === 0) {
-      console.error('❌ Nenhuma linha atualizada - país não encontrado com code:', countryCodeNormalized);
       return { success: false, error: 'País não encontrado na tabela' };
     }
 
-    console.log('✅ Foto de capa definida!', data[0]);
     return { success: true, data: data[0] };
   } catch (error) {
-    console.error('❌ Exceção em setCoverPhoto:', error);
     return { success: false, error: error.message };
   }
 };
 
 export const removeCoverPhoto = async (userId, countryCode) => {
   try {
-    console.log('🗑️ Removendo foto de capa...', { userId, countryCode });
+    const possibleCodes = countryCodeVariants(countryCode);
 
     const { data, error } = await supabase
       .from('visited_countries')
@@ -228,18 +185,15 @@ export const removeCoverPhoto = async (userId, countryCode) => {
         cover_photo_url: null,
       })
       .eq('user_id', userId)
-      .eq('country_code', countryCode)
+      .in('country_code', possibleCodes)
       .select();
 
     if (error) {
-      console.error('❌ Erro ao remover capa:', error);
       return { success: false, error: error.message };
     }
 
-    console.log('✅ Capa removida!');
     return { success: true };
   } catch (error) {
-    console.error('❌ Exceção em removeCoverPhoto:', error);
     return { success: false, error: error.message };
   }
 };
@@ -250,7 +204,13 @@ export const getFavoritePhotos = async (userId) => {
     .select('photo_id, country_photos(id, photo_url, city, city_lat, city_lng, country_code)')
     .eq('user_id', userId);
   if (error) return { success: false, error: error.message };
-  return { success: true, data: data.map(f => ({ ...f.country_photos, isFavorite: true })) };
+  const photos = (data || []).flatMap(favorite => {
+    const relatedPhoto = Array.isArray(favorite.country_photos)
+      ? favorite.country_photos[0]
+      : favorite.country_photos;
+    return relatedPhoto ? [{ ...relatedPhoto, isFavorite: true }] : [];
+  });
+  return { success: true, data: photos };
 };
 
 export const updatePhotoPrivacy = async (photoId, isPublic) => {
@@ -331,15 +291,16 @@ export const getTopPlacesByCountry = async (countryCode) => {
 
 export const getCoverPhoto = async (userId, countryCode) => {
   try {
+    const possibleCodes = countryCodeVariants(countryCode);
     const { data, error } = await supabase
       .from('visited_countries')
       .select('cover_photo_url, cover_photo_id')
       .eq('user_id', userId)
-      .eq('country_code', countryCode)
+      .in('country_code', possibleCodes)
+      .limit(1)
       .maybeSingle();
 
     if (error) {
-      console.error('❌ Erro ao buscar foto de capa:', error);
       return { success: false, error: error.message };
     }
 
@@ -349,7 +310,6 @@ export const getCoverPhoto = async (userId, countryCode) => {
 
     return { success: true, data };
   } catch (error) {
-    console.error('❌ Exceção em getCoverPhoto:', error);
     return { success: false, error: error.message };
   }
 };

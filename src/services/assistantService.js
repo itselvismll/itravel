@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
 
+const ASSISTANT_TIMEOUT_MS = 45000;
+
 export const PROMPT_TYPES = [
   { id: 'guide',     emoji: '📋', title: 'Guia Completo',
     description: 'Tudo sobre o destino em 1 página',     color: '#6C2BD9' },
@@ -16,31 +18,71 @@ export const PROMPT_TYPES = [
 ];
 
 export const askTravelAssistant = async ({ promptType, destination, userContext }) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ASSISTANT_TIMEOUT_MS);
+
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    let { data: { session } } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      const refreshResult = await supabase.auth.refreshSession();
+      session = refreshResult.data.session;
+    }
+
+    if (!session?.access_token) {
+      return { success: false, error: 'Sua sessão expirou. Entre novamente para usar o assistente.' };
+    }
 
     const { data, error } = await supabase.functions.invoke(
       'travel-assistant',
       {
         body: { promptType, destination, userContext },
-        headers: session?.access_token ? {
-          Authorization: `Bearer ${session.access_token}`
-        } : {},
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        signal: controller.signal,
       }
     );
 
-    if (error) {
-      console.error('Erro invoke:', error);
-      throw error;
+    if (controller.signal.aborted) {
+      return {
+        success: false,
+        error: 'A resposta demorou mais que o esperado. Tente novamente.',
+      };
     }
 
-    console.log('Resposta da função:', data);
+    if (error) {
+      let functionError;
+      try {
+        functionError = await error.context?.json();
+      } catch {
+        functionError = null;
+      }
+      return {
+        success: false,
+        error: functionError?.error || 'O assistente está temporariamente indisponível.',
+      };
+    }
+
+    if (!data?.success || !data?.response) {
+      return {
+        success: false,
+        error: data?.error || 'O assistente não retornou uma resposta válida.',
+      };
+    }
+
     return { success: true, response: data.response };
   } catch (error) {
-    console.error('Erro no assistente:', error);
+    if (controller.signal.aborted || error?.name === 'AbortError') {
+      return {
+        success: false,
+        error: 'A resposta demorou mais que o esperado. Tente novamente.',
+      };
+    }
+
     return {
       success: false,
       error: 'Não foi possível conectar ao assistente. Tente novamente.',
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
 };

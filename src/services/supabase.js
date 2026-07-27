@@ -1,5 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 import { API_CONFIG } from '../utils/constants';
+import { getAlpha2, getAlpha3 } from '../utils/countryUtils';
+
+if (!API_CONFIG.SUPABASE_URL || !API_CONFIG.SUPABASE_ANON_KEY) {
+  throw new Error(
+    'Configuração do Supabase ausente. Defina EXPO_PUBLIC_SUPABASE_URL e EXPO_PUBLIC_SUPABASE_ANON_KEY.'
+  );
+}
 
 // Criar cliente do Supabase
 export const supabase = createClient(
@@ -10,33 +17,24 @@ export const supabase = createClient(
 // Função de cadastro
 export async function signUp(email, password, username, fullName) {
   try {
-    // 1. Criar usuário na autenticação
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        data: {
+          username: username.trim().toLowerCase(),
+          full_name: fullName,
+          display_name: fullName,
+        },
+      },
     });
 
     if (authError) throw authError;
 
-    // 2. Criar perfil do usuário
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .insert([
-        {
-          id: authData.user.id,
-          username,
-          full_name: fullName,
-          display_name: fullName,
-          avatar_url: null,
-          bio: null,
-        },
-      ]);
-
-    if (profileError) throw profileError;
+    if (!authData.user) throw new Error('Não foi possível criar o usuário.');
 
     return { success: true, user: authData.user };
   } catch (error) {
-    console.error('Erro no cadastro:', error);
     return { success: false, error: error.message };
   }
 }
@@ -53,7 +51,6 @@ export async function signIn(email, password) {
 
     return { success: true, user: data.user };
   } catch (error) {
-    console.error('Erro no login:', error);
     return { success: false, error: error.message };
   }
 }
@@ -65,7 +62,6 @@ export async function signOut() {
     if (error) throw error;
     return { success: true };
   } catch (error) {
-    console.error('Erro no logout:', error);
     return { success: false, error: error.message };
   }
 }
@@ -75,8 +71,7 @@ export async function getCurrentUser() {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     return user;
-  } catch (error) {
-    console.error('Erro ao buscar usuário:', error);
+  } catch {
     return null;
   }
 }
@@ -92,8 +87,7 @@ export async function getUserProfile(userId) {
 
     if (error) throw error;
     return data;
-  } catch (error) {
-    console.error('Erro ao buscar perfil:', error);
+  } catch {
     return null;
   }
 }
@@ -110,7 +104,6 @@ export async function getVisitedCountries(userId) {
     if (error) throw error;
     return { success: true, data };
   } catch (error) {
-    console.error('Erro ao buscar países visitados:', error);
     return { success: false, error: error.message, data: [] };
   }
 }
@@ -118,21 +111,21 @@ export async function getVisitedCountries(userId) {
 // Função para marcar país como visitado
 export async function markCountryAsVisited(userId, countryCode, countryName) {
   try {
+    const normalizedCountryCode = getAlpha3(countryCode)?.toUpperCase() || countryCode?.toUpperCase();
     const { data, error } = await supabase
       .from('visited_countries')
-      .insert([
+      .upsert([
         {
           user_id: userId,
-          country_code: countryCode,
+          country_code: normalizedCountryCode,
           country_name: countryName,
         },
-      ])
+      ], { onConflict: 'user_id,country_code' })
       .select();
 
     if (error) throw error;
     return { success: true, data: data[0] };
   } catch (error) {
-    console.error('Erro ao marcar país:', error);
     return { success: false, error: error.message };
   }
 }
@@ -140,16 +133,20 @@ export async function markCountryAsVisited(userId, countryCode, countryName) {
 // Função para desmarcar país como visitado
 export async function unmarkCountryAsVisited(userId, countryCode) {
   try {
+    const possibleCodes = [
+      getAlpha3(countryCode)?.toUpperCase(),
+      getAlpha2(countryCode)?.toUpperCase(),
+      countryCode?.toUpperCase(),
+    ].filter(Boolean);
     const { error } = await supabase
       .from('visited_countries')
       .delete()
       .eq('user_id', userId)
-      .eq('country_code', countryCode);
+      .in('country_code', [...new Set(possibleCodes)]);
 
     if (error) throw error;
     return { success: true };
   } catch (error) {
-    console.error('Erro ao desmarcar país:', error);
     return { success: false, error: error.message };
   }
 }

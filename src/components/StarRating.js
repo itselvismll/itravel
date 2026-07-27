@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text } from 'react-native';
 import { colors } from '../theme/colors';
 
-export default function StarRating({ rating = 0, size = 13, gap = 2, activeColor, inactiveColor, max = 5 }) {
+export default function StarRating({ rating = 0, size = 13, gap = 2, activeColor = null, inactiveColor = null, max = 5 }) {
   return (
     <View style={{ flexDirection: 'row', gap }}>
       {Array.from({ length: max }, (_, i) => i + 1).map(s => (

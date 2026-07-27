@@ -87,20 +87,36 @@ export const COUNTRY_NAMES_PT = {
   'Cameroon': 'Camarões', 'Mozambique': 'Moçambique',
   'Costa Rica': 'Costa Rica', 'Dominican Republic': 'República Dominicana',
   'El Salvador': 'El Salvador', 'Guatemala': 'Guatemala', 'Honduras': 'Honduras',
-  'Nicaragua': 'Nicarágua', 'Paraguay': 'Paraguai', 'Suriname': 'Suriname',
+  'Nicaragua': 'Nicarágua', 'Suriname': 'Suriname',
   'Guyana': 'Guiana', 'Trinidad and Tobago': 'Trinidad e Tobago',
-  'Jamaica': 'Jamaica', 'Haiti': 'Haiti', 'Cuba': 'Cuba',
+  'Haiti': 'Haiti',
   'Kazakhstan': 'Cazaquistão', 'Uzbekistan': 'Uzbequistão',
   'Turkmenistan': 'Turcomenistão', 'Kyrgyzstan': 'Quirguistão',
   'Tajikistan': 'Tajiquistão', 'Mongolia': 'Mongólia', 'Nepal': 'Nepal',
   'Sri Lanka': 'Sri Lanka', 'Myanmar': 'Mianmar', 'Cambodia': 'Camboja',
-  'Laos': 'Laos', 'North Korea': 'Coreia do Norte',
-  'South Korea': 'Coreia do Sul', 'Taiwan': 'Taiwan',
+  'Laos': 'Laos',
+  'Taiwan': 'Taiwan',
   'Hong Kong': 'Hong Kong', 'Singapore': 'Singapura',
-  'Bangladesh': 'Bangladesh', 'Afghanistan': 'Afeganistão',
+  'Bangladesh': 'Bangladesh',
 };
 
 export const getCountryNamePt = (name) => COUNTRY_NAMES_PT[name] || name;
+
+let regionNamesPt;
+
+export const getCountryNamePtByCode = (code, fallbackName = '') => {
+  const alpha2 = getAlpha2(code);
+  if (!alpha2 || alpha2.length !== 2) {
+    return getCountryNamePt(fallbackName || code);
+  }
+
+  try {
+    regionNamesPt ||= new Intl.DisplayNames(['pt-BR'], { type: 'region' });
+    return regionNamesPt.of(alpha2.toUpperCase()) || getCountryNamePt(fallbackName);
+  } catch {
+    return getCountryNamePt(fallbackName || code);
+  }
+};
 
 export const getAlpha3 = (input) => {
   if (!input) return null;

@@ -1,34 +1,68 @@
 import { supabase } from './supabase';
+import { getAlpha2, getAlpha3 } from '../utils/countryUtils';
+
+const countryCodeVariants = (code) => [...new Set([
+  getAlpha3(code)?.toUpperCase(),
+  getAlpha2(code)?.toUpperCase(),
+  code?.toUpperCase(),
+].filter(Boolean))];
 
 export const getComments = async (photoId) => {
+  if (!photoId) return { success: false, data: [], error: 'Foto inválida.' };
+
   const { data, error } = await supabase
     .from('comments')
-    .select('id, content, created_at, user_id, profiles:user_id(username, avatar_url)')
+    .select(`
+      id,
+      content,
+      created_at,
+      user_id,
+      profiles!comments_user_id_fkey(id, username, display_name, avatar_url)
+    `)
     .eq('photo_id', photoId)
     .order('created_at', { ascending: true });
+
   return { success: !error, data: data || [], error: error?.message };
 };
 
 export const addComment = async (photoId, content) => {
+  const normalizedContent = content?.trim();
+  if (!photoId) return { success: false, error: 'Foto inválida.' };
+  if (!normalizedContent) return { success: false, error: 'Escreva um comentário.' };
+  if (normalizedContent.length > 1000) {
+    return { success: false, error: 'O comentário deve ter no máximo 1000 caracteres.' };
+  }
+
   const { data: authData } = await supabase.auth.getUser();
   const user = authData?.user;
-  if (!user) return { success: false, error: 'Usuário não autenticado' };
-  const { error } = await supabase
+  if (!user) return { success: false, error: 'Usuário não autenticado.' };
+
+  const { data, error } = await supabase
     .from('comments')
-    .insert({ photo_id: photoId, user_id: user.id, content });
-  return { success: !error, error: error?.message };
+    .insert({ photo_id: photoId, user_id: user.id, content: normalizedContent })
+    .select('id, photo_id, user_id, content, created_at')
+    .single();
+
+  if (error?.code === '23503') {
+    return {
+      success: false,
+      error: 'Seu perfil ainda não foi sincronizado. Saia e entre novamente antes de comentar.',
+    };
+  }
+
+  return { success: !error, data, error: error?.message };
 };
 
 export const deleteComment = async (commentId) => {
   const { error } = await supabase.from('comments').delete().eq('id', commentId);
-  return { success: !error };
+  return { success: !error, error: error?.message };
 };
 
 export const getTravelersByCountry = async (countryCode, currentUserId) => {
   const { data, error } = await supabase
     .from('visited_countries')
     .select('user_id, profiles:user_id(id, username, display_name, avatar_url)')
-    .eq('country_code', countryCode);
+    .in('country_code', countryCodeVariants(countryCode));
   if (error) return { success: false, data: [], error: error.message };
   const seen = new Set();
   const travelers = [];
@@ -41,29 +75,7 @@ export const getTravelersByCountry = async (countryCode, currentUserId) => {
   return { success: true, data: travelers };
 };
 
-const ALPHA3_TO_ALPHA2 = {
-  'BRA': 'BR', 'USA': 'US', 'FRA': 'FR', 'JPN': 'JP',
-  'DEU': 'DE', 'ITA': 'IT', 'ESP': 'ES', 'GBR': 'GB',
-  'ARG': 'AR', 'CHL': 'CL', 'COL': 'CO', 'MEX': 'MX',
-  'PRT': 'PT', 'VEN': 'VE', 'SUR': 'SR', 'PER': 'PE',
-  'URY': 'UY', 'PRY': 'PY', 'BOL': 'BO', 'ECU': 'EC',
-  'CAN': 'CA', 'AUS': 'AU', 'CHN': 'CN', 'IND': 'IN',
-  'RUS': 'RU', 'ZAF': 'ZA', 'NER': 'NE', 'LBY': 'LY',
-  'DZA': 'DZ', 'EGY': 'EG', 'MAR': 'MA', 'NGA': 'NG',
-  'NLD': 'NL', 'BEL': 'BE', 'CHE': 'CH', 'AUT': 'AT',
-  'SWE': 'SE', 'NOR': 'NO', 'DNK': 'DK', 'FIN': 'FI',
-  'POL': 'PL', 'CZE': 'CZ', 'HUN': 'HU', 'ROU': 'RO',
-  'HRV': 'HR', 'GRC': 'GR', 'TUR': 'TR', 'UKR': 'UA',
-  'KOR': 'KR', 'THA': 'TH', 'VNM': 'VN', 'IDN': 'ID',
-  'MYS': 'MY', 'SGP': 'SG', 'PHL': 'PH', 'NZL': 'NZ',
-};
-
-const normalizeToAlpha2 = (code) => {
-  if (!code) return code;
-  const upper = code.toUpperCase();
-  if (upper.length === 2) return upper;
-  return ALPHA3_TO_ALPHA2[upper] || upper;
-};
+const normalizeToAlpha3 = (code) => getAlpha3(code)?.toUpperCase() || code?.toUpperCase();
 
 export const getSuggestedTravelers = async (userId) => {
   if (!userId) return { success: false, data: [] };
@@ -79,7 +91,7 @@ export const getSuggestedTravelers = async (userId) => {
       .limit(8);
     return { success: !error, data: (data || []).map(p => ({ ...p, commonCountries: 0 })) };
   }
-  const myCodes = [...new Set(myCountries.map(c => normalizeToAlpha2(c.country_code)))];
+  const myCodes = [...new Set(myCountries.flatMap(c => countryCodeVariants(c.country_code)))];
   const { data, error } = await supabase
     .from('visited_countries')
     .select('user_id, country_code, profiles:user_id(id, username, display_name, avatar_url)')
@@ -103,9 +115,13 @@ export const addToWishlist = async (countryCode, countryName) => {
   const { data: authData } = await supabase.auth.getUser();
   const user = authData?.user;
   if (!user) return { success: false, error: 'Não autenticado' };
+  const normalizedCountryCode = normalizeToAlpha3(countryCode);
   const { error } = await supabase
     .from('wishlist')
-    .insert({ user_id: user.id, country_code: countryCode, country_name: countryName });
+    .upsert(
+      { user_id: user.id, country_code: normalizedCountryCode, country_name: countryName },
+      { onConflict: 'user_id,country_code' }
+    );
   return { success: !error, error: error?.message };
 };
 
@@ -117,7 +133,7 @@ export const removeFromWishlist = async (countryCode) => {
     .from('wishlist')
     .delete()
     .eq('user_id', user.id)
-    .eq('country_code', countryCode);
+    .in('country_code', countryCodeVariants(countryCode));
   return { success: !error, error: error?.message };
 };
 
@@ -138,7 +154,8 @@ export const isInWishlist = async (countryCode) => {
     .from('wishlist')
     .select('id')
     .eq('user_id', user.id)
-    .eq('country_code', countryCode)
+    .in('country_code', countryCodeVariants(countryCode))
+    .limit(1)
     .maybeSingle();
   return { success: true, data: !!data };
 };

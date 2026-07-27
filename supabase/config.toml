@@ -1,0 +1,2 @@
+[functions.travel-assistant]
+verify_jwt = true

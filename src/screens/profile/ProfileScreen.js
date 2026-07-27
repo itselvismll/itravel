@@ -20,10 +20,16 @@ import { getCurrentUser, signOut, getVisitedCountries, supabase } from '../../se
 import { getWishlist } from '../../services/socialService';
 import { getProfile } from '../../services/profileService';
 import { getFavoritePhotos, getAllUserPhotos } from '../../services/photoService';
-import { getAlpha2, getStampRotation, getCountryNamePt } from '../../utils/countryUtils';
+import {
+  getAlpha2,
+  getStampRotation,
+  getCountryNamePtByCode,
+} from '../../utils/countryUtils';
 import StarRating from '../../components/StarRating';
+import CountryFlag from '../../components/CountryFlag';
 import { useUpload } from '../../context/UploadContext';
 import { getLevelInfo } from '../../utils/travelerLevels';
+import { confirm, notify } from '../../utils/dialogs';
 
 export default function ProfileScreen({ navigation }) {
   const [profile, setProfile] = useState(null);
@@ -39,30 +45,24 @@ export default function ProfileScreen({ navigation }) {
   const [unreadCount, setUnreadCount] = useState(0);
 
   const { refreshTrigger } = useUpload();
-  const shareCardRef = useRef();
+  const shareCardRef = useRef(null);
 
   useEffect(() => {
     if (refreshTrigger > 0) loadProfile();
   }, [refreshTrigger]);
 
   const loadProfile = async () => {
-    console.log('🔄 Recarregando perfil...');
     try {
       const user = await getCurrentUser();
-      console.log('👤 userId:', user?.id);
       if (!user) return;
 
       const { data: { user: authUser } } = await supabase.auth.getUser();
       setAvatarUrl(authUser?.user_metadata?.avatar_url || null);
 
       const profileResult = await getProfile(user.id);
-      console.log('📋 profileResult:', JSON.stringify(profileResult));
 
       if (profileResult.success && profileResult.data) {
         setProfile(profileResult.data);
-        console.log('✅ Profile setado:', profileResult.data);
-      } else {
-        console.log('⚠️ Profile não encontrado ou erro:', profileResult);
       }
 
       const [countriesResult, favResult, photosResult, wishlistResult] = await Promise.all([
@@ -96,8 +96,8 @@ export default function ProfileScreen({ navigation }) {
         .eq('user_id', user.id)
         .eq('read', false);
       setUnreadCount((notifs || []).length);
-    } catch (error) {
-      console.error('Erro ao carregar perfil:', error);
+    } catch {
+      setProfile(null);
     } finally {
       setLoading(false);
     }
@@ -110,20 +110,18 @@ export default function ProfileScreen({ navigation }) {
   );
 
   const handleLogout = async () => {
-    const confirmacao = window.confirm('Tem certeza que deseja sair da sua conta?');
+    const confirmacao = await confirm('Sair da conta', 'Tem certeza que deseja sair da sua conta?');
     if (!confirmacao) return;
 
     try {
       const result = await signOut();
       if (result.success) {
-        setTimeout(() => {
-          window.location.href = '/';
-        }, 100);
+        // AppNavigator reage à mudança de sessão e mostra a tela de login.
       } else {
-        window.alert('Erro ao sair: ' + (result.error || 'Desconhecido'));
+        notify('Erro ao sair', result.error || 'Não foi possível sair da conta.');
       }
     } catch (error) {
-      window.alert('Erro ao sair da conta: ' + error.message);
+      notify('Erro ao sair', error.message || 'Não foi possível sair da conta.');
     }
   };
 
@@ -155,8 +153,6 @@ export default function ProfileScreen({ navigation }) {
           width: 360,
           height: 640,
         });
-        console.log('📸 dataUrl length:', dataUrl?.length);
-        console.log('📸 dataUrl prefix:', dataUrl?.substring(0, 50));
         const link = document.createElement('a');
         link.href = dataUrl;
         link.download = 'meu-passaporte-journi.png';
@@ -165,8 +161,8 @@ export default function ProfileScreen({ navigation }) {
         const uri = await captureRef(shareCardRef, { format: 'png', quality: 1 });
         await Sharing.shareAsync(uri);
       }
-    } catch (e) {
-      console.error('Erro ao compartilhar:', e);
+    } catch {
+      notify('Erro ao compartilhar', 'Não foi possível gerar seu passaporte agora.');
     }
   };
 
@@ -179,7 +175,8 @@ export default function ProfileScreen({ navigation }) {
       <View style={styles.header}>
         <Image
           source={require('../../../assets/journi_simbolo.png')}
-          style={{ width: 28, height: 28, resizeMode: 'contain', position: 'absolute', top: 16, left: 16 }}
+          style={{ width: 28, height: 28, position: 'absolute', top: 16, left: 16 }}
+          resizeMode="contain"
         />
         <TouchableOpacity
           style={styles.editBtn}
@@ -224,15 +221,27 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.statLbl}>Países</Text>
           </View>
           <View style={styles.statDivider} />
-          <View style={styles.statItem}>
+          <TouchableOpacity
+            style={styles.statItem}
+            onPress={() => navigation.navigate('Connections', {
+              userId: profile?.id,
+              mode: 'followers',
+            })}
+          >
             <Text style={styles.statVal}>{followersCount}</Text>
             <Text style={styles.statLbl}>Seguidores</Text>
-          </View>
+          </TouchableOpacity>
           <View style={styles.statDivider} />
-          <View style={styles.statItem}>
+          <TouchableOpacity
+            style={styles.statItem}
+            onPress={() => navigation.navigate('Connections', {
+              userId: profile?.id,
+              mode: 'following',
+            })}
+          >
             <Text style={styles.statVal}>{followingCount}</Text>
             <Text style={styles.statLbl}>Seguindo</Text>
-          </View>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -281,18 +290,24 @@ export default function ProfileScreen({ navigation }) {
                   style={[styles.travelTag, { transform: [{ rotate: `${rotation}deg` }] }]}
                 >
                   <View style={styles.tagHole} />
-                  <Image
-                    source={{ uri: `https://flagcdn.com/w40/${getAlpha2(country.country_code)}.png` }}
-                    style={styles.tagFlag}
-                    resizeMode="cover"
-                  />
+                  <View style={styles.tagCountryMark}>
+                    <CountryFlag
+                      countryCode={country.country_code}
+                      width={24}
+                      height={16}
+                      borderRadius={2}
+                    />
+                    <Text style={styles.tagCountryCode}>
+                      {getAlpha2(country.country_code).toUpperCase()}
+                    </Text>
+                  </View>
                   <View style={styles.tagDivider} />
                   <View style={styles.tagFooter}>
                     <Text style={styles.tagName} numberOfLines={1}>
-                      {getCountryNamePt(country.country_name || country.country_code).toUpperCase()}
-                    </Text>
-                    <Text style={styles.tagCode}>
-                      {getAlpha2(country.country_code).toUpperCase()}
+                      {getCountryNamePtByCode(
+                        country.country_code,
+                        country.country_name
+                      ).toUpperCase()}
                     </Text>
                   </View>
                 </View>
@@ -319,18 +334,24 @@ export default function ProfileScreen({ navigation }) {
                   style={[styles.travelTag, { transform: [{ rotate: `${rotation}deg` }] }]}
                 >
                   <View style={[styles.tagHole, { backgroundColor: '#00D1C1', borderColor: '#00A89C' }]} />
-                  <Image
-                    source={{ uri: `https://flagcdn.com/w40/${getAlpha2(item.country_code)}.png` }}
-                    style={styles.tagFlag}
-                    resizeMode="cover"
-                  />
+                  <View style={styles.tagCountryMark}>
+                    <CountryFlag
+                      countryCode={item.country_code}
+                      width={24}
+                      height={16}
+                      borderRadius={2}
+                    />
+                    <Text style={[styles.tagCountryCode, { color: '#00A89C' }]}>
+                      {getAlpha2(item.country_code).toUpperCase()}
+                    </Text>
+                  </View>
                   <View style={styles.tagDivider} />
                   <View style={styles.tagFooter}>
                     <Text style={styles.tagName} numberOfLines={1}>
-                      {getCountryNamePt(item.country_name || item.country_code).toUpperCase()}
-                    </Text>
-                    <Text style={[styles.tagCode, { color: '#00D1C1' }]}>
-                      {getAlpha2(item.country_code).toUpperCase()}
+                      {getCountryNamePtByCode(
+                        item.country_code,
+                        item.country_name
+                      ).toUpperCase()}
                     </Text>
                   </View>
                 </View>
@@ -429,13 +450,16 @@ export default function ProfileScreen({ navigation }) {
           </View>
           {visitedCountries.map((country, i) => (
             <View key={i} style={styles.countryRow}>
-              <Image
-                source={{ uri: `https://flagcdn.com/w40/${getAlpha2(country.country_code)}.png` }}
-                style={{ width: 28, height: 20, borderRadius: 3 }}
-                resizeMode="cover"
+              <CountryFlag
+                countryCode={country.country_code}
+                width={30}
+                height={20}
+                borderRadius={3}
               />
               <View style={{ flex: 1 }}>
-                <Text style={styles.countryName}>{getCountryNamePt(country.country_name || country.country_code)}</Text>
+                <Text style={styles.countryName}>
+                  {getCountryNamePtByCode(country.country_code, country.country_name)}
+                </Text>
               </View>
             </View>
           ))}
@@ -464,7 +488,7 @@ export default function ProfileScreen({ navigation }) {
     {/* Card oculto para captura — fixed no viewport mas atrás de tudo (zIndex -1) */}
     <View
       ref={shareCardRef}
-      style={{ position: 'fixed', top: 0, left: 0, zIndex: -1, pointerEvents: 'none' }}
+      style={{ position: 'absolute', top: 0, left: 0, zIndex: -1, pointerEvents: 'none' }}
       collapsable={false}
     >
       <ShareCard
@@ -629,11 +653,16 @@ const styles = StyleSheet.create({
     height: 58,
     backgroundColor: '#F3ECDC',
     borderRadius: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 2, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
+    ...Platform.select({
+      web: { boxShadow: '2px 3px 4px rgba(0,0,0,0.25)' },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 2, height: 3 },
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
+        elevation: 4,
+      },
+    }),
     overflow: 'hidden',
   },
   tagHole: {
@@ -648,13 +677,19 @@ const styles = StyleSheet.create({
     borderColor: '#A0906C',
     zIndex: 2,
   },
-  tagFlag: {
+  tagCountryMark: {
     position: 'absolute',
-    top: 5,
+    top: 8,
     right: 8,
-    width: 28,
-    height: 18,
-    borderRadius: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  tagCountryCode: {
+    color: '#D97706',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   tagDivider: {
     position: 'absolute',
@@ -679,12 +714,6 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: '#46371E',
     flex: 1,
-  },
-  tagCode: {
-    fontWeight: '700',
-    fontSize: 8,
-    color: '#FF9A00',
-    marginLeft: 4,
   },
   emptyPassport: { alignItems: 'center', paddingVertical: 20, gap: 10 },
   emptyPassportText: { fontSize: 12, color: '#bbb', textAlign: 'center', lineHeight: 18 },

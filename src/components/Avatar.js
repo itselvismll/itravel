@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, Image } from 'react-native';
 import { colors } from '../theme/colors';
 
-export default function Avatar({ profile, size = 34, fontSize, ringColor }) {
+export default function Avatar({ profile, size = 34, fontSize = null, ringColor = null }) {
   const initial = (profile?.display_name || profile?.username || '?')[0].toUpperCase();
   const computedFontSize = fontSize || Math.round(size * 0.42);
   return (

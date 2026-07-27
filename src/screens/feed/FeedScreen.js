@@ -8,10 +8,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { getCurrentUser } from '../../services/supabase';
 import { getFeedPhotos, getFollowingProfiles } from '../../services/followService';
 import { getComments, addComment } from '../../services/socialService';
-import { getAlpha2 } from '../../utils/countryUtils';
+import { getCountryNamePtByCode } from '../../utils/countryUtils';
 import { useUpload } from '../../context/UploadContext';
 import StarRating from '../../components/StarRating';
 import Avatar from '../../components/Avatar';
+import CountryFlag from '../../components/CountryFlag';
+import { notify } from '../../utils/dialogs';
 
 const timeAgo = (dateStr) => {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -52,8 +54,8 @@ export default function FeedScreen({ navigation }) {
 
       if (feedResult.success) setFeed(feedResult.data);
       if (followingResult.success) setFollowing(followingResult.data);
-    } catch (e) {
-      console.error('Erro ao carregar feed:', e);
+    } catch {
+      setFeed([]);
     } finally {
       setLoading(false);
     }
@@ -78,6 +80,7 @@ export default function FeedScreen({ navigation }) {
     setCommentModal(true);
     const result = await getComments(photo.id);
     if (result.success) setComments(result.data);
+    else notify('Erro ao carregar comentários', result.error || 'Tente novamente.');
   };
 
   const submitComment = async () => {
@@ -89,8 +92,7 @@ export default function FeedScreen({ navigation }) {
       const updated = await getComments(commentPhoto.id);
       if (updated.success) setComments(updated.data);
     } else {
-      console.error('Erro ao salvar comentário:', result.error);
-      alert('Erro ao salvar comentário. Tente novamente.');
+      notify('Erro ao salvar comentário', result.error || 'Tente novamente.');
     }
     setCommentLoading(false);
   };
@@ -108,8 +110,10 @@ export default function FeedScreen({ navigation }) {
       } else {
         await Share.share({ message: `${message}\n${photo.photo_url}`, title: 'Journi' });
       }
-    } catch (e) {
-      if (e?.name !== 'AbortError') console.error('Erro ao compartilhar:', e);
+    } catch (error) {
+      if (error?.name !== 'AbortError') {
+        notify('Erro ao compartilhar', 'Não foi possível compartilhar esta foto.');
+      }
     }
   };
 
@@ -137,7 +141,8 @@ export default function FeedScreen({ navigation }) {
           </View>
           <Image
             source={require('../../../assets/journi_simbolo.png')}
-            style={{ width: 28, height: 28, resizeMode: 'contain', marginTop: 2 }}
+            style={{ width: 28, height: 28, marginTop: 2 }}
+            resizeMode="contain"
           />
         </View>
       </View>
@@ -199,13 +204,17 @@ export default function FeedScreen({ navigation }) {
                         </Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                           {post.country_code && (
-                            <Image
-                              source={{ uri: `https://flagcdn.com/w40/${getAlpha2(post.country_code)}.png` }}
-                              style={{ width: 14, height: 10, borderRadius: 1 }}
+                            <CountryFlag
+                              countryCode={post.country_code}
+                              width={20}
+                              height={13}
+                              borderRadius={2}
                             />
                           )}
                           <Text style={styles.postAuthorMeta}>
-                            {[post.city, post.country_name].filter(Boolean).join(', ')}
+                            {[post.city, getCountryNamePtByCode(post.country_code, post.country_name)]
+                              .filter(Boolean)
+                              .join(', ')}
                           </Text>
                         </View>
                       </View>
@@ -332,6 +341,7 @@ export default function FeedScreen({ navigation }) {
                 placeholder="Adicionar comentário..."
                 placeholderTextColor="#aaa"
                 style={styles.commentTextInput}
+                maxLength={1000}
                 onSubmitEditing={submitComment}
                 returnKeyType="send"
               />
@@ -366,13 +376,27 @@ const styles = StyleSheet.create({
   storyItem: { alignItems: 'center', gap: 4 },
   storyRing: { width: 52, height: 52, borderRadius: 26, borderWidth: 2, borderColor: '#6C2BD9', padding: 2, alignItems: 'center', justifyContent: 'center' },
   storyName: { fontSize: 10, color: '#888', maxWidth: 52, textAlign: 'center' },
-  body: { paddingHorizontal: 12 },
-  feedCard: { backgroundColor: 'white', borderRadius: 12, overflow: 'hidden', marginBottom: 12 },
+  body: {
+    width: '100%',
+    maxWidth: 760,
+    alignSelf: 'center',
+    paddingHorizontal: 12,
+  },
+  feedCard: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
   postHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, paddingBottom: 10 },
   postAuthorName: { fontSize: 13, fontWeight: '600', color: '#0D1326' },
   postAuthorMeta: { fontSize: 10, color: '#aaa' },
   postTime: { fontSize: 10, color: '#bbb' },
-  postImage: { width: '100%', height: 200 },
+  postImage: {
+    width: '100%',
+    aspectRatio: 4 / 3,
+    backgroundColor: '#E3E5EA',
+  },
   postBody: { padding: 12, paddingBottom: 4 },
   postLocation: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 },
   postLocationName: { fontSize: 12, fontWeight: '600', color: '#6C2BD9', flex: 1 },
