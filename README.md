@@ -89,6 +89,38 @@ supabase/
     travel-assistant/  # Edge Function Gemini
 ```
 
+## Memória Persistente com Obsidian (Claude Code)
+
+O projeto usa o Obsidian como "segundo cérebro" para o Claude Code não perder contexto entre sessões.
+
+### Vault
+```
+C:\Users\elvis.leite.de.lima\Documents\Obsidian Vault\Journi
+```
+
+### Estrutura de memória
+```
+claude-memory/
+  projects/itravel.md   — contexto e estado atual do projeto
+  decisions.md          — decisões técnicas registradas por data
+  preferences.md        — preferências do usuário
+```
+
+### MCP configurado
+O arquivo `~\.claude\settings.json` aponta o vault via `@modelcontextprotocol/server-filesystem`, dando ao Claude acesso de leitura/escrita às notas.
+
+### Comandos úteis no chat
+| O que dizer | O que o Claude faz |
+|---|---|
+| `"salva a memória no Obsidian"` | Atualiza os 3 arquivos com o resumo da sessão |
+| `"leia a memória do Obsidian"` | Lê o vault e retoma o contexto de onde parou |
+
+### Referências
+- [CLAUDE.md](./CLAUDE.md) — instruções automáticas de memória para o Claude
+- [Model Context Protocol Filesystem](https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem)
+
+---
+
 ## Manutenção
 
 Um workflow do GitHub Actions faz ping no Supabase a cada 5 dias para manter o projeto ativo no plano gratuito (`.github/workflows/keep-supabase-alive.yml`).
