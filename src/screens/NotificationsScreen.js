@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity,
+  View, Text, FlatList, StyleSheet, TouchableOpacity, Image,
   ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -36,7 +36,16 @@ export default function NotificationsScreen({ navigation }) {
 
     const { data, error: loadError } = await supabase
       .from('notifications')
-      .select('id, type, message, read, created_at, actor:actor_id(id, username, display_name, avatar_url)')
+      .select(`
+        id,
+        type,
+        message,
+        read,
+        created_at,
+        photo_id,
+        actor:actor_id(id, username, display_name, avatar_url),
+        photo:photo_id(id, photo_url)
+      `)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(50);
@@ -67,15 +76,27 @@ export default function NotificationsScreen({ navigation }) {
 
   const renderItem = ({ item }) => {
     const icon = TYPE_ICON[item.type] || { name: 'notifications', color: '#6C2BD9' };
-    const actor = item.actor;
+    const actor = Array.isArray(item.actor) ? item.actor[0] : item.actor;
+    const photo = Array.isArray(item.photo) ? item.photo[0] : item.photo;
+    const handlePress = () => {
+      if (item.type === 'comment' && item.photo_id) {
+        navigation.navigate('PhotoDetail', { photoId: item.photo_id });
+        return;
+      }
+
+      if (actor?.id) {
+        navigation.navigate('PublicProfile', {
+          userId: actor.id,
+          username: actor.username,
+        });
+      }
+    };
+
     return (
       <TouchableOpacity
         style={[styles.row, !item.read && styles.unread]}
-        disabled={!actor?.id}
-        onPress={() => navigation.navigate('PublicProfile', {
-          userId: actor.id,
-          username: actor.username,
-        })}
+        disabled={!actor?.id && !item.photo_id}
+        onPress={handlePress}
       >
         <View style={styles.avatarWrap}>
           <Avatar profile={actor} size={44} />
@@ -90,6 +111,9 @@ export default function NotificationsScreen({ navigation }) {
           </Text>
           <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
         </View>
+        {photo?.photo_url ? (
+          <Image source={{ uri: photo.photo_url }} style={styles.photoThumb} resizeMode="cover" />
+        ) : null}
       </TouchableOpacity>
     );
   };
@@ -163,6 +187,13 @@ const styles = StyleSheet.create({
   message: { fontSize: 14, color: '#333', lineHeight: 20 },
   bold: { fontWeight: '700' },
   time: { fontSize: 12, color: '#999', marginTop: 2 },
+  photoThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    marginLeft: 10,
+    backgroundColor: '#eee',
+  },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   emptyText: { fontSize: 15, color: '#999' },
   retryButton: {

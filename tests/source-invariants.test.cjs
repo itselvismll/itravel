@@ -122,6 +122,41 @@ test('follow events create notifications and connection lists are navigable', ()
   assert.match(connections, /getFollowingProfiles/);
 });
 
+test('comment notifications keep a photo target and open the publication', () => {
+  const migration = read('supabase/migrations/20260729110000_photo_notifications_and_social_auth.sql');
+  const notifications = read('src/screens/NotificationsScreen.js');
+  const navigation = read('src/navigation/AppNavigator.js');
+  assert.match(migration, /notifications_photo_id_fkey/);
+  assert.match(migration, /attach_comment_notification_target/);
+  assert.match(notifications, /item\.type === 'comment' && item\.photo_id/);
+  assert.match(notifications, /navigation\.navigate\('PhotoDetail'/);
+  assert.match(notifications, /photo\.photo_url/);
+  assert.match(navigation, /name="PhotoDetail"/);
+});
+
+test('public profiles show spaced photo cards with captions and comments', () => {
+  const profile = read('src/screens/profile/PublicProfileScreen.js');
+  const detail = read('src/screens/PhotoDetailScreen.js');
+  assert.match(profile, /gap: 12/);
+  assert.match(profile, /photo\.caption/);
+  assert.match(profile, /photo\.comment_count/);
+  assert.match(profile, /Voltar ao menu/);
+  assert.match(detail, /getComments/);
+  assert.match(detail, /addComment/);
+});
+
+test('Google login uses Supabase OAuth and Expo browser callbacks', () => {
+  const auth = read('src/services/supabase.js');
+  const login = read('src/screens/auth/LoginScreen.js');
+  const app = read('app.json');
+  assert.match(auth, /signInWithOAuth/);
+  assert.match(auth, /openAuthSessionAsync/);
+  assert.match(auth, /exchangeCodeForSession/);
+  assert.match(login, /signInWithGoogle/);
+  assert.match(app, /"scheme": "journi"/);
+  assert.match(app, /"expo-web-browser"/);
+});
+
 test('client source is free of console calls and centralizes remote flag images', () => {
   const sourceRoot = path.join(root, 'src');
   const files = [];

@@ -57,6 +57,7 @@ export default function PhotoUploader({
     return {
       shortName: prefilledCity,
       country: prefilledCountryName || '',
+      countryCode: prefilledCountryCode || '',
       lat: Number.isFinite(prefilledCityLat) ? prefilledCityLat : null,
       lng: Number.isFinite(prefilledCityLng) ? prefilledCityLng : null,
     };
@@ -118,6 +119,7 @@ export default function PhotoUploader({
         .map((feature) => {
           const shortName = feature.properties.name;
           const country = feature.properties.country || effectiveCountryName;
+          const countryCode = feature.properties?.countrycode?.toUpperCase() || '';
           const key = `${shortName}|${country}`.toLocaleLowerCase('pt-BR');
           if (!shortName || seen.has(key)) return null;
           seen.add(key);
@@ -125,6 +127,7 @@ export default function PhotoUploader({
             name: `${shortName}, ${country}`,
             shortName,
             country,
+            countryCode,
             lat: feature.geometry.coordinates[1],
             lng: feature.geometry.coordinates[0],
           };
@@ -219,10 +222,28 @@ export default function PhotoUploader({
 
     setUploading(true);
 
-    const result = await uploadPhoto(userId, effectiveCountryCode, effectiveCountryName, selectedFile, caption, {
+    const uploadCountryCode =
+      effectiveCountryCode ||
+      getAlpha3(selectedCity.countryCode)?.toUpperCase() ||
+      selectedCity.countryCode;
+    const uploadCountryName = effectiveCountryName || selectedCity.country;
+
+    if (!uploadCountryCode || !uploadCountryName) {
+      setUploading(false);
+      setCityError(true);
+      Alert.alert(
+        'País não identificado',
+        'Selecione novamente a cidade para identificarmos o país da foto.'
+      );
+      return;
+    }
+
+    const result = await uploadPhoto(userId, uploadCountryCode, uploadCountryName, selectedFile, caption, {
       city: selectedCity?.shortName || null,
-      city_lat: selectedCity?.lat || null,
-      city_lng: selectedCity?.lng || null,
+      city_lat: selectedCity?.lat ?? null,
+      city_lng: selectedCity?.lng ?? null,
+      country_code: uploadCountryCode,
+      country_name: uploadCountryName,
       is_public: isPublic,
       location_name: locationName.trim() || null,
       rating: rating || null,
@@ -233,11 +254,11 @@ export default function PhotoUploader({
 
     if (result.success) {
       let visitResult = { success: true };
-      if (userId && effectiveCountryCode) {
+      if (userId && uploadCountryCode) {
         visitResult = await markCountryAsVisited(
           userId,
-          effectiveCountryCode,
-          effectiveCountryName
+          uploadCountryCode,
+          uploadCountryName
         );
       }
 

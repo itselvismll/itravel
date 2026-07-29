@@ -2,6 +2,7 @@
   "expo": {
     "name": "Journi",
     "slug": "journi",
+    "scheme": "journi",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/journi_icon_1024_fundo_escuro.png",
@@ -46,7 +47,8 @@
         }
       ],
       "expo-sharing",
-      "expo-font"
+      "expo-font",
+      "expo-web-browser"
     ],
     "extra": {
       "eas": {

@@ -1,6 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
+import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
 import { API_CONFIG } from '../utils/constants';
 import { getAlpha2, getAlpha3 } from '../utils/countryUtils';
+
+WebBrowser.maybeCompleteAuthSession();
 
 if (!API_CONFIG.SUPABASE_URL || !API_CONFIG.SUPABASE_ANON_KEY) {
   throw new Error(
@@ -50,6 +55,77 @@ export async function signIn(email, password) {
     if (error) throw error;
 
     return { success: true, user: data.user };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+const getGoogleRedirectUrl = () => {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    return window.location.origin;
+  }
+
+  return Linking.createURL('auth/callback');
+};
+
+const finishNativeOAuthSession = async (callbackUrl) => {
+  const parsedUrl = new URL(callbackUrl);
+  const code = parsedUrl.searchParams.get('code');
+
+  if (code) {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) throw error;
+    return data.session;
+  }
+
+  const hashParams = new URLSearchParams(parsedUrl.hash.replace(/^#/, ''));
+  const accessToken = hashParams.get('access_token');
+  const refreshToken = hashParams.get('refresh_token');
+
+  if (!accessToken || !refreshToken) {
+    throw new Error('O Google não retornou uma sessão válida.');
+  }
+
+  const { data, error } = await supabase.auth.setSession({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+  });
+  if (error) throw error;
+  return data.session;
+};
+
+export async function signInWithGoogle() {
+  try {
+    const redirectTo = getGoogleRedirectUrl();
+    const isNative = Platform.OS !== 'web';
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo,
+        skipBrowserRedirect: isNative,
+      },
+    });
+
+    if (error) throw error;
+
+    if (!isNative) {
+      return { success: true, redirecting: true };
+    }
+
+    if (!data?.url) {
+      throw new Error('Não foi possível iniciar o login com Google.');
+    }
+
+    const browserResult = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+    if (browserResult.type === 'cancel' || browserResult.type === 'dismiss') {
+      return { success: false, cancelled: true, error: 'Login cancelado.' };
+    }
+    if (browserResult.type !== 'success' || !browserResult.url) {
+      throw new Error('Não foi possível concluir o login com Google.');
+    }
+
+    const session = await finishNativeOAuthSession(browserResult.url);
+    return { success: true, user: session?.user || null };
   } catch (error) {
     return { success: false, error: error.message };
   }

@@ -26,6 +26,7 @@ import PublicProfileScreen from '../screens/profile/PublicProfileScreen';
 import AssistantResultScreen from '../screens/assistant/AssistantResultScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import ConnectionsScreen from '../screens/profile/ConnectionsScreen';
+import PhotoDetailScreen from '../screens/PhotoDetailScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -270,6 +271,7 @@ export default function AppNavigator() {
           <Stack.Navigator id="RootStack" screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Main" component={TabNavigator} />
             <Stack.Screen name="PublicProfile" component={PublicProfileScreen} />
+            <Stack.Screen name="PhotoDetail" component={PhotoDetailScreen} />
             <Stack.Screen
               name="AssistantResult"
               component={AssistantResultScreen}

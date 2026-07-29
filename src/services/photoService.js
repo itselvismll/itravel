@@ -16,12 +16,29 @@ const countryCodeVariants = (countryCode) => {
 };
 
 export const uploadPhoto = async (userId, countryCode, countryName, file, caption = '', cityData = {}) => {
-  // Garante sempre alpha-3 no banco, independente do formato recebido
-  const normalizedCountryCode = getAlpha3(countryCode) || countryCode;
+  const resolvedCountryCode = countryCode || cityData.country_code;
+  const resolvedCountryName = countryName || cityData.country_name;
+  const normalizedCountryCode = getAlpha3(resolvedCountryCode)?.toUpperCase();
 
   try {
+    if (!userId) {
+      return { success: false, error: 'Usuário não autenticado.' };
+    }
+    if (!file) {
+      return { success: false, error: 'Selecione uma foto para continuar.' };
+    }
+    if (!normalizedCountryCode || !resolvedCountryName) {
+      return {
+        success: false,
+        error: 'Selecione novamente uma cidade para identificarmos o país da foto.',
+      };
+    }
+
     const contentType = file?.type || file?.mimeType || 'image/jpeg';
-    const extension = contentType.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
+    const extension = contentType
+      .split('/')[1]
+      ?.replace('jpeg', 'jpg')
+      .replace(/[^a-z0-9]/gi, '') || 'jpg';
     const path = `${userId}/${normalizedCountryCode}/${Date.now()}.${extension}`;
     let uploadBody = file;
     if (file?.uri) {
@@ -46,7 +63,7 @@ export const uploadPhoto = async (userId, countryCode, countryName, file, captio
       .insert({
         user_id: userId,
         country_code: normalizedCountryCode,
-        country_name: countryName,
+        country_name: resolvedCountryName,
         photo_url: publicUrl,
         photo_path: path,
         caption,
@@ -144,6 +161,68 @@ export const getAllUserPhotos = async (userId) => {
   } catch (error) {
     return { success: false, error: error.message };
   }
+};
+
+export const getPublicPhoto = async (photoId) => {
+  if (!photoId) return { success: false, data: null, error: 'Foto inválida.' };
+
+  try {
+    const { data: photo, error } = await supabase
+      .from(TABLE)
+      .select(`
+        id,
+        user_id,
+        photo_url,
+        caption,
+        city,
+        country_name,
+        country_code,
+        location_name,
+        rating,
+        review,
+        created_at,
+        is_public
+      `)
+      .eq('id', photoId)
+      .eq('is_public', true)
+      .maybeSingle();
+
+    if (error) return { success: false, data: null, error: error.message };
+    if (!photo) return { success: false, data: null, error: 'Foto não encontrada.' };
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, username, display_name, avatar_url')
+      .eq('id', photo.user_id)
+      .maybeSingle();
+
+    if (profileError) {
+      return { success: false, data: null, error: profileError.message };
+    }
+
+    return { success: true, data: { ...photo, profiles: profile || null } };
+  } catch (error) {
+    return { success: false, data: null, error: error.message };
+  }
+};
+
+export const getPhotoCommentCounts = async (photoIds) => {
+  const ids = [...new Set((photoIds || []).filter(Boolean))];
+  if (ids.length === 0) return { success: true, data: {} };
+
+  const { data, error } = await supabase
+    .from('comments')
+    .select('photo_id')
+    .in('photo_id', ids);
+
+  if (error) return { success: false, data: {}, error: error.message };
+
+  const counts = (data || []).reduce((result, comment) => {
+    result[comment.photo_id] = (result[comment.photo_id] || 0) + 1;
+    return result;
+  }, {});
+
+  return { success: true, data: counts };
 };
 
 export const setCoverPhoto = async (userId, countryCode, photoId, photoUrl) => {

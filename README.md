@@ -60,7 +60,22 @@ supabase db push
 supabase secrets set GEMINI_API_KEY=AIzaSy...
 ```
 
-### 5. Deploy da Edge Function
+### 5. Habilitar login Google
+
+No painel do Supabase, abra **Authentication → Providers → Google**, habilite o
+provedor e informe o Client ID e o Client Secret criados no Google Cloud.
+
+No cliente OAuth do Google, autorize o callback do projeto:
+
+```text
+https://qenehyizxesmaeylmcjv.supabase.co/auth/v1/callback
+```
+
+Em **Authentication → URL Configuration**, use `https://journi.expo.app` como
+Site URL e permita os redirecionamentos `https://journi.expo.app/**` e
+`journi://**`.
+
+### 6. Deploy da Edge Function
 
 ```bash
 supabase functions deploy travel-assistant

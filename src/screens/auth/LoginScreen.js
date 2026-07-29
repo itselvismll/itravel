@@ -1,17 +1,18 @@
 ﻿import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Alert, Image, ScrollView, Platform,
+  Alert, Image, ScrollView, Platform, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES } from '../../utils/constants';
-import { signIn } from '../../services/supabase';
+import { signIn, signInWithGoogle } from '../../services/supabase';
 
 export default function LoginScreen({ navigation, onLoginSuccess }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState(
     /** @type {Record<string, string | null>} */ ({})
@@ -62,12 +63,27 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
     }
   };
 
-  const handleGoogleLogin = () => {
-    Alert.alert(
-      'Login com Google',
-      'Esta funcionalidade será implementada em breve! Por enquanto, use email e senha para fazer login.',
-      [{ text: 'OK' }]
-    );
+  const handleGoogleLogin = async () => {
+    if (googleLoading) return;
+
+    setGoogleLoading(true);
+    const result = await signInWithGoogle();
+
+    if (!result.success && !result.cancelled) {
+      const providerDisabled = result.error?.toLowerCase().includes('provider is not enabled');
+      Alert.alert(
+        'Erro no login com Google',
+        providerDisabled
+          ? 'O acesso pelo Google ainda precisa ser habilitado no servidor.'
+          : result.error || 'Não foi possível entrar com Google.'
+      );
+    }
+
+    if (result.success && result.user && onLoginSuccess) {
+      onLoginSuccess(result.user);
+    }
+
+    if (!result.redirecting) setGoogleLoading(false);
   };
 
   return (
@@ -215,12 +231,19 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
           </View>
 
           {/* Login com Google */}
-          <TouchableOpacity 
-            style={styles.googleButton}
+          <TouchableOpacity
+            style={[styles.googleButton, googleLoading && styles.buttonDisabled]}
             onPress={handleGoogleLogin}
+            disabled={googleLoading}
           >
-            <Ionicons name="logo-google" size={20} color="#DB4437" />
-            <Text style={styles.googleButtonText}>Continuar com Google</Text>
+            {googleLoading ? (
+              <ActivityIndicator size="small" color="#DB4437" />
+            ) : (
+              <Ionicons name="logo-google" size={20} color="#DB4437" />
+            )}
+            <Text style={styles.googleButtonText}>
+              {googleLoading ? 'Conectando...' : 'Continuar com Google'}
+            </Text>
           </TouchableOpacity>
 
           {/* Link para Cadastro */}
