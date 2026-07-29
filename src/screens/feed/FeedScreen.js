@@ -173,7 +173,11 @@ export default function FeedScreen({ navigation }) {
               {following.map((user) => (
                 <View key={user.id} style={styles.storyItem}>
                   <View style={styles.storyRing}>
-                    <Avatar profile={user} size={44} />
+                    <Avatar
+                      profile={user}
+                      fallbackName={user.display_name || user.username}
+                      size={44}
+                    />
                   </View>
                   <Text style={styles.storyName} numberOfLines={1}>
                     {user.username}
@@ -197,7 +201,15 @@ export default function FeedScreen({ navigation }) {
                         username: post.profiles?.username,
                       })}
                     >
-                      <Avatar profile={post.profiles} size={34} />
+                      <Avatar
+                        profile={post.profiles}
+                        fallbackName={
+                          post.profiles?.display_name
+                          || post.profiles?.username
+                          || 'Viajante'
+                        }
+                        size={34}
+                      />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.postAuthorName}>
                           {post.profiles?.display_name || post.profiles?.username || 'Viajante'}

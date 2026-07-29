@@ -1,5 +1,14 @@
 import { supabase } from './supabase';
 
+const getProfileOrFallback = (profiles, userId) => (
+  profiles?.find(profile => profile.id === userId) || {
+    id: userId,
+    username: `viajante_${String(userId).replaceAll('-', '').slice(0, 6)}`,
+    display_name: 'Viajante',
+    avatar_url: null,
+  }
+);
+
 export const followUser = async (followerId, followingId) => {
   const { error } = await supabase
     .from('followers')
@@ -94,7 +103,7 @@ export const getFeedPhotos = async (userId) => {
     success: true,
     data: data.map(p => ({
       ...p,
-      profiles: profiles?.find(pr => pr.id === p.user_id) || null,
+      profiles: getProfileOrFallback(profiles, p.user_id),
     })),
   };
 };
@@ -119,7 +128,7 @@ export const getRecentPublicPhotos = async (limit = 10) => {
     success: true,
     data: data.map(p => ({
       ...p,
-      profiles: profiles?.find(pr => pr.id === p.user_id) || null,
+      profiles: getProfileOrFallback(profiles, p.user_id),
     })),
   };
 };

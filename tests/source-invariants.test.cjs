@@ -68,13 +68,26 @@ test('legacy users are backfilled before comments reference profiles', () => {
   assert.match(migration, /validate constraint comments_user_id_fkey/);
 });
 
-test('profile updates create a missing profile row and comments return inserted data', () => {
+test('profile updates repair missing identities before partial changes', () => {
   const profileService = read('src/services/profileService.js');
+  const migration = read('supabase/migrations/20260729160000_ensure_profile_identity.sql');
   const socialService = read('src/services/socialService.js');
-  assert.match(profileService, /\.upsert\(/);
+  assert.match(profileService, /rpc\('ensure_current_user_profile'\)/);
+  assert.match(profileService, /\.update\(sanitizedUpdates\)/);
   assert.match(profileService, /supabase\.auth\.updateUser/);
+  assert.match(migration, /from auth\.users/);
+  assert.match(migration, /grant execute on function public\.ensure_current_user_profile\(\) to authenticated/);
+  assert.match(migration, /raw_user_meta_data ->> 'picture'/);
   assert.match(socialService, /profiles!comments_user_id_fkey/);
   assert.match(socialService, /\.single\(\)/);
+});
+
+test('avatars always display an initial when no usable image exists', () => {
+  const avatar = read('src/components/Avatar.js');
+  const feed = read('src/screens/feed/FeedScreen.js');
+  assert.match(avatar, /fallbackName = 'Viajante'/);
+  assert.match(avatar, /onError=\{\(\) => setImageFailed\(true\)\}/);
+  assert.match(feed, /fallbackName=/);
 });
 
 test('photo uploads always synchronize their country as visited', () => {

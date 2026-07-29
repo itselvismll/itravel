@@ -46,19 +46,33 @@ export const updateProfile = async (userId, updates) => {
   if (!userId) return { success: false, error: 'Usuário não autenticado.' };
 
   const sanitizedUpdates = sanitizeProfileUpdates(updates);
+  if (
+    Object.hasOwn(sanitizedUpdates, 'username')
+    && !sanitizedUpdates.username
+  ) {
+    return { success: false, error: 'O nome de usuário não pode ficar vazio.' };
+  }
+
+  // Some legacy auth accounts were created before profiles were generated
+  // automatically. Repair the current user's row before applying a partial
+  // update such as an avatar-only change.
+  const { error: ensureError } = await supabase.rpc('ensure_current_user_profile');
+  if (ensureError) return { success: false, error: ensureError.message };
+
   const { data, error } = await supabase
     .from('profiles')
-    .upsert(
-      {
-        id: userId,
-        ...sanitizedUpdates,
-      },
-      { onConflict: 'id' }
-    )
+    .update(sanitizedUpdates)
+    .eq('id', userId)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) return { success: false, error: error.message };
+  if (!data) {
+    return {
+      success: false,
+      error: 'Não foi possível preparar seu perfil. Entre novamente e tente de novo.',
+    };
+  }
 
   const metadata = {};
   if (Object.hasOwn(sanitizedUpdates, 'username')) {
