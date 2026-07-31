@@ -362,6 +362,20 @@ export default function ProfileScreen({ navigation }) {
       )}
 
       {/* Botão compartilhar passaporte */}
+      <TouchableOpacity
+        style={styles.tripPlansBtn}
+        onPress={() => navigation.navigate('SavedTrips')}
+      >
+        <View style={styles.tripPlansIcon}>
+          <Ionicons name="map-outline" size={20} color="#C4B5FD" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.tripPlansTitle}>Minhas viagens planejadas</Text>
+          <Text style={styles.tripPlansSubtitle}>Acesse roteiros, orçamento e checklist</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color="#8D95B4" />
+      </TouchableOpacity>
+
       <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
         <Ionicons name="share-social-outline" size={18} color="white" />
         <Text style={styles.shareBtnText}>Compartilhar meu passaporte</Text>
@@ -620,6 +634,28 @@ const styles = StyleSheet.create({
     margin: 12,
     marginBottom: 0,
   },
+  tripPlansBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    backgroundColor: '#171D36',
+    borderRadius: 14,
+    padding: 14,
+    margin: 12,
+    marginBottom: 0,
+    borderWidth: 1,
+    borderColor: 'rgba(108,43,217,0.3)',
+  },
+  tripPlansIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    backgroundColor: 'rgba(108,43,217,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tripPlansTitle: { color: '#F7F7F2', fontSize: 13, fontWeight: '800' },
+  tripPlansSubtitle: { color: '#8D95B4', fontSize: 10, marginTop: 3 },
   cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 14 },
   cardTitle: {
     fontSize: 12,

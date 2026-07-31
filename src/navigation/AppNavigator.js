@@ -24,6 +24,8 @@ import UploadPlaceholder from '../screens/upload/UploadPlaceholder';
 import PhotoUploader from '../components/PhotoUploader';
 import PublicProfileScreen from '../screens/profile/PublicProfileScreen';
 import AssistantResultScreen from '../screens/assistant/AssistantResultScreen';
+import TripPlannerScreen from '../screens/assistant/TripPlannerScreen';
+import SavedTripsScreen from '../screens/assistant/SavedTripsScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import ConnectionsScreen from '../screens/profile/ConnectionsScreen';
 import PhotoDetailScreen from '../screens/PhotoDetailScreen';
@@ -36,6 +38,7 @@ function ProfileStack() {
     <Stack.Navigator id="ProfileStack" screenOptions={{ headerShown: false }}>
       <Stack.Screen name="ProfileMain" component={ProfileScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+      <Stack.Screen name="SavedTrips" component={SavedTripsScreen} />
     </Stack.Navigator>
   );
 }
@@ -272,6 +275,11 @@ export default function AppNavigator() {
             <Stack.Screen name="Main" component={TabNavigator} />
             <Stack.Screen name="PublicProfile" component={PublicProfileScreen} />
             <Stack.Screen name="PhotoDetail" component={PhotoDetailScreen} />
+            <Stack.Screen
+              name="TripPlanner"
+              component={TripPlannerScreen}
+              options={{ headerShown: false }}
+            />
             <Stack.Screen
               name="AssistantResult"
               component={AssistantResultScreen}

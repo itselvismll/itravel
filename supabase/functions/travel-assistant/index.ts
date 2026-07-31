@@ -2,175 +2,289 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+const jsonResponse = (body: unknown, status = 200) => new Response(
+  JSON.stringify(body),
+  { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+)
+
+const cleanText = (value: unknown, max = 160) => (
+  typeof value === 'string' ? value.trim().slice(0, max) : ''
+)
+
+const cleanList = (value: unknown, maxItems = 12) => (
+  Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+      .map(item => item.trim().slice(0, 80))
+      .filter(Boolean)
+      .slice(0, maxItems)
+    : []
+)
+
+const fetchJson = async (url: string) => {
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(7000) })
+    if (!response.ok) return null
+    return await response.json()
+  } catch {
+    return null
+  }
+}
+
+const getLiveContext = async (destination: string, currency: string) => {
+  const geocodingUrl = new URL('https://geocoding-api.open-meteo.com/v1/search')
+  geocodingUrl.searchParams.set('name', destination)
+  geocodingUrl.searchParams.set('count', '1')
+  geocodingUrl.searchParams.set('language', 'pt')
+  geocodingUrl.searchParams.set('format', 'json')
+
+  const [geocoding, exchange] = await Promise.all([
+    fetchJson(geocodingUrl.toString()),
+    fetchJson(`https://api.frankfurter.app/latest?from=${encodeURIComponent(currency)}`),
+  ])
+
+  const place = geocoding?.results?.[0]
+  let weather = null
+  let weatherSourceUrl = ''
+  if (place?.latitude && place?.longitude) {
+    const weatherUrl = new URL('https://api.open-meteo.com/v1/forecast')
+    weatherUrl.searchParams.set('latitude', String(place.latitude))
+    weatherUrl.searchParams.set('longitude', String(place.longitude))
+    weatherUrl.searchParams.set('current', 'temperature_2m,weather_code')
+    weatherUrl.searchParams.set('daily', 'temperature_2m_max,temperature_2m_min,precipitation_probability_max')
+    weatherUrl.searchParams.set('timezone', 'auto')
+    weatherUrl.searchParams.set('forecast_days', '7')
+    weatherSourceUrl = weatherUrl.toString()
+    weather = await fetchJson(weatherSourceUrl)
+  }
+
+  return {
+    place: place ? {
+      name: place.name,
+      country: place.country,
+      countryCode: place.country_code,
+      latitude: place.latitude,
+      longitude: place.longitude,
+      timezone: place.timezone,
+    } : null,
+    weather: weather ? {
+      current: weather.current,
+      daily: weather.daily,
+    } : null,
+    exchange: exchange ? {
+      base: exchange.base,
+      date: exchange.date,
+      rates: exchange.rates,
+    } : null,
+    sources: [
+      place ? { label: 'Localização — Open-Meteo', url: geocodingUrl.toString() } : null,
+      weather ? { label: 'Previsão do tempo — Open-Meteo', url: weatherSourceUrl } : null,
+      exchange ? { label: 'Câmbio — Frankfurter', url: `https://api.frankfurter.app/latest?from=${encodeURIComponent(currency)}` } : null,
+    ].filter(Boolean),
+    retrievedAt: new Date().toISOString(),
+  }
+}
+
+const planSchema = {
+  type: 'OBJECT',
+  required: ['title', 'summary', 'destinationCountry', 'localCurrency', 'budgetStatus', 'weatherNote', 'days', 'budget', 'checklist', 'safetyTips', 'practicalTips', 'sources'],
+  properties: {
+    title: { type: 'STRING' },
+    summary: { type: 'STRING' },
+    destinationCountry: { type: 'STRING' },
+    localCurrency: { type: 'STRING' },
+    budgetStatus: { type: 'STRING' },
+    weatherNote: { type: 'STRING' },
+    days: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        required: ['day', 'date', 'theme', 'activities'],
+        properties: {
+          day: { type: 'INTEGER' },
+          date: { type: 'STRING' },
+          theme: { type: 'STRING' },
+          activities: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              required: ['period', 'title', 'description', 'location', 'duration', 'estimatedCost', 'mapQuery', 'indoor'],
+              properties: {
+                period: { type: 'STRING' },
+                title: { type: 'STRING' },
+                description: { type: 'STRING' },
+                location: { type: 'STRING' },
+                duration: { type: 'STRING' },
+                estimatedCost: { type: 'NUMBER' },
+                mapQuery: { type: 'STRING' },
+                indoor: { type: 'BOOLEAN' },
+              },
+            },
+          },
+        },
+      },
+    },
+    budget: {
+      type: 'OBJECT',
+      required: ['total', 'currency', 'items'],
+      properties: {
+        total: { type: 'NUMBER' },
+        currency: { type: 'STRING' },
+        items: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            required: ['category', 'amount', 'note'],
+            properties: {
+              category: { type: 'STRING' },
+              amount: { type: 'NUMBER' },
+              note: { type: 'STRING' },
+            },
+          },
+        },
+      },
+    },
+    checklist: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        required: ['category', 'item', 'done'],
+        properties: {
+          category: { type: 'STRING' },
+          item: { type: 'STRING' },
+          done: { type: 'BOOLEAN' },
+        },
+      },
+    },
+    safetyTips: { type: 'ARRAY', items: { type: 'STRING' } },
+    practicalTips: { type: 'ARRAY', items: { type: 'STRING' } },
+    sources: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        required: ['label', 'url', 'updatedAt'],
+        properties: {
+          label: { type: 'STRING' },
+          url: { type: 'STRING' },
+          updatedAt: { type: 'STRING' },
+        },
+      },
+    },
+  },
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
-
-  if (req.method !== 'POST') {
-    return new Response(
-      JSON.stringify({ success: false, error: 'Método não permitido' }),
-      { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json', Allow: 'POST' } }
-    )
-  }
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  if (req.method !== 'POST') return jsonResponse({ success: false, error: 'Método não permitido' }, 405)
 
   try {
     const authorization = req.headers.get('Authorization')
     if (!authorization?.startsWith('Bearer ')) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Não autenticado' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return jsonResponse({ success: false, error: 'Não autenticado' }, 401)
     }
 
     const apiKey = Deno.env.get('GEMINI_API_KEY')
-
-    if (!apiKey) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'GEMINI_API_KEY não configurada' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    if (!apiKey) return jsonResponse({ success: false, error: 'Serviço de IA não configurado' }, 500)
 
     const body = await req.json()
-    const { promptType, destination, userContext = {} } = body
+    const action = body?.action === 'regenerate_activity' ? 'regenerate_activity' : 'generate_plan'
+    const request = body?.planRequest || {}
+    const destination = cleanText(request.destination, 120)
+    const origin = cleanText(request.origin, 120)
+    const currency = cleanText(request.currency, 3).toUpperCase() || 'BRL'
+    const travelers = Math.max(1, Math.min(30, Number(request.travelers) || 1))
+    const duration = Math.max(1, Math.min(14, Number(request.duration) || 3))
+    const budget = Math.max(0, Number(request.budget) || 0)
 
-    if (typeof destination !== 'string' || !destination.trim() || destination.length > 120) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Destino inválido' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+    if (!destination) return jsonResponse({ success: false, error: 'Informe um destino válido' }, 400)
+
+    const safeRequest = {
+      destination,
+      origin,
+      startDate: cleanText(request.startDate, 10),
+      endDate: cleanText(request.endDate, 10),
+      duration,
+      travelers,
+      travelerType: cleanText(request.travelerType, 40),
+      budget,
+      currency,
+      pace: cleanText(request.pace, 20),
+      interests: cleanList(request.interests),
+      foodPreferences: cleanText(request.foodPreferences, 240),
+      accessibility: cleanText(request.accessibility, 240),
+      notes: cleanText(request.notes, 400),
     }
 
-    const allowedPromptTypes = new Set(['guide', 'itinerary', 'budget', 'weather', 'scams', 'summary'])
-    if (!allowedPromptTypes.has(promptType)) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Tipo de solicitação inválido' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+    const context = body?.userContext || {}
+    const safeUserContext = {
+      visitedCountries: cleanList(context.visitedCountries, 195),
+      wishlistCountries: cleanList(context.wishlistCountries, 195),
+      level: cleanText(context.level, 40) || 'Iniciante',
     }
 
-    const sanitizeList = (value: unknown) => Array.isArray(value)
-      ? value.filter((item): item is string => typeof item === 'string').slice(0, 195).map(item => item.slice(0, 80))
-      : []
+    const liveContext = await getLiveContext(destination, currency)
+    const regenerationInstruction = action === 'regenerate_activity'
+      ? `Ajuste somente a atividade indicada e preserve todo o restante. Bloco: ${JSON.stringify(body?.block || {}).slice(0, 500)}. Roteiro atual: ${JSON.stringify(body?.existingPlan || {}).slice(0, 30000)}`
+      : 'Crie um roteiro novo e coerente.'
 
-    const safeContext = {
-      visitedCountries: sanitizeList(userContext?.visitedCountries),
-      wishlistCountries: sanitizeList(userContext?.wishlistCountries),
-      level: typeof userContext?.level === 'string' ? userContext.level.slice(0, 40) : 'Iniciante',
-      totalCountries: Number.isFinite(userContext?.totalCountries)
-        ? Math.max(0, Math.min(195, Number(userContext.totalCountries)))
-        : 0,
-    }
+    const prompt = `Você é o planejador de viagens do Journi. Responda em português brasileiro e apenas no JSON solicitado.
 
-    const systemContext = `Você é um assistente de viagem especializado
-integrado ao app Journi. Responda sempre em português brasileiro,
-de forma clara, prática e bem organizada com seções definidas.
-Use emojis moderadamente.
+Pedido: ${JSON.stringify(safeRequest)}
+Perfil do viajante: ${JSON.stringify(safeUserContext)}
+Dados externos disponíveis: ${JSON.stringify(liveContext)}
+Operação: ${regenerationInstruction}
 
-Contexto do usuário:
-- Países visitados: ${safeContext.visitedCountries.join(', ') || 'nenhum ainda'}
-- Wishlist: ${safeContext.wishlistCountries.join(', ') || 'nenhum ainda'}
-- Nível: ${safeContext.level}
-- Total de países: ${safeContext.totalCountries}`
+Regras:
+- Crie exatamente ${duration} dias, respeitando datas, ritmo, interesses, alimentação e acessibilidade.
+- Distribua manhã, tarde e noite sem deslocamentos impossíveis; agrupe locais próximos.
+- Todos os custos devem ser numéricos em ${currency}, para ${travelers} viajante(s), e o total deve respeitar o orçamento quando ele for maior que zero.
+- mapQuery deve ser uma busca precisa no formato "local, cidade, país".
+- Use os dados meteorológicos apenas quando existirem; caso contrário diga que a previsão deve ser conferida perto da viagem.
+- Não invente horários de funcionamento, preços oficiais ou regras legais. Indique estimativas claramente.
+- As fontes devem incluir as URLs reais dos dados externos usados e a data de consulta.
+- Checklist deve incluir documentos, saúde, dinheiro, conectividade e bagagem.
+- Inclua alertas de segurança objetivos, sem alarmismo.`
 
-    const prompts: Record<string, string> = {
-      guide: `${systemContext}\n\nCrie um guia completo de 1 página para
-uma viagem a ${destination}. Inclua: melhor época, dicas de voo,
-hospedagem, roteiro diário resumido (3-5 dias), transporte local,
-números de emergência, câmbio e regras culturais.`,
-
-      itinerary: `${systemContext}\n\nMonte um roteiro de experiências
-locais em ${destination} com lugares autênticos, pouco turísticos e
-joias escondidas. Atividades gratuitas ou baratas, onde comer bem
-sem gastar muito, plano dia a dia por região.`,
-
-      budget: `${systemContext}\n\nCrie um planejamento de orçamento
-para ${destination}. Estime custos de voo, hospedagem, alimentação,
-transporte e passeios. Onde economizar, onde vale investir mais,
-alternativas mais baratas por categoria.`,
-
-      weather: `${systemContext}\n\nDescreva o clima em ${destination}
-e crie 2 roteiros: um para sol e outro para chuva. Opções indoor e
-outdoor, tempo estimado em cada lugar e plano B para imprevistos.`,
-
-      scams: `${systemContext}\n\nListe golpes comuns, passeios caros
-demais e áreas de atenção em ${destination}. Como evitar cada
-situação e alternativas mais seguras e econômicas.`,
-
-      summary: `${systemContext}\n\nResumo completo de viagem para
-${destination}: documentos, moeda e câmbio, transporte do aeroporto,
-apps úteis, frases básicas no idioma, costumes importantes e
-checklist do que levar.`,
-    }
-
-    const userMessage = prompts[promptType] ||
-      `${systemContext}\n\nDê informações úteis sobre ${destination}.`
-
-    const geminiUrl =
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent'
-    const geminiResponse = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
+    const geminiResponse = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            maxOutputTokens: 8192,
+            responseMimeType: 'application/json',
+            responseSchema: planSchema,
+          },
+        }),
       },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: userMessage }] }],
-        generationConfig: {
-          maxOutputTokens: 1500,
-        },
-      }),
-    })
+    )
 
-    const rawData = await geminiResponse.text()
+    const geminiData = await geminiResponse.json().catch(() => null)
+    if (!geminiResponse.ok || !geminiData) {
+      return jsonResponse({ success: false, error: 'A IA não conseguiu montar o roteiro agora' }, 502)
+    }
 
-    let data
+    const responseText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text
+    if (!responseText) return jsonResponse({ success: false, error: 'A IA retornou uma resposta vazia' }, 502)
+
+    let plan
     try {
-      data = JSON.parse(rawData)
-    } catch(e) {
-      console.error('Erro ao parsear JSON:', (e as Error).message)
-      return new Response(
-        JSON.stringify({ success: false, error: 'Resposta inválida do Gemini' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      plan = JSON.parse(responseText)
+    } catch {
+      return jsonResponse({ success: false, error: 'A IA retornou um roteiro fora do formato esperado' }, 502)
     }
 
+    plan.sources = (liveContext.sources || []).map((source: { label: string; url: string }) => ({
+      ...source,
+      updatedAt: liveContext.retrievedAt,
+    }))
 
-    if (!geminiResponse.ok || data.error) {
-      console.error('Gemini API error:', JSON.stringify(data.error))
-      return new Response(
-        JSON.stringify({ success: false, error: 'O assistente está temporariamente indisponível' }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    const responseText =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-      data?.candidates?.[0]?.output ||
-      null
-
-    if (!responseText) {
-      console.error('Sem texto na resposta. Estrutura:', JSON.stringify(data).substring(0, 300))
-      return new Response(
-        JSON.stringify({ success: false, error: 'Gemini não retornou texto' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    return new Response(
-      JSON.stringify({ success: true, response: responseText }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-  } catch (error) {
-    console.error('Erro geral:', (error as Error).message, (error as Error).stack)
-    return new Response(
-      JSON.stringify({ success: false, error: 'Não foi possível processar a solicitação' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    return jsonResponse({ success: true, plan, liveContext })
+  } catch {
+    return jsonResponse({ success: false, error: 'Não foi possível processar o planejamento' }, 500)
   }
 })

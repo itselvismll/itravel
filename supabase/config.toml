@@ -1,2 +1,11 @@
 [functions.travel-assistant]
 verify_jwt = true
+
+[auth]
+site_url = "https://journi.expo.app"
+additional_redirect_urls = [
+  "https://journi.expo.app/**",
+  "http://localhost:8081/**",
+  "http://localhost:19006/**",
+  "journi://**"
+]

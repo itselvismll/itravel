@@ -16,22 +16,52 @@ test('Supabase configuration is environment-only', () => {
 test('AI function validates authentication and destination input', () => {
   const handler = read('supabase/functions/travel-assistant/index.ts');
   assert.match(handler, /Authorization/);
-  assert.match(handler, /Destino inv/);
+  assert.match(handler, /destino v[áa]lido/i);
   assert.match(handler, /gemini-3\.6-flash/);
   assert.doesNotMatch(handler, /gemini-1\.5-flash/);
   assert.doesNotMatch(handler, /temperature:/);
+  assert.match(handler, /responseMimeType: 'application\/json'/);
+  assert.match(handler, /responseSchema: planSchema/);
 });
 
-test('travel assistant exposes every prompt and handles session, timeout, and inline errors', () => {
+test('travel planner is personalized, structured, cancellable, and editable', () => {
   const assistant = read('src/services/assistantService.js');
+  const planner = read('src/screens/assistant/TripPlannerScreen.js');
+  const result = read('src/screens/assistant/AssistantResultScreen.js');
   const map = read('src/screens/map/MapScreen.js');
-  for (const promptType of ['guide', 'itinerary', 'budget', 'weather', 'scams', 'summary']) {
-    assert.match(assistant, new RegExp(`id: '${promptType}'`));
-  }
   assert.match(assistant, /refreshSession/);
   assert.match(assistant, /AbortController/);
-  assert.match(map, /handleGenerateAssistant/);
-  assert.match(map, /assistantErrorText/);
+  assert.match(assistant, /regeneratePlanActivity/);
+  for (const field of ['origin', 'destination', 'startDate', 'endDate', 'travelers', 'budget', 'pace', 'interests', 'foodPreferences', 'accessibility']) {
+    assert.match(planner, new RegExp(field));
+  }
+  assert.match(result, /saveTripPlan/);
+  assert.match(result, /toggleChecklist/);
+  assert.match(result, /openMap/);
+  assert.match(result, /startEditing/);
+  assert.match(map, /navigation\.navigate\('TripPlanner'\)/);
+});
+
+test('travel planner masks Brazilian dates and sends ISO dates to the backend', () => {
+  const planner = read('src/screens/assistant/TripPlannerScreen.js');
+  const dateUtils = read('src/utils/dateUtils.js');
+  const result = read('src/screens/assistant/AssistantResultScreen.js');
+  assert.match(planner, /placeholder="DD\/MM\/AAAA"/);
+  assert.match(planner, /maskBrazilianDate\(value, form\.startDate\)/);
+  assert.match(planner, /startDate: toIsoDate\(form\.startDate\)/);
+  assert.match(dateUtils, /digits\.length === 2/);
+  assert.match(dateUtils, /parseBrazilianDate/);
+  assert.match(result, /toBrazilianDate\(request\.startDate\)/);
+});
+
+test('saved travel plans are private and available from the profile', () => {
+  const migration = read('supabase/migrations/20260731120000_create_travel_plans.sql');
+  const service = read('src/services/tripPlanService.js');
+  const profile = read('src/screens/profile/ProfileScreen.js');
+  assert.match(migration, /create table if not exists public\.travel_plans/);
+  assert.match(migration, /user_id = auth\.uid\(\)/);
+  assert.match(service, /LOCAL_STORAGE_KEY/);
+  assert.match(profile, /SavedTrips/);
 });
 
 test('client source does not contain Google API keys', () => {
@@ -165,6 +195,8 @@ test('Google login uses Supabase OAuth and Expo browser callbacks', () => {
   assert.match(auth, /signInWithOAuth/);
   assert.match(auth, /openAuthSessionAsync/);
   assert.match(auth, /exchangeCodeForSession/);
+  assert.match(auth, /API_CONFIG\.WEB_APP_URL/);
+  assert.match(auth, /isLocalDevelopment/);
   assert.match(login, /signInWithGoogle/);
   assert.match(app, /"scheme": "journi"/);
   assert.match(app, /"expo-web-browser"/);

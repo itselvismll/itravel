@@ -62,7 +62,12 @@ export async function signIn(email, password) {
 
 const getGoogleRedirectUrl = () => {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    return window.location.origin;
+    const currentUrl = new URL(window.location.href);
+    const isLocalDevelopment = ['localhost', '127.0.0.1'].includes(currentUrl.hostname);
+
+    // Keep local development usable, but never derive a production callback
+    // from a preview host or a stale localhost Site URL.
+    return isLocalDevelopment ? currentUrl.origin : API_CONFIG.WEB_APP_URL;
   }
 
   return Linking.createURL('auth/callback');
@@ -103,6 +108,10 @@ export async function signInWithGoogle() {
       options: {
         redirectTo,
         skipBrowserRedirect: isNative,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'select_account',
+        },
       },
     });
 

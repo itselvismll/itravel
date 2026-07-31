@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, ActivityIndicator, Alert, Platform, TextInput, Image, KeyboardAvoidingView, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, ActivityIndicator, Alert, Platform, TextInput, Image, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../utils/constants';
 import { supabase, getCurrentUser, getVisitedCountries, markCountryAsVisited, unmarkCountryAsVisited } from '../../services/supabase';
@@ -17,7 +17,6 @@ import {
   getGeoCountryAlpha3,
   getGeoCountryName,
 } from '../../utils/geo-country-utils';
-import { PROMPT_TYPES, askTravelAssistant } from '../../services/assistantService';
 import PhotoGallery from '../../components/PhotoGallery';
 import PhotoUploader from '../../components/PhotoUploader';
 import CountryFlag from '../../components/CountryFlag';
@@ -41,45 +40,6 @@ const WORLD_BOUNDS = [
 
 const getMinimumWorldZoom = (viewportWidth) =>
   Math.max(2, Math.ceil(Math.log2(Math.max(viewportWidth, 1) / 256)));
-
-const COUNTRIES_LIST = [
-  { code: 'BR', name: 'Brasil' }, { code: 'AR', name: 'Argentina' },
-  { code: 'US', name: 'Estados Unidos' }, { code: 'FR', name: 'França' },
-  { code: 'IT', name: 'Itália' }, { code: 'ES', name: 'Espanha' },
-  { code: 'PT', name: 'Portugal' }, { code: 'DE', name: 'Alemanha' },
-  { code: 'GB', name: 'Reino Unido' }, { code: 'JP', name: 'Japão' },
-  { code: 'CN', name: 'China' }, { code: 'KR', name: 'Coreia do Sul' },
-  { code: 'TH', name: 'Tailândia' }, { code: 'VN', name: 'Vietnã' },
-  { code: 'ID', name: 'Indonésia' }, { code: 'AU', name: 'Austrália' },
-  { code: 'NZ', name: 'Nova Zelândia' }, { code: 'MX', name: 'México' },
-  { code: 'CO', name: 'Colômbia' }, { code: 'PE', name: 'Peru' },
-  { code: 'CL', name: 'Chile' }, { code: 'UY', name: 'Uruguai' },
-  { code: 'PY', name: 'Paraguai' }, { code: 'BO', name: 'Bolívia' },
-  { code: 'EC', name: 'Equador' }, { code: 'VE', name: 'Venezuela' },
-  { code: 'CA', name: 'Canadá' }, { code: 'ZA', name: 'África do Sul' },
-  { code: 'EG', name: 'Egito' }, { code: 'MA', name: 'Marrocos' },
-  { code: 'KE', name: 'Quênia' }, { code: 'NG', name: 'Nigéria' },
-  { code: 'ET', name: 'Etiópia' }, { code: 'TR', name: 'Turquia' },
-  { code: 'GR', name: 'Grécia' }, { code: 'NL', name: 'Holanda' },
-  { code: 'BE', name: 'Bélgica' }, { code: 'CH', name: 'Suíça' },
-  { code: 'AT', name: 'Áustria' }, { code: 'SE', name: 'Suécia' },
-  { code: 'NO', name: 'Noruega' }, { code: 'DK', name: 'Dinamarca' },
-  { code: 'FI', name: 'Finlândia' }, { code: 'PL', name: 'Polônia' },
-  { code: 'CZ', name: 'República Tcheca' }, { code: 'HU', name: 'Hungria' },
-  { code: 'RO', name: 'Romênia' }, { code: 'HR', name: 'Croácia' },
-  { code: 'IN', name: 'Índia' }, { code: 'NE', name: 'Níger' },
-  { code: 'LY', name: 'Líbia' }, { code: 'DZ', name: 'Argélia' },
-  { code: 'RU', name: 'Rússia' }, { code: 'UA', name: 'Ucrânia' },
-  { code: 'SG', name: 'Singapura' }, { code: 'MY', name: 'Malásia' },
-  { code: 'PH', name: 'Filipinas' }, { code: 'PK', name: 'Paquistão' },
-  { code: 'BD', name: 'Bangladesh' }, { code: 'LK', name: 'Sri Lanka' },
-  { code: 'NP', name: 'Nepal' }, { code: 'AE', name: 'Emirados Árabes' },
-  { code: 'SA', name: 'Arábia Saudita' }, { code: 'IL', name: 'Israel' },
-  { code: 'JO', name: 'Jordânia' }, { code: 'CU', name: 'Cuba' },
-  { code: 'DO', name: 'República Dominicana' }, { code: 'CR', name: 'Costa Rica' },
-  { code: 'PA', name: 'Panamá' }, { code: 'GT', name: 'Guatemala' },
-  { code: 'IS', name: 'Islândia' }, { code: 'IE', name: 'Irlanda' },
-];
 
 let MapContainer, GeoJSON, TileLayer, Marker, Popup, L, MarkerClusterGroup;
 if (Platform.OS === 'web') {
@@ -121,13 +81,6 @@ export default function MapScreen({ navigation }) {
   const [countrySearch, setCountrySearch] = useState('');
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [wishlistCodes, setWishlistCodes] = useState([]);
-  const [assistantVisible, setAssistantVisible] = useState(false);
-  const [selectedPromptType, setSelectedPromptType] = useState(null);
-  const [assistantDestination, setAssistantDestination] = useState('');
-  const [assistantLoading, setAssistantLoading] = useState(false);
-  const [assistantStep, setAssistantStep] = useState('select');
-  const [countrySuggestions, setCountrySuggestions] = useState([]);
-  const [assistantError, setAssistantError] = useState('');
 
   const visitedCountriesDataRef = useRef([]);
   const minimumWorldZoom = getMinimumWorldZoom(viewportWidth);
@@ -427,61 +380,6 @@ export default function MapScreen({ navigation }) {
     }
   }, [countries, handleCountryClick]);
 
-  const handleGenerateAssistant = useCallback(async () => {
-    const destination = assistantDestination.trim();
-    if (!destination || !selectedPromptType || assistantLoading) return;
-
-    setAssistantError('');
-    setAssistantLoading(true);
-
-    try {
-      const visited = visitedCountriesDataRef.current
-        .map(country => country.country_name)
-        .filter(Boolean);
-      const wishlist = wishlistCodes.map(code => getCountryNamePtByCode(code, code));
-      const levels = [
-        { max: 2, name: 'Iniciante' },
-        { max: 5, name: 'Viajante' },
-        { max: 10, name: 'Explorador' },
-        { max: 20, name: 'Globetrotter' },
-        { max: 999, name: 'Lenda Viajante' },
-      ];
-      const level = levels.find(item => visited.length <= item.max)?.name || 'Lenda Viajante';
-      const result = await askTravelAssistant({
-        promptType: selectedPromptType.id,
-        destination,
-        userContext: {
-          visitedCountries: visited,
-          wishlistCountries: wishlist,
-          totalCountries: visited.length,
-          level,
-        },
-      });
-
-      if (!result.success) {
-        setAssistantError(result.error);
-        return;
-      }
-
-      setAssistantVisible(false);
-      navigation.navigate('AssistantResult', {
-        promptType: selectedPromptType.id,
-        destination,
-        response: result.response,
-      });
-    } catch {
-      setAssistantError('Não foi possível gerar o conteúdo agora. Tente novamente.');
-    } finally {
-      setAssistantLoading(false);
-    }
-  }, [
-    assistantDestination,
-    assistantLoading,
-    navigation,
-    selectedPromptType,
-    wishlistCodes,
-  ]);
-
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -502,13 +400,7 @@ export default function MapScreen({ navigation }) {
 
       {/* Barra do assistente de viagem */}
       <TouchableOpacity
-        onPress={() => {
-          setAssistantStep('select');
-          setSelectedPromptType(null);
-          setAssistantDestination('');
-          setAssistantError('');
-          setAssistantVisible(true);
-        }}
+        onPress={() => navigation.navigate('TripPlanner')}
         style={{
           position: 'absolute', top: 16, left: 16, right: 16, zIndex: 1000,
           flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -975,183 +867,6 @@ export default function MapScreen({ navigation }) {
         </View>
       </Modal>
 
-      {/* Modal do assistente de viagem */}
-      <Modal
-        visible={assistantVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setAssistantVisible(false)}
-      >
-        <View style={{ flex: 1, justifyContent: 'flex-end',
-          backgroundColor: 'rgba(0,0,0,0.6)' }}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          >
-            <View style={{
-              backgroundColor: '#11162b', borderTopLeftRadius: 24,
-              borderTopRightRadius: 24, padding: 20, paddingBottom: 40,
-              borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.08)'
-            }}>
-              <View style={{ width: 40, height: 4, borderRadius: 2,
-                backgroundColor: '#2a2f50', alignSelf: 'center', marginBottom: 20 }} />
-
-              {assistantStep === 'select' && (
-                <>
-                  <Text style={{ fontSize: 18, fontWeight: '700',
-                    color: '#F7F7F2', marginBottom: 4 }}>
-                    Assistente de Viagem ✨
-                  </Text>
-                  <Text style={{ fontSize: 13, color: '#9aa0c6', marginBottom: 20 }}>
-                    O que você precisa para sua próxima aventura?
-                  </Text>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                    {PROMPT_TYPES.map(type => (
-                      <TouchableOpacity
-                        key={type.id}
-                        onPress={() => {
-                          setSelectedPromptType(type);
-                          setAssistantStep('destination');
-                          setAssistantError('');
-                        }}
-                        style={{
-                          width: '47%', backgroundColor: '#1b1f3a',
-                          borderRadius: 14, padding: 14,
-                          borderWidth: 1.5, borderColor: type.color, gap: 4
-                        }}
-                      >
-                        <Text style={{ fontSize: 24 }}>{type.emoji}</Text>
-                        <Text style={{ fontSize: 13, fontWeight: '700',
-                          color: '#F7F7F2' }}>{type.title}</Text>
-                        <Text style={{ fontSize: 11, color: '#9aa0c6' }}>
-                          {type.description}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </>
-              )}
-
-              {assistantStep === 'destination' && selectedPromptType && (
-                <>
-                  <TouchableOpacity
-                    onPress={() => setAssistantStep('select')}
-                    style={{ flexDirection: 'row', alignItems: 'center',
-                      gap: 6, marginBottom: 16 }}
-                  >
-                    <Ionicons name="arrow-back" size={18} color="#9aa0c6" />
-                    <Text style={{ color: '#9aa0c6' }}>Voltar</Text>
-                  </TouchableOpacity>
-                  <View style={{ flexDirection: 'row', alignItems: 'center',
-                    gap: 10, marginBottom: 20, backgroundColor: '#1b1f3a',
-                    borderRadius: 12, padding: 12,
-                    borderWidth: 1, borderColor: selectedPromptType.color }}>
-                    <Text style={{ fontSize: 22 }}>{selectedPromptType.emoji}</Text>
-                    <Text style={{ fontSize: 14, fontWeight: '700',
-                      color: selectedPromptType.color }}>
-                      {selectedPromptType.title}
-                    </Text>
-                  </View>
-                  <Text style={{ fontSize: 13, fontWeight: '700',
-                    color: '#9aa0c6', letterSpacing: 1, marginBottom: 10 }}>
-                    QUAL O DESTINO?
-                  </Text>
-                  <TextInput
-                    value={assistantDestination}
-                    onChangeText={(text) => {
-                      setAssistantDestination(text);
-                      setAssistantError('');
-                      if (text.length >= 1) {
-                        const filtered = COUNTRIES_LIST.filter(c =>
-                          c.name.toLowerCase().includes(text.toLowerCase()) ||
-                          c.code.toLowerCase().includes(text.toLowerCase())
-                        ).slice(0, 5);
-                        setCountrySuggestions(filtered);
-                      } else {
-                        setCountrySuggestions([]);
-                      }
-                    }}
-                    placeholder="Ex: Brasil, Japão, França..."
-                    placeholderTextColor="#555a78"
-                    style={{
-                      backgroundColor: '#1b1f3a', borderRadius: 12,
-                      padding: 14, fontSize: 15, color: '#F7F7F2',
-                      borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
-                      marginBottom: countrySuggestions.length > 0 ? 0 : 14
-                    }}
-                    autoFocus
-                  />
-                  {countrySuggestions.length > 0 && (
-                    <View style={{
-                      backgroundColor: '#1b1f3a',
-                      borderWidth: 1, borderTopWidth: 0,
-                      borderColor: 'rgba(255,255,255,0.08)',
-                      borderBottomLeftRadius: 12, borderBottomRightRadius: 12,
-                      marginBottom: 14, overflow: 'hidden'
-                    }}>
-                      {countrySuggestions.map((country, idx) => (
-                        <TouchableOpacity
-                          key={country.code}
-                          onPress={() => {
-                            setAssistantDestination(country.name);
-                            setCountrySuggestions([]);
-                            setAssistantError('');
-                          }}
-                          style={{
-                            flexDirection: 'row', alignItems: 'center',
-                            gap: 12, padding: 12,
-                            borderTopWidth: idx > 0 ? 1 : 0,
-                            borderTopColor: 'rgba(255,255,255,0.06)'
-                          }}
-                        >
-                          <CountryFlag
-                            countryCode={country.code}
-                            width={28}
-                            height={19}
-                            borderRadius={3}
-                          />
-                          <Text style={{ fontSize: 14, color: '#F7F7F2', fontWeight: '600' }}>
-                            {country.name}
-                          </Text>
-                          <Text style={{ fontSize: 12, color: '#9aa0c6', marginLeft: 'auto' }}>
-                            {country.code}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-                  {!!assistantError && (
-                    <View style={styles.assistantError}>
-                      <Ionicons name="alert-circle-outline" size={18} color="#FF8AA0" />
-                      <Text selectable style={styles.assistantErrorText}>{assistantError}</Text>
-                    </View>
-                  )}
-                  <TouchableOpacity
-                    disabled={!assistantDestination.trim() || assistantLoading}
-                    onPress={handleGenerateAssistant}
-                    style={{
-                      backgroundColor: assistantDestination.trim() ? '#6C2BD9' : '#2a2f50',
-                      borderRadius: 12, padding: 15,
-                      alignItems: 'center', flexDirection: 'row',
-                      justifyContent: 'center', gap: 8
-                    }}
-                  >
-                    {assistantLoading ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <>
-                        <Ionicons name="sparkles" size={18} color="#fff" />
-                        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>
-                          Gerar com IA
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
 
       {/* Modal de upload de foto */}
       <Modal
@@ -1201,23 +916,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-  },
-  assistantError: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(255,77,109,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,77,109,0.35)',
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 12,
-  },
-  assistantErrorText: {
-    flex: 1,
-    color: '#FFB3C1',
-    fontSize: 12,
-    lineHeight: 17,
   },
   searchContainer: {
     position: 'absolute',
