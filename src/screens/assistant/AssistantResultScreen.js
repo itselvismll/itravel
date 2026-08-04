@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { regeneratePlanActivity } from '../../services/assistantService';
+import { adjustTravelPlan, regeneratePlanActivity } from '../../services/assistantService';
 import { saveTripPlan } from '../../services/tripPlanService';
 import { notify } from '../../utils/dialogs';
 import { toBrazilianDate } from '../../utils/dateUtils';
@@ -21,6 +21,7 @@ const TABS = [
   { id: 'budget', label: 'Orçamento', icon: 'wallet-outline' },
   { id: 'checklist', label: 'Checklist', icon: 'checkbox-outline' },
   { id: 'tips', label: 'Dicas', icon: 'bulb-outline' },
+  { id: 'chat', label: 'Ajustar', icon: 'chatbubble-ellipses-outline' },
 ];
 
 const periodIcon = (period = '') => {
@@ -47,6 +48,9 @@ export default function AssistantResultScreen({ route, navigation }) {
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState('');
   const [editing, setEditing] = useState(null);
+  const [chatText, setChatText] = useState('');
+  const [adjusting, setAdjusting] = useState(false);
+  const [adjustments, setAdjustments] = useState([]);
 
   const checklistProgress = useMemo(() => {
     const items = plan.checklist || [];
@@ -86,6 +90,14 @@ export default function AssistantResultScreen({ route, navigation }) {
   };
 
   const openMap = async (activity) => {
+    if (activity.mapsUrl) {
+      await Linking.openURL(activity.mapsUrl);
+      return;
+    }
+    if (activity.latitude && activity.longitude) {
+      await Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${activity.latitude},${activity.longitude}`);
+      return;
+    }
     const query = activity.mapQuery || `${activity.location}, ${request.destination}`;
     await Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`);
   };
@@ -125,6 +137,32 @@ export default function AssistantResultScreen({ route, navigation }) {
       )),
     }));
     setEditing(null);
+  };
+
+  const handleAdjustPlan = async (suggestion) => {
+    const message = String(suggestion || chatText).trim();
+    if (!message || adjusting) return;
+
+    setAdjusting(true);
+    const result = await adjustTravelPlan({
+      planRequest: request,
+      userContext,
+      plan,
+      message,
+    });
+    setAdjusting(false);
+    if (!result.success) {
+      notify('Não foi possível ajustar o roteiro', result.error || 'Tente novamente.');
+      return;
+    }
+
+    setPlan(result.plan);
+    setChatText('');
+    setAdjustments(current => [
+      ...current,
+      { role: 'user', text: message },
+      { role: 'assistant', text: 'Pronto! Ajustei o roteiro mantendo os demais detalhes da viagem.' },
+    ].slice(-8));
   };
 
   return (
@@ -174,7 +212,7 @@ export default function AssistantResultScreen({ route, navigation }) {
                   <View style={styles.dayNumber}><Text style={styles.dayNumberText}>{day.day}</Text></View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.dayTitle}>{day.theme}</Text>
-                    <Text style={styles.dayDate}>{day.date || `Dia ${day.day}`}</Text>
+                    <Text style={styles.dayDate}>{day.date ? toBrazilianDate(day.date) : `Dia ${day.day}`}</Text>
                   </View>
                 </View>
                 {(day.activities || []).map((activity, activityIndex) => {
@@ -202,6 +240,19 @@ export default function AssistantResultScreen({ route, navigation }) {
                               <Text style={styles.location} numberOfLines={1}>📍 {activity.location}</Text>
                               <Text style={styles.cost}>{formatMoney(activity.estimatedCost, plan.budget?.currency || request.currency)}</Text>
                             </View>
+                            {(activity.rating || activity.openingHours?.length || activity.verificationSource) && (
+                              <View style={styles.verifiedRow}>
+                                {!!activity.rating && (
+                                  <Text style={styles.verifiedText}>★ {activity.rating}{activity.reviewCount ? ` (${activity.reviewCount})` : ''}</Text>
+                                )}
+                                {!!activity.openingHours?.length && (
+                                  <Text style={styles.verifiedText} numberOfLines={1}>◷ {activity.openingHours[0]}</Text>
+                                )}
+                                {!!activity.verificationSource && (
+                                  <Text style={styles.verifiedSource}>{activity.verificationSource}</Text>
+                                )}
+                              </View>
+                            )}
                             <View style={styles.actionRow}>
                               <SmallButton icon="map-outline" label="Mapa" onPress={() => openMap(activity)} />
                               <SmallButton icon="pencil-outline" label="Editar" onPress={() => startEditing(dayIndex, activityIndex, activity)} />
@@ -266,6 +317,65 @@ export default function AssistantResultScreen({ route, navigation }) {
                 ))}
               </View>
             )}
+          </View>
+        )}
+
+        {activeTab === 'chat' && (
+          <View style={styles.panel}>
+            <View style={styles.chatHeading}>
+              <Ionicons name="sparkles" size={20} color="#A78BFA" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.panelTitle}>Ajuste este roteiro com IA</Text>
+                <Text style={styles.chatHint}>Peça mudanças sem preencher tudo novamente.</Text>
+              </View>
+            </View>
+
+            <View style={styles.suggestionRow}>
+              {[
+                'Deixe o roteiro mais econômico',
+                'Inclua mais opções em dias de chuva',
+                'Reduza os deslocamentos',
+              ].map(suggestion => (
+                <TouchableOpacity
+                  key={suggestion}
+                  onPress={() => handleAdjustPlan(suggestion)}
+                  disabled={adjusting}
+                  style={styles.suggestionChip}
+                >
+                  <Text style={styles.suggestionText}>{suggestion}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {adjustments.map((message, index) => (
+              <View
+                key={`${message.role}-${index}`}
+                style={[styles.chatBubble, message.role === 'user' ? styles.userBubble : styles.assistantBubble]}
+              >
+                <Text style={styles.chatBubbleText}>{message.text}</Text>
+              </View>
+            ))}
+
+            <View style={styles.chatComposer}>
+              <TextInput
+                value={chatText}
+                onChangeText={setChatText}
+                placeholder="Ex: troque o museu por um passeio ao ar livre"
+                placeholderTextColor="#69718F"
+                style={styles.chatInput}
+                multiline
+                maxLength={600}
+              />
+              <TouchableOpacity
+                onPress={() => handleAdjustPlan()}
+                disabled={adjusting || !chatText.trim()}
+                style={[styles.chatSend, (!chatText.trim() || adjusting) && styles.chatSendDisabled]}
+              >
+                {adjusting
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Ionicons name="arrow-up" size={19} color="#fff" />}
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
@@ -344,6 +454,9 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', gap: 8, justifyContent: 'space-between', marginTop: 8 },
   location: { color: '#7F87A6', fontSize: 10, flex: 1 },
   cost: { color: '#35D3C8', fontSize: 10, fontWeight: '800' },
+  verifiedRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 7 },
+  verifiedText: { color: '#D5D8E8', fontSize: 9, fontWeight: '700' },
+  verifiedSource: { color: '#6F7798', fontSize: 8, textTransform: 'uppercase' },
   actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10 },
   smallButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 7, borderRadius: 9, borderWidth: 1, borderColor: 'rgba(167,139,250,0.25)', backgroundColor: 'rgba(139,92,246,0.07)' },
   smallButtonPrimary: { backgroundColor: '#6C2BD9', borderColor: '#6C2BD9' },
@@ -374,6 +487,19 @@ const styles = StyleSheet.create({
   sourceRow: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 12 },
   sourceLabel: { color: '#DDE0ED', fontSize: 12, fontWeight: '700' },
   sourceDate: { color: '#707896', fontSize: 9, marginTop: 2 },
+  chatHeading: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
+  chatHint: { color: '#858DAD', fontSize: 10, marginTop: 3 },
+  suggestionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 14 },
+  suggestionChip: { borderRadius: 99, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: 'rgba(139,92,246,0.11)', borderWidth: 1, borderColor: 'rgba(167,139,250,0.22)' },
+  suggestionText: { color: '#C4B5FD', fontSize: 10, fontWeight: '700' },
+  chatBubble: { maxWidth: '88%', borderRadius: 13, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8 },
+  userBubble: { alignSelf: 'flex-end', backgroundColor: '#6C2BD9' },
+  assistantBubble: { alignSelf: 'flex-start', backgroundColor: '#222946' },
+  chatBubbleText: { color: '#F2F0FA', fontSize: 11, lineHeight: 17 },
+  chatComposer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginTop: 8 },
+  chatInput: { flex: 1, minHeight: 46, maxHeight: 110, color: '#F7F7F2', backgroundColor: '#202744', borderRadius: 13, paddingHorizontal: 12, paddingVertical: 11, fontSize: 12, textAlignVertical: 'top' },
+  chatSend: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#6C2BD9', alignItems: 'center', justifyContent: 'center' },
+  chatSendDisabled: { opacity: 0.45 },
   bottomActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
   secondaryButton: { flex: 1, minWidth: 150, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 13, padding: 14, borderWidth: 1, borderColor: '#6C2BD9' },
   secondaryText: { color: '#BBA8FA', fontSize: 12, fontWeight: '800' },

@@ -174,3 +174,18 @@ export const regeneratePlanActivity = async ({ planRequest, userContext, plan, b
   }
   return result;
 };
+
+export const adjustTravelPlan = async ({ planRequest, userContext, plan, message }) => {
+  const adjustment = String(message || '').trim();
+  if (!adjustment) {
+    return { success: false, error: 'Escreva o que você quer mudar no roteiro.' };
+  }
+
+  return invokeAssistant({
+    action: 'adjust_plan',
+    planRequest,
+    userContext,
+    existingPlan: plan,
+    adjustment,
+  });
+};

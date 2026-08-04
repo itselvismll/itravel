@@ -16,8 +16,64 @@ if (!API_CONFIG.SUPABASE_URL || !API_CONFIG.SUPABASE_ANON_KEY) {
 // Criar cliente do Supabase
 export const supabase = createClient(
   API_CONFIG.SUPABASE_URL,
-  API_CONFIG.SUPABASE_ANON_KEY
+  API_CONFIG.SUPABASE_ANON_KEY,
+  {
+    auth: {
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      flowType: 'pkce',
+      persistSession: true,
+    },
+  }
 );
+
+const clearOAuthParamsFromBrowserUrl = () => {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+  const cleanUrl = new URL(window.location.href);
+  ['code', 'error', 'error_code', 'error_description'].forEach(param => (
+    cleanUrl.searchParams.delete(param)
+  ));
+  cleanUrl.hash = '';
+  window.history.replaceState(
+    {},
+    document.title,
+    `${cleanUrl.pathname}${cleanUrl.search}`
+  );
+};
+
+export async function completeWebOAuthSession() {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
+
+  const callbackUrl = new URL(window.location.href);
+  const oauthError = callbackUrl.searchParams.get('error_description')
+    || callbackUrl.searchParams.get('error');
+  if (oauthError) {
+    clearOAuthParamsFromBrowserUrl();
+    throw new Error(decodeURIComponent(oauthError.replace(/\+/g, ' ')));
+  }
+
+  const code = callbackUrl.searchParams.get('code');
+  const hashParams = new URLSearchParams(callbackUrl.hash.replace(/^#/, ''));
+  const accessToken = hashParams.get('access_token');
+  const refreshToken = hashParams.get('refresh_token');
+
+  if (!code && (!accessToken || !refreshToken)) {
+    const { data } = await supabase.auth.getSession();
+    return data.session;
+  }
+
+  const result = code
+    ? await supabase.auth.exchangeCodeForSession(code)
+    : await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+  if (result.error) throw result.error;
+  clearOAuthParamsFromBrowserUrl();
+  return result.data.session;
+}
 
 // Função de cadastro
 export async function signUp(email, password, username, fullName) {

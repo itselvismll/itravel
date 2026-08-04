@@ -78,8 +78,13 @@ Site URL e permita os redirecionamentos `https://journi.expo.app/**` e
 ### 6. Deploy da Edge Function
 
 ```bash
+supabase secrets set GOOGLE_PLACES_API_KEY=sua_chave_google_places
 supabase functions deploy travel-assistant
 ```
+
+`GOOGLE_PLACES_API_KEY` é opcional, mas habilita avaliações e horários do Google
+Places. Sem ela, o planejador usa coordenadas e horários disponíveis no
+OpenStreetMap, sem inventar avaliações ausentes.
 
 ## Rodando o app
 

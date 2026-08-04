@@ -9,7 +9,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { COLORS } from '../utils/constants';
-import { getCurrentUser, supabase } from '../services/supabase';
+import { completeWebOAuthSession, getCurrentUser, supabase } from '../services/supabase';
 import { useUpload } from '../context/UploadContext';
 
 // Screens
@@ -162,6 +162,12 @@ export default function AppNavigator() {
 
   useEffect(() => {
     const checkUser = async () => {
+      try {
+        await completeWebOAuthSession();
+      } catch {
+        // Keep the login screen available when Google cancels or rejects OAuth.
+      }
+
       const result = await getCurrentUser();
 
       if (result && result.id) {

@@ -32,6 +32,7 @@ test('travel planner is personalized, structured, cancellable, and editable', ()
   assert.match(assistant, /refreshSession/);
   assert.match(assistant, /AbortController/);
   assert.match(assistant, /regeneratePlanActivity/);
+  assert.match(assistant, /adjustTravelPlan/);
   for (const field of ['origin', 'destination', 'startDate', 'endDate', 'travelers', 'budget', 'pace', 'interests', 'foodPreferences', 'accessibility']) {
     assert.match(planner, new RegExp(field));
   }
@@ -39,7 +40,22 @@ test('travel planner is personalized, structured, cancellable, and editable', ()
   assert.match(result, /toggleChecklist/);
   assert.match(result, /openMap/);
   assert.match(result, /startEditing/);
+  assert.match(result, /Ajuste este roteiro com IA/);
   assert.match(map, /navigation\.navigate\('TripPlanner'\)/);
+});
+
+test('AI planner enriches plans with dated weather, verified places, currency, and sources', () => {
+  const handler = read('supabase/functions/travel-assistant/index.ts');
+  const result = read('src/screens/assistant/AssistantResultScreen.js');
+  assert.match(handler, /start_date/);
+  assert.match(handler, /end_date/);
+  assert.match(handler, /GOOGLE_PLACES_API_KEY/);
+  assert.match(handler, /overpass-api\.de/);
+  assert.match(handler, /restcountries\.com/);
+  assert.match(handler, /api\.frankfurter\.app/);
+  assert.match(handler, /adjust_plan/);
+  assert.match(result, /activity\.rating/);
+  assert.match(result, /activity\.openingHours/);
 });
 
 test('travel planner masks Brazilian dates and sends ISO dates to the backend', () => {
@@ -195,6 +211,10 @@ test('Google login uses Supabase OAuth and Expo browser callbacks', () => {
   assert.match(auth, /signInWithOAuth/);
   assert.match(auth, /openAuthSessionAsync/);
   assert.match(auth, /exchangeCodeForSession/);
+  assert.match(auth, /completeWebOAuthSession/);
+  assert.match(auth, /flowType: 'pkce'/);
+  assert.match(auth, /new URLSearchParams\(callbackUrl\.hash/);
+  assert.match(auth, /window\.history\.replaceState/);
   assert.match(auth, /API_CONFIG\.WEB_APP_URL/);
   assert.match(auth, /isLocalDevelopment/);
   assert.match(login, /signInWithGoogle/);

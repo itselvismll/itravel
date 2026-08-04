@@ -23,9 +23,9 @@ const cleanList = (value: unknown, maxItems = 12) => (
     : []
 )
 
-const fetchJson = async (url: string) => {
+const fetchJson = async (url: string, init: RequestInit = {}) => {
   try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(7000) })
+    const response = await fetch(url, { ...init, signal: AbortSignal.timeout(7000) })
     if (!response.ok) return null
     return await response.json()
   } catch {
@@ -33,32 +33,123 @@ const fetchJson = async (url: string) => {
   }
 }
 
-const getLiveContext = async (destination: string, currency: string) => {
+const isIsoDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value)
+
+const addDays = (date: Date, days: number) => {
+  const result = new Date(date)
+  result.setUTCDate(result.getUTCDate() + days)
+  return result.toISOString().slice(0, 10)
+}
+
+const getLiveContext = async (
+  destination: string,
+  currency: string,
+  startDate: string,
+  endDate: string,
+  interests: string[],
+) => {
   const geocodingUrl = new URL('https://geocoding-api.open-meteo.com/v1/search')
   geocodingUrl.searchParams.set('name', destination)
   geocodingUrl.searchParams.set('count', '1')
   geocodingUrl.searchParams.set('language', 'pt')
   geocodingUrl.searchParams.set('format', 'json')
 
-  const [geocoding, exchange] = await Promise.all([
-    fetchJson(geocodingUrl.toString()),
-    fetchJson(`https://api.frankfurter.app/latest?from=${encodeURIComponent(currency)}`),
-  ])
-
+  const geocoding = await fetchJson(geocodingUrl.toString())
   const place = geocoding?.results?.[0]
+  const countryUrl = place?.country_code
+    ? `https://restcountries.com/v3.1/alpha/${encodeURIComponent(place.country_code)}?fields=currencies`
+    : ''
+  const countryData = countryUrl ? await fetchJson(countryUrl) : null
+  const country = Array.isArray(countryData) ? countryData[0] : countryData
+  const localCurrency = Object.keys(country?.currencies || {})[0] || currency
+  const exchangeUrl = `https://api.frankfurter.app/latest?from=${encodeURIComponent(currency)}${localCurrency !== currency ? `&to=${encodeURIComponent(localCurrency)}` : ''}`
+
   let weather = null
   let weatherSourceUrl = ''
+  let weatherCoverage = null
   if (place?.latitude && place?.longitude) {
-    const weatherUrl = new URL('https://api.open-meteo.com/v1/forecast')
-    weatherUrl.searchParams.set('latitude', String(place.latitude))
-    weatherUrl.searchParams.set('longitude', String(place.longitude))
-    weatherUrl.searchParams.set('current', 'temperature_2m,weather_code')
-    weatherUrl.searchParams.set('daily', 'temperature_2m_max,temperature_2m_min,precipitation_probability_max')
-    weatherUrl.searchParams.set('timezone', 'auto')
-    weatherUrl.searchParams.set('forecast_days', '7')
-    weatherSourceUrl = weatherUrl.toString()
-    weather = await fetchJson(weatherSourceUrl)
+    const today = new Date().toISOString().slice(0, 10)
+    const forecastLimit = addDays(new Date(), 15)
+    const requestedStart = isIsoDate(startDate) ? startDate : today
+    const requestedEnd = isIsoDate(endDate) ? endDate : addDays(new Date(), 6)
+    const forecastStart = requestedStart < today ? today : requestedStart
+    const forecastEnd = requestedEnd > forecastLimit ? forecastLimit : requestedEnd
+    if (forecastStart <= forecastEnd && requestedEnd >= today && requestedStart <= forecastLimit) {
+      const weatherUrl = new URL('https://api.open-meteo.com/v1/forecast')
+      weatherUrl.searchParams.set('latitude', String(place.latitude))
+      weatherUrl.searchParams.set('longitude', String(place.longitude))
+      weatherUrl.searchParams.set('daily', 'temperature_2m_max,temperature_2m_min,precipitation_probability_max')
+      weatherUrl.searchParams.set('timezone', 'auto')
+      weatherUrl.searchParams.set('start_date', forecastStart)
+      weatherUrl.searchParams.set('end_date', forecastEnd)
+      weatherSourceUrl = weatherUrl.toString()
+      weather = await fetchJson(weatherSourceUrl)
+      weatherCoverage = weather ? { startDate: forecastStart, endDate: forecastEnd, type: 'forecast' } : null
+    }
   }
+
+  const googlePlacesKey = Deno.env.get('GOOGLE_PLACES_API_KEY')
+  let realPlaces: any[] = []
+  let placesSourceUrl = ''
+  let placesProvider = ''
+  if (googlePlacesKey && place?.latitude && place?.longitude) {
+    placesSourceUrl = 'https://places.googleapis.com/v1/places:searchText'
+    const placesData = await fetchJson(placesSourceUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': googlePlacesKey,
+        'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.regularOpeningHours,places.googleMapsUri,places.websiteUri',
+      },
+      body: JSON.stringify({
+        textQuery: `atrações ${interests.join(' ')} em ${destination}`,
+        languageCode: 'pt-BR',
+        maxResultCount: 15,
+        locationBias: {
+          circle: {
+            center: { latitude: place.latitude, longitude: place.longitude },
+            radius: 18000,
+          },
+        },
+      }),
+    })
+    realPlaces = (placesData?.places || []).map((item: any) => ({
+      name: item.displayName?.text,
+      address: item.formattedAddress,
+      latitude: item.location?.latitude,
+      longitude: item.location?.longitude,
+      rating: item.rating || null,
+      reviewCount: item.userRatingCount || null,
+      openingHours: item.regularOpeningHours?.weekdayDescriptions || [],
+      mapsUrl: item.googleMapsUri || '',
+      website: item.websiteUri || '',
+      provider: 'Google Places',
+    })).filter((item: any) => item.name)
+    placesProvider = realPlaces.length ? 'Google Places' : ''
+  }
+
+  if (!realPlaces.length && place?.latitude && place?.longitude) {
+    const overpassQuery = `[out:json][timeout:12];(nwr(around:15000,${place.latitude},${place.longitude})[tourism~"attraction|museum|gallery|viewpoint|zoo|theme_park"][name];);out center tags 20;`
+    placesSourceUrl = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery)}`
+    const osmData = await fetchJson(placesSourceUrl, { headers: { 'Accept-Language': 'pt-BR' } })
+    realPlaces = (osmData?.elements || []).slice(0, 20).map((item: any) => ({
+      name: item.tags?.name,
+      address: [item.tags?.['addr:street'], item.tags?.['addr:housenumber']].filter(Boolean).join(', '),
+      latitude: item.lat || item.center?.lat,
+      longitude: item.lon || item.center?.lon,
+      rating: null,
+      reviewCount: null,
+      openingHours: item.tags?.opening_hours ? [item.tags.opening_hours] : [],
+      mapsUrl: item.lat || item.center?.lat
+        ? `https://www.google.com/maps/search/?api=1&query=${item.lat || item.center.lat},${item.lon || item.center.lon}`
+        : '',
+      website: item.tags?.website || '',
+      provider: 'OpenStreetMap',
+    })).filter((item: any) => item.name && item.latitude && item.longitude)
+    placesProvider = realPlaces.length ? 'OpenStreetMap' : ''
+  }
+
+  const exchange = await fetchJson(exchangeUrl)
 
   return {
     place: place ? {
@@ -69,19 +160,22 @@ const getLiveContext = async (destination: string, currency: string) => {
       longitude: place.longitude,
       timezone: place.timezone,
     } : null,
-    weather: weather ? {
-      current: weather.current,
-      daily: weather.daily,
-    } : null,
+    weather: weather ? { daily: weather.daily, coverage: weatherCoverage } : null,
     exchange: exchange ? {
       base: exchange.base,
       date: exchange.date,
       rates: exchange.rates,
+      requestedCurrency: currency,
+      localCurrency,
     } : null,
+    realPlaces,
+    placesProvider,
     sources: [
       place ? { label: 'Localização — Open-Meteo', url: geocodingUrl.toString() } : null,
       weather ? { label: 'Previsão do tempo — Open-Meteo', url: weatherSourceUrl } : null,
-      exchange ? { label: 'Câmbio — Frankfurter', url: `https://api.frankfurter.app/latest?from=${encodeURIComponent(currency)}` } : null,
+      exchange ? { label: `Câmbio ${currency}/${localCurrency} — Frankfurter`, url: exchangeUrl } : null,
+      countryData ? { label: 'Moeda local — Rest Countries', url: countryUrl } : null,
+      realPlaces.length ? { label: `Locais verificados — ${placesProvider}`, url: placesSourceUrl } : null,
     ].filter(Boolean),
     retrievedAt: new Date().toISOString(),
   }
@@ -120,6 +214,13 @@ const planSchema = {
                 estimatedCost: { type: 'NUMBER' },
                 mapQuery: { type: 'STRING' },
                 indoor: { type: 'BOOLEAN' },
+                latitude: { type: 'NUMBER' },
+                longitude: { type: 'NUMBER' },
+                rating: { type: 'NUMBER' },
+                reviewCount: { type: 'INTEGER' },
+                openingHours: { type: 'ARRAY', items: { type: 'STRING' } },
+                mapsUrl: { type: 'STRING' },
+                verificationSource: { type: 'STRING' },
               },
             },
           },
@@ -189,7 +290,8 @@ serve(async (req) => {
     if (!apiKey) return jsonResponse({ success: false, error: 'Serviço de IA não configurado' }, 500)
 
     const body = await req.json()
-    const action = body?.action === 'regenerate_activity' ? 'regenerate_activity' : 'generate_plan'
+    const supportedActions = ['generate_plan', 'regenerate_activity', 'adjust_plan']
+    const action = supportedActions.includes(body?.action) ? body.action : 'generate_plan'
     const request = body?.planRequest || {}
     const destination = cleanText(request.destination, 120)
     const origin = cleanText(request.origin, 120)
@@ -224,23 +326,34 @@ serve(async (req) => {
       level: cleanText(context.level, 40) || 'Iniciante',
     }
 
-    const liveContext = await getLiveContext(destination, currency)
-    const regenerationInstruction = action === 'regenerate_activity'
-      ? `Ajuste somente a atividade indicada e preserve todo o restante. Bloco: ${JSON.stringify(body?.block || {}).slice(0, 500)}. Roteiro atual: ${JSON.stringify(body?.existingPlan || {}).slice(0, 30000)}`
-      : 'Crie um roteiro novo e coerente.'
+    const liveContext = await getLiveContext(
+      destination,
+      currency,
+      safeRequest.startDate,
+      safeRequest.endDate,
+      safeRequest.interests,
+    )
+    const existingPlan = JSON.stringify(body?.existingPlan || {}).slice(0, 30000)
+    const operationInstruction = action === 'regenerate_activity'
+      ? `Ajuste somente a atividade indicada e preserve todo o restante. Bloco: ${JSON.stringify(body?.block || {}).slice(0, 500)}. Roteiro atual: ${existingPlan}`
+      : action === 'adjust_plan'
+        ? `Atualize o roteiro atual conforme este pedido do usuário: "${cleanText(body?.adjustment, 600)}". Preserve tudo o que não precisar mudar. Roteiro atual: ${existingPlan}`
+        : 'Crie um roteiro novo e coerente.'
 
     const prompt = `Você é o planejador de viagens do Journi. Responda em português brasileiro e apenas no JSON solicitado.
 
 Pedido: ${JSON.stringify(safeRequest)}
 Perfil do viajante: ${JSON.stringify(safeUserContext)}
 Dados externos disponíveis: ${JSON.stringify(liveContext)}
-Operação: ${regenerationInstruction}
+Operação: ${operationInstruction}
 
 Regras:
 - Crie exatamente ${duration} dias, respeitando datas, ritmo, interesses, alimentação e acessibilidade.
 - Distribua manhã, tarde e noite sem deslocamentos impossíveis; agrupe locais próximos.
 - Todos os custos devem ser numéricos em ${currency}, para ${travelers} viajante(s), e o total deve respeitar o orçamento quando ele for maior que zero.
 - mapQuery deve ser uma busca precisa no formato "local, cidade, país".
+- Priorize os locais de realPlaces. Ao usar um deles, copie nome, latitude, longitude, avaliação, quantidade de avaliações, horários e mapsUrl sem alterar os dados; copie provider para verificationSource.
+- Se uma fonte não trouxer avaliação ou horário, deixe o campo ausente; nunca fabrique reviews ou horários.
 - Use os dados meteorológicos apenas quando existirem; caso contrário diga que a previsão deve ser conferida perto da viagem.
 - Não invente horários de funcionamento, preços oficiais ou regras legais. Indique estimativas claramente.
 - As fontes devem incluir as URLs reais dos dados externos usados e a data de consulta.
