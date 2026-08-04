@@ -8,6 +8,7 @@ const EUROPE = new Set([
   'HUN', 'SVK', 'SVN', 'EST', 'LVA', 'LTU', 'ALB', 'MKD', 'BIH', 'MNE',
   'MDA', 'BLR', 'UKR', 'SRB', 'MCO', 'AND', 'SMR', 'VAT', 'LIE', 'MLT',
   'CYP', 'ISL', 'LUX', 'IRL',
+  'GB-ENG', 'GB-SCT', 'GB-WLS', 'GB-NIR',
 ]);
 
 const countSouthAmerica = (codes) =>

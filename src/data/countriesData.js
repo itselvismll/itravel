@@ -152,6 +152,22 @@ export const COUNTRIES_CULTURAL_DATA = {
     foods: ['Fish and Chips', 'Full English', 'Roast Beef', 'Scones', 'Shepherd\'s Pie'],
     attractions: ['Big Ben', 'Stonehenge', 'Tower Bridge', 'Buckingham Palace', 'Edinburgh Castle']
   },
+  'GB-ENG': {
+    foods: ['Fish and Chips', 'Full English', 'Roast Beef', 'Scones', 'Shepherd\'s Pie'],
+    attractions: ['Big Ben', 'Stonehenge', 'Tower Bridge', 'Buckingham Palace', 'Torre de Londres']
+  },
+  'GB-SCT': {
+    foods: ['Haggis', 'Cranachan', 'Shortbread', 'Cullen Skink', 'Scotch Whisky'],
+    attractions: ['Edinburgh Castle', 'Loch Ness', 'Isle of Skye', 'Royal Mile', 'Highlands']
+  },
+  'GB-WLS': {
+    foods: ['Welsh Cakes', 'Cawl', 'Welsh Rarebit', 'Bara Brith', 'Laverbread'],
+    attractions: ['Snowdonia', 'Cardiff Castle', 'Conwy Castle', 'Pembrokeshire Coast', 'Brecon Beacons']
+  },
+  'GB-NIR': {
+    foods: ['Ulster Fry', 'Soda Bread', 'Champ', 'Boxty', 'Yellow Man'],
+    attractions: ['Giant\'s Causeway', 'Titanic Belfast', 'Castelo de Belfast', 'Mourne Mountains', 'Carrick-a-Rede']
+  },
   ITA: {
     foods: ['Pizza', 'Pasta', 'Gelato', 'Risotto', 'Tiramisu'],
     attractions: ['Coliseu', 'Torre de Pisa', 'Veneza', 'Vaticano', 'Costa Amalfitana']

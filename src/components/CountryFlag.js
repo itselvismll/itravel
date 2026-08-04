@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { getAlpha2 } from '../utils/countryUtils';
 
 /**
@@ -37,7 +38,11 @@ export default function CountryFlag({
         style={[containerStyle, styles.fallback]}
         accessibilityLabel={`País ${alpha2?.toUpperCase() || 'não identificado'}`}
       >
-        <Text style={styles.fallbackText}>{alpha2?.toUpperCase() || '—'}</Text>
+        <Ionicons
+          name="earth-outline"
+          size={Math.max(12, Math.min(width, height) * 0.55)}
+          color="#8A93AB"
+        />
       </View>
     );
   }
@@ -72,10 +77,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: 'rgba(13,19,38,0.12)',
-  },
-  fallbackText: {
-    color: '#555D72',
-    fontSize: 12,
-    fontWeight: '700',
   },
 });

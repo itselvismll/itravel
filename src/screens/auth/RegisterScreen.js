@@ -1,11 +1,12 @@
 ﻿import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES } from '../../utils/constants';
 import { signUp } from '../../services/supabase';
 import { checkUsernameAvailable } from '../../services/profileService';
 import Logo from '../../components/Logo';
+import { notify } from '../../utils/dialogs';
 
 export default function RegisterScreen({ navigation, onRegisterSuccess }) {
   const [fullName, setFullName] = useState('');
@@ -44,18 +45,16 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
   };
 
   const showTerms = () => {
-    Alert.alert(
+    notify(
       'Termos de Uso',
-      'Ao usar o Journi, você concorda em:\n\n• Fornecer informações verdadeiras\n• Não usar o app para fins ilegais\n• Respeitar outros usuários\n• Não compartilhar conteúdo ofensivo\n• Seguir as leis locais e internacionais\n\nO Journi se reserva o direito de suspender contas que violem estes termos.',
-      [{ text: 'Entendi' }]
+      'Ao usar o Journi, você concorda em:\n\n• Fornecer informações verdadeiras\n• Não usar o app para fins ilegais\n• Respeitar outros usuários\n• Não compartilhar conteúdo ofensivo\n• Seguir as leis locais e internacionais\n\nO Journi se reserva o direito de suspender contas que violem estes termos.'
     );
   };
 
   const showPrivacy = () => {
-    Alert.alert(
+    notify(
       'Política de Privacidade',
-      'Suas informações são protegidas:\n\n• Seus dados são criptografados\n• Não vendemos suas informações\n• Você controla sua privacidade\n• Fotos e posts seguem suas configurações\n• Coletamos apenas dados necessários\n• Você pode deletar sua conta a qualquer momento\n\nUsamos cookies para melhorar sua experiência.',
-      [{ text: 'Entendi' }]
+      'Suas informações são protegidas:\n\n• Seus dados são criptografados\n• Não vendemos suas informações\n• Você controla sua privacidade\n• Fotos e posts seguem suas configurações\n• Coletamos apenas dados necessários\n• Você pode deletar sua conta a qualquer momento\n\nUsamos cookies para melhorar sua experiência.'
     );
   };
 
@@ -108,24 +107,17 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
     setLoading(false);
 
     if (result.success) {
-      Alert.alert(
-        'Conta criada! 🎉',
-        'Verifique seu email para confirmar sua conta antes de fazer login.',
-        [
-          {
-            text: 'OK',
-            onPress: () => navigation.navigate('Login'),
-          }
-        ]
-      );
+      navigation.navigate('ConfirmEmail', { email });
     } else {
       let errorMessage = result.error;
-      
+
       if (errorMessage.includes('already registered')) {
         errorMessage = 'Este email já está cadastrado';
+      } else if (/rate limit|too many|429/i.test(errorMessage)) {
+        errorMessage = 'Muitas tentativas de cadastro em pouco tempo. Aguarde alguns minutos e tente novamente.';
       }
-      
-      Alert.alert('Erro no Cadastro', errorMessage);
+
+      notify('Erro no Cadastro', errorMessage);
     }
   };
 

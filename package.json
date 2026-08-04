@@ -20,6 +20,7 @@
     "@supabase/supabase-js": "^2.105.4",
     "d3-geo": "^3.1.1",
     "expo": "~55.0.28",
+    "expo-clipboard": "~55.0.15",
     "expo-dev-client": "~55.0.37",
     "expo-font": "~55.0.8",
     "expo-image-picker": "~55.0.22",

@@ -20,6 +20,7 @@ import ProfileScreen from '../screens/profile/ProfileScreen';
 import EditProfileScreen from '../screens/profile/EditProfileScreen';
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
+import ConfirmEmailScreen from '../screens/auth/ConfirmEmailScreen';
 import UploadPlaceholder from '../screens/upload/UploadPlaceholder';
 import PhotoUploader from '../components/PhotoUploader';
 import PublicProfileScreen from '../screens/profile/PublicProfileScreen';
@@ -275,6 +276,7 @@ export default function AppNavigator() {
           <Stack.Navigator id="AuthStack" screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />
+            <Stack.Screen name="ConfirmEmail" component={ConfirmEmailScreen} />
           </Stack.Navigator>
         ) : (
           <Stack.Navigator id="RootStack" screenOptions={{ headerShown: false }}>

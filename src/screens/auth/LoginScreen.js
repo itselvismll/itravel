@@ -1,12 +1,13 @@
 ﻿import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Alert, Image, ScrollView, Platform, ActivityIndicator,
+  Image, ScrollView, Platform, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES } from '../../utils/constants';
 import { signIn, signInWithGoogle } from '../../services/supabase';
+import { notify } from '../../utils/dialogs';
 
 export default function LoginScreen({ navigation, onLoginSuccess }) {
   const [email, setEmail] = useState('');
@@ -57,9 +58,11 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
         errorMessage = 'Email ou senha incorretos';
       } else if (result.error.includes('Email not confirmed')) {
         errorMessage = 'Por favor, confirme seu email antes de fazer login';
+      } else if (/rate limit|too many|429/i.test(result.error)) {
+        errorMessage = 'Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente.';
       }
-      
-      Alert.alert('Erro no Login', errorMessage);
+
+      notify('Erro no Login', errorMessage);
     }
   };
 
@@ -71,7 +74,7 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
 
     if (!result.success && !result.cancelled) {
       const providerDisabled = result.error?.toLowerCase().includes('provider is not enabled');
-      Alert.alert(
+      notify(
         'Erro no login com Google',
         providerDisabled
           ? 'O acesso pelo Google ainda precisa ser habilitado no servidor.'

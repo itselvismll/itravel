@@ -38,6 +38,27 @@ export const ALPHA3_TO_ALPHA2 = {
   'AZE': 'AZ', 'CYP': 'CY', 'MLT': 'MT', 'ISL': 'IS', 'LUX': 'LU',
   'MCO': 'MC', 'AND': 'AD', 'SMR': 'SM', 'VAT': 'VA', 'LIE': 'LI',
   'IRL': 'IE',
+
+  // Sovereign states missing from the original table
+  'BHS': 'BS', 'BRN': 'BN', 'BTN': 'BT', 'MDV': 'MV', 'SSD': 'SS',
+  'TLS': 'TL', 'PSE': 'PS',
+
+  // Dependent territories and other entities present in the world GeoJSON
+  // (Natural Earth boundaries include these even though they aren't UN members)
+  'ATA': 'AQ', 'ESH': 'EH', 'COK': 'CK', 'NIU': 'NU', 'TKL': 'TK',
+  'WLF': 'WF', 'PCN': 'PN', 'NCL': 'NC', 'PYF': 'PF', 'ASM': 'AS',
+  'GUM': 'GU', 'MNP': 'MP', 'VIR': 'VI', 'UMI': 'UM', 'ABW': 'AW',
+  'CUW': 'CW', 'SXM': 'SX', 'BES': 'BQ', 'MAF': 'MF', 'BLM': 'BL',
+  'GLP': 'GP', 'MTQ': 'MQ', 'GUF': 'GF', 'REU': 'RE', 'MYT': 'YT',
+  'SPM': 'PM', 'ALA': 'AX', 'FRO': 'FO', 'GRL': 'GL', 'SJM': 'SJ',
+  'GIB': 'GI', 'IMN': 'IM', 'JEY': 'JE', 'GGY': 'GG', 'BMU': 'BM',
+  'CYM': 'KY', 'TCA': 'TC', 'VGB': 'VG', 'AIA': 'AI', 'MSR': 'MS',
+  'FLK': 'FK', 'SGS': 'GS', 'SHN': 'SH', 'IOT': 'IO', 'ATF': 'TF',
+  'HMD': 'HM', 'BVT': 'BV', 'CXR': 'CX', 'CCK': 'CC', 'NFK': 'NF',
+  'MAC': 'MO',
+
+  // Not an official ISO 3166-1 code, but commonly used by world map datasets
+  'KOS': 'XK',
 };
 
 export const getAlpha2 = (code) => {
@@ -98,6 +119,9 @@ export const COUNTRY_NAMES_PT = {
   'Taiwan': 'Taiwan',
   'Hong Kong': 'Hong Kong', 'Singapore': 'Singapura',
   'Bangladesh': 'Bangladesh',
+  // Nações constituintes do Reino Unido (códigos ISO 3166-2:GB, ver countriesStaticData.js)
+  'England': 'Inglaterra', 'Scotland': 'Escócia', 'Wales': 'País de Gales',
+  'Northern Ireland': 'Irlanda do Norte',
 };
 
 export const getCountryNamePt = (name) => COUNTRY_NAMES_PT[name] || name;

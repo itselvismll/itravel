@@ -16,6 +16,10 @@ export const getGeoCountryAlpha3 = (feature) => {
   const properties = feature?.properties;
   if (!properties) return null;
 
+  // UK constituent countries (England/Scotland/Wales/Northern Ireland) carry their own
+  // ISO 3166-2:GB code directly, since they aren't sovereign ISO 3166-1 countries.
+  if (properties.code) return properties.code.toUpperCase();
+
   const alpha3 = properties['ISO3166-1-Alpha-3']?.toUpperCase();
   if (isValidIsoCode(alpha3, 3)) return alpha3;
 

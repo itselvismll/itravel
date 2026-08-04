@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, ActivityIndicator, Alert, Platform, TextInput, Image, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,15 +22,29 @@ import PhotoUploader from '../../components/PhotoUploader';
 import CountryFlag from '../../components/CountryFlag';
 import { useUpload } from '../../context/UploadContext';
 import { getCoverPhoto, getTopPlacesByCountry } from '../../services/photoService';
-import { getWorldGeoData } from '../../services/geoService';
+import { getWorldGeoData, getUkNationsGeoData } from '../../services/geoService';
 import Svg, { Path, Circle } from 'react-native-svg';
 
 const ALPHA2_TO_ALPHA3 = Object.fromEntries(
   Object.entries(ALPHA3_TO_ALPHA2).map(([k, v]) => [v, k])
 );
 
+// England/Scotland/Wales/Northern Ireland — independent, selectable entries alongside
+// "United Kingdom" (GBR). Not merged into the rendered Leaflet <GeoJSON> layer (they'd
+// overlap the GBR polygon exactly), but fully selectable via search and the native list.
+const UK_NATION_FEATURES = getUkNationsGeoData();
+
 const normalizeToAlpha2 = (code) =>
   getAlpha2(code)?.toUpperCase() || code?.toUpperCase();
+
+const DIACRITICS_REGEX = new RegExp('[\\u0300-\\u036f]', 'g');
+
+const normalizeSearchText = (value) =>
+  (value || '')
+    .normalize('NFD')
+    .replace(DIACRITICS_REGEX, '')
+    .toLowerCase()
+    .trim();
 
 const WEB_MERCATOR_LATITUDE_LIMIT = 85.05112878;
 const WORLD_BOUNDS = [
@@ -79,6 +93,8 @@ export default function MapScreen({ navigation }) {
   const [modalPhotoStats, setModalPhotoStats] = useState({ photoCount: 0, cityCount: 0, favoriteCount: 0 });
   const [topPlaces, setTopPlaces] = useState({});
   const [countrySearch, setCountrySearch] = useState('');
+  const [debouncedCountrySearch, setDebouncedCountrySearch] = useState('');
+  const [showCountrySearch, setShowCountrySearch] = useState(false);
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [wishlistCodes, setWishlistCodes] = useState([]);
 
@@ -122,6 +138,13 @@ export default function MapScreen({ navigation }) {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedCountrySearch(countrySearch);
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [countrySearch]);
 
   useEffect(() => {
     if (refreshTrigger > 0) {
@@ -316,17 +339,43 @@ export default function MapScreen({ navigation }) {
     }
   };
 
-  const searchResults = countrySearch.length >= 2 && countries
-    ? countries.features
-        .filter(f =>
-          getGeoCountryName(f).toLowerCase().includes(countrySearch.toLowerCase()) ||
-          getGeoCountryAlpha3(f)?.toLowerCase().includes(countrySearch.toLowerCase())
-        )
-        .slice(0, 5)
-    : [];
+  const normalizedCountryQuery = normalizeSearchText(debouncedCountrySearch);
+
+  const searchResults = useMemo(() => {
+    if (!countries || normalizedCountryQuery.length < 1) return [];
+
+    return [...countries.features, ...UK_NATION_FEATURES]
+      .filter(f => Boolean(getGeoCountryAlpha3(f)))
+      .map(f => {
+        const code = getGeoCountryAlpha3(f);
+        const name = getCountryNamePtByCode(code, getGeoCountryName(f));
+        return { feature: f, code, name };
+      })
+      .filter(({ name }) =>
+        normalizeSearchText(name)
+          .split(/\s+/)
+          .some(word => word.startsWith(normalizedCountryQuery))
+      )
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(0, 8);
+  }, [countries, normalizedCountryQuery]);
+
+  const openCountrySearch = () => setShowCountrySearch(true);
+
+  const closeCountrySearch = () => {
+    setShowCountrySearch(false);
+    setCountrySearch('');
+    setDebouncedCountrySearch('');
+  };
+
+  const handleSelectSearchResult = useCallback((feature) => {
+    closeCountrySearch();
+    handleCountryClick(feature);
+  }, [handleCountryClick]);
 
   const visitedCount = visitedCountries.length;
-  const totalCountries = 195;
+  // 195 sovereign countries + England/Scotland/Wales/Northern Ireland as independent entries
+  const totalCountries = 199;
   const visitedPercentage = totalCountries > 0 ? (visitedCount / totalCountries) * 100 : 0;
   const notVisitedCount = totalCountries - visitedCount;
   const geoJsonStyle = (feature) => {
@@ -398,32 +447,83 @@ export default function MapScreen({ navigation }) {
         </View>
       )}
 
-      {/* Barra do assistente de viagem */}
-      <TouchableOpacity
-        onPress={() => navigation.navigate('TripPlanner')}
-        style={{
-          position: 'absolute', top: 16, left: 16, right: 16, zIndex: 1000,
-          flexDirection: 'row', alignItems: 'center', gap: 10,
-          backgroundColor: 'rgba(13,19,38,0.92)',
-          borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12,
-          borderWidth: 1, borderColor: 'rgba(108,43,217,0.4)',
-          ...Platform.select({
-            web: { boxShadow: '0 2px 8px rgba(108,43,217,0.3)' },
-            default: {
-              shadowColor: '#6C2BD9',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.3,
-              shadowRadius: 8,
-              elevation: 5,
-            },
-          }),
-        }}
-      >
-        <Ionicons name="sparkles-outline" size={18} color="#6C2BD9" />
-        <Text style={{ color: '#9aa0c6', fontSize: 14, flex: 1 }}>
-          ✈️ Planejar viagem com IA...
-        </Text>
-      </TouchableOpacity>
+      {/* Barra do assistente de viagem + busca de país */}
+      <View style={styles.topBarRow}>
+        {!showCountrySearch ? (
+          <>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('TripPlanner')}
+              style={[
+                styles.assistantBar,
+                Platform.select({
+                  web: { boxShadow: '0 2px 8px rgba(108,43,217,0.3)' },
+                  default: {
+                    shadowColor: '#6C2BD9',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 8,
+                    elevation: 5,
+                  },
+                }),
+              ]}
+            >
+              <Ionicons name="sparkles-outline" size={18} color="#6C2BD9" />
+              <Text style={{ color: '#9aa0c6', fontSize: 14, flex: 1 }}>
+                ✈️ Planejar viagem com IA...
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={openCountrySearch}
+              style={styles.searchToggleBtn}
+              accessibilityLabel="Pesquisar país"
+            >
+              <Ionicons name="search" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+          </>
+        ) : (
+          <View style={{ flex: 1 }}>
+            <View style={styles.searchBar}>
+              <Ionicons name="search" size={18} color="rgba(255,255,255,0.5)" />
+              <TextInput
+                autoFocus
+                value={countrySearch}
+                onChangeText={setCountrySearch}
+                placeholder="Pesquisar país..."
+                placeholderTextColor="#555a78"
+                style={styles.searchInput}
+              />
+              <TouchableOpacity onPress={closeCountrySearch} accessibilityLabel="Fechar busca">
+                <Ionicons name="close" size={20} color="rgba(255,255,255,0.6)" />
+              </TouchableOpacity>
+            </View>
+
+            {normalizedCountryQuery.length >= 1 && (
+              <View style={styles.searchDropdown}>
+                {searchResults.length > 0 ? (
+                  searchResults.map(({ feature, code, name }, idx) => (
+                    <TouchableOpacity
+                      key={code}
+                      onPress={() => handleSelectSearchResult(feature)}
+                      style={[
+                        styles.searchResultItem,
+                        idx > 0 && styles.searchResultBorder,
+                      ]}
+                    >
+                      <CountryFlag countryCode={code} width={24} height={16} borderRadius={3} />
+                      <Text style={styles.searchResultText}>{name}</Text>
+                    </TouchableOpacity>
+                  ))
+                ) : (
+                  <View style={styles.searchResultItem}>
+                    <Text style={styles.searchResultText}>Nenhum país encontrado</Text>
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+        )}
+      </View>
 
       {/* Gráfico circular de estatísticas */}
       <View style={styles.statsCard}>
@@ -491,7 +591,7 @@ export default function MapScreen({ navigation }) {
               contentInsetAdjustmentBehavior="automatic"
               contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120, gap: 8 }}
             >
-              {(countries?.features || [])
+              {[...(countries?.features || []), ...UK_NATION_FEATURES]
                 .filter(feature => {
                   return Boolean(getGeoCountryAlpha3(feature));
                 })
@@ -917,32 +1017,62 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
-  searchContainer: {
+  topBarRow: {
     position: 'absolute',
     top: 16,
     left: 16,
     right: 16,
     zIndex: 1001,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  assistantBar: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(13,19,38,0.92)',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(108,43,217,0.4)',
+  },
+  searchToggleBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(13,19,38,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(108,43,217,0.4)',
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(26,26,46,0.88)',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    backgroundColor: 'rgba(13,19,38,0.92)',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(108,43,217,0.4)',
   },
   searchInput: {
     flex: 1,
     color: 'white',
-    fontSize: 13,
+    fontFamily: 'Poppins_400Regular',
+    fontSize: 14,
   },
   searchDropdown: {
-    backgroundColor: 'rgba(26,26,46,0.96)',
-    borderRadius: 10,
-    marginTop: 4,
+    backgroundColor: 'rgba(13,19,38,0.96)',
+    borderRadius: 12,
+    marginTop: 6,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(108,43,217,0.3)',
   },
   searchResultItem: {
     flexDirection: 'row',
@@ -957,6 +1087,7 @@ const styles = StyleSheet.create({
   },
   searchResultText: {
     color: 'white',
+    fontFamily: 'Poppins_400Regular',
     fontSize: 13,
     fontWeight: '500',
     flex: 1,
