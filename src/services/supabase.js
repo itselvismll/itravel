@@ -117,14 +117,9 @@ export async function signIn(email, password) {
 }
 
 const getGoogleRedirectUrl = () => {
-  if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    const currentUrl = new URL(window.location.href);
-    const isLocalDevelopment = ['localhost', '127.0.0.1'].includes(currentUrl.hostname);
-
-    // Keep local development usable, but never derive a production callback
-    // from a preview host or a stale localhost Site URL.
-    return isLocalDevelopment ? currentUrl.origin : API_CONFIG.WEB_APP_URL;
-  }
+  // Web OAuth always returns to the hosted app. This avoids completing Google
+  // login on a localhost port that may no longer be running.
+  if (Platform.OS === 'web') return API_CONFIG.WEB_APP_URL;
 
   return Linking.createURL('auth/callback');
 };

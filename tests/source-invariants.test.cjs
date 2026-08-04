@@ -216,7 +216,8 @@ test('Google login uses Supabase OAuth and Expo browser callbacks', () => {
   assert.match(auth, /new URLSearchParams\(callbackUrl\.hash/);
   assert.match(auth, /window\.history\.replaceState/);
   assert.match(auth, /API_CONFIG\.WEB_APP_URL/);
-  assert.match(auth, /isLocalDevelopment/);
+  assert.doesNotMatch(auth, /isLocalDevelopment/);
+  assert.match(auth, /Platform\.OS === 'web'\) return API_CONFIG\.WEB_APP_URL/);
   assert.match(login, /signInWithGoogle/);
   assert.match(app, /"scheme": "journi"/);
   assert.match(app, /"expo-web-browser"/);
