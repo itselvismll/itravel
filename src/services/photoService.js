@@ -117,10 +117,16 @@ export const getCountryPhotos = async (userId, countryCode) => {
 
 export const deletePhoto = async (photoId, photoPath) => {
   try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      return { success: false, error: 'Entre novamente para excluir esta publicação.' };
+    }
+
     const { data: deletedRows, error: dbError } = await supabase
       .from(TABLE)
       .delete()
       .eq('id', photoId)
+      .eq('user_id', user.id)
       .select('id');
 
     if (dbError) {
@@ -131,9 +137,11 @@ export const deletePhoto = async (photoId, photoPath) => {
       return { success: false, error: 'Foto não encontrada ou sem permissão para excluir.' };
     }
 
-    const { error: storageError } = await supabase.storage
-      .from(BUCKET)
-      .remove([photoPath]);
+    if (!photoPath) {
+      return { success: true, warning: 'Publicação excluída. O arquivo antigo não possui caminho de Storage para limpeza automática.' };
+    }
+
+    const { error: storageError } = await supabase.storage.from(BUCKET).remove([photoPath]);
 
     if (storageError) {
       return { success: true, warning: 'O registro foi excluído, mas o arquivo requer limpeza no storage.' };

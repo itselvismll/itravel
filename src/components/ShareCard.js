@@ -5,7 +5,7 @@ import { getLevelInfo } from '../utils/travelerLevels';
 import CountryFlag from './CountryFlag';
 
 // Mesma correção usada no autocomplete de países do mapa: bandeiras via imagem
-// (flagcdn.com, através do CountryFlag compartilhado) em vez de emoji Unicode.
+// (através do CountryFlag compartilhado) em vez de emoji Unicode.
 // Regional indicator symbols (🇧🇷 etc.) não têm glifo de bandeira em várias
 // combinações de SO/navegador — no Windows, por exemplo, caem para o código de
 // texto cru ("BR"). Isso também garante que territórios sem emoji de bandeira

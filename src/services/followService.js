@@ -85,7 +85,7 @@ export const getFeedPhotos = async (userId) => {
 
   const { data, error } = await supabase
     .from('country_photos')
-    .select('id, photo_url, city, country_name, country_code, location_name, rating, review, created_at, user_id')
+    .select('id, photo_url, photo_path, city, country_name, country_code, location_name, rating, review, created_at, user_id')
     .in('user_id', allIds)
     .eq('is_public', true)
     .order('created_at', { ascending: false })

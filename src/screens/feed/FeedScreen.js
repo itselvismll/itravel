@@ -8,12 +8,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { getCurrentUser } from '../../services/supabase';
 import { getFeedPhotos, getFollowingProfiles } from '../../services/followService';
 import { getComments, addComment } from '../../services/socialService';
+import { deletePhoto } from '../../services/photoService';
 import { getCountryNamePtByCode } from '../../utils/countryUtils';
 import { useUpload } from '../../context/UploadContext';
 import StarRating from '../../components/StarRating';
 import Avatar from '../../components/Avatar';
 import CountryFlag from '../../components/CountryFlag';
-import { notify } from '../../utils/dialogs';
+import { confirm, notify } from '../../utils/dialogs';
 
 const timeAgo = (dateStr) => {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -37,6 +38,7 @@ export default function FeedScreen({ navigation }) {
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
   const [commentLoading, setCommentLoading] = useState(false);
+  const [deletingPhotoId, setDeletingPhotoId] = useState(null);
 
   const { refreshTrigger } = useUpload();
 
@@ -114,6 +116,40 @@ export default function FeedScreen({ navigation }) {
       if (error?.name !== 'AbortError') {
         notify('Erro ao compartilhar', 'Não foi possível compartilhar esta foto.');
       }
+    }
+  };
+
+  const handleDeletePhoto = async (photo) => {
+    if (photo.user_id !== currentUser?.id || deletingPhotoId) return;
+
+    const accepted = await confirm(
+      'Excluir publicação',
+      'A foto, a legenda e os comentários serão excluídos permanentemente. Deseja continuar?'
+    );
+    if (!accepted) return;
+
+    setDeletingPhotoId(photo.id);
+    try {
+      const result = await deletePhoto(photo.id, photo.photo_path);
+      if (!result.success) {
+        notify('Erro ao excluir', result.error || 'Não foi possível excluir a publicação.');
+        return;
+      }
+
+      setFeed(current => current.filter(item => item.id !== photo.id));
+      setLikedIds(current => {
+        const next = new Set(current);
+        next.delete(photo.id);
+        return next;
+      });
+      if (commentPhoto?.id === photo.id) {
+        setCommentModal(false);
+        setCommentPhoto(null);
+        setComments([]);
+      }
+      notify('Publicação excluída', result.warning || 'Sua publicação foi removida.');
+    } finally {
+      setDeletingPhotoId(null);
     }
   };
 
@@ -231,7 +267,24 @@ export default function FeedScreen({ navigation }) {
                         </View>
                       </View>
                     </TouchableOpacity>
-                    <Text style={styles.postTime}>{timeAgo(post.created_at)}</Text>
+                    <View style={styles.postHeaderActions}>
+                      <Text style={styles.postTime}>{timeAgo(post.created_at)}</Text>
+                      {post.user_id === currentUser?.id && (
+                        <TouchableOpacity
+                          style={styles.deletePostButton}
+                          onPress={() => handleDeletePhoto(post)}
+                          disabled={deletingPhotoId !== null}
+                          accessibilityRole="button"
+                          accessibilityLabel="Excluir publicação"
+                        >
+                          {deletingPhotoId === post.id ? (
+                            <ActivityIndicator size="small" color="#D64545" />
+                          ) : (
+                            <Ionicons name="trash-outline" size={17} color="#D64545" />
+                          )}
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
 
                   <Image
@@ -404,6 +457,15 @@ const styles = StyleSheet.create({
   postAuthorName: { fontSize: 13, fontWeight: '600', color: '#0D1326' },
   postAuthorMeta: { fontSize: 10, color: '#aaa' },
   postTime: { fontSize: 10, color: '#bbb' },
+  postHeaderActions: { alignItems: 'flex-end', justifyContent: 'center', gap: 6 },
+  deletePostButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FDECEC',
+  },
   postImage: {
     width: '100%',
     aspectRatio: 4 / 3,

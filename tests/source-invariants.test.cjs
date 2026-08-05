@@ -255,6 +255,24 @@ test('explore, feed, and passport keep their responsive visual treatment', () =>
   assert.match(feed, /countryCode=\{post\.country_code\}/);
 });
 
+test('users can delete only their own posts from feed and profile', () => {
+  const service = read('src/services/photoService.js');
+  const feedService = read('src/services/followService.js');
+  const feed = read('src/screens/feed/FeedScreen.js');
+  const profile = read('src/screens/profile/ProfileScreen.js');
+  const migration = read('supabase/migrations/20260804160000_delete_own_posts.sql');
+
+  assert.match(service, /export const deletePhoto/);
+  assert.match(service, /\.eq\('user_id', user\.id\)/);
+  assert.match(feedService, /photo_path/);
+  assert.match(feed, /post\.user_id === currentUser\?\.id/);
+  assert.match(feed, /accessibilityLabel="Excluir publicação"/);
+  assert.match(profile, /handleDeletePhoto\(fullscreenPhoto\)/);
+  assert.match(profile, /accessibilityLabel="Excluir publicação"/);
+  assert.match(migration, /on delete cascade/);
+  assert.match(migration, /clear_deleted_photo_cover/);
+});
+
 test('README keeps JWT verification enabled for the AI function', () => {
   const readme = read('README.md');
   assert.doesNotMatch(readme, /functions deploy travel-assistant --no-verify-jwt/);

@@ -19,7 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getCurrentUser, signOut, getVisitedCountries, supabase } from '../../services/supabase';
 import { getWishlist } from '../../services/socialService';
 import { getProfile } from '../../services/profileService';
-import { getFavoritePhotos, getAllUserPhotos } from '../../services/photoService';
+import { deletePhoto, getFavoritePhotos, getAllUserPhotos } from '../../services/photoService';
 import {
   getAlpha2,
   getStampRotation,
@@ -43,6 +43,7 @@ export default function ProfileScreen({ navigation }) {
   const [wishlist, setWishlist] = useState([]);
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [deletingPhotoId, setDeletingPhotoId] = useState(null);
 
   const { refreshTrigger } = useUpload();
   const shareCardRef = useRef(null);
@@ -138,8 +139,6 @@ export default function ProfileScreen({ navigation }) {
   const levelInfo = getLevelInfo(visitedCountries.length);
   const countriesToNext = levelInfo.next ? levelInfo.next.minCountries - visitedCountries.length : 0;
   const visitedCountryCodes = visitedCountries.map(c => c.country_code);
-  const totalPhotosCount = photos.length;
-  const totalCities = new Set(photos.filter(p => p.city).map(p => p.city)).size;
 
   const handleShare = async () => {
     try {
@@ -164,6 +163,32 @@ export default function ProfileScreen({ navigation }) {
       }
     } catch {
       notify('Erro ao compartilhar', 'Não foi possível gerar seu passaporte agora.');
+    }
+  };
+
+  const handleDeletePhoto = async (photo) => {
+    if (!photo || deletingPhotoId) return;
+
+    const accepted = await confirm(
+      'Excluir publicação',
+      'A foto, a legenda e os comentários serão excluídos permanentemente. Deseja continuar?'
+    );
+    if (!accepted) return;
+
+    setDeletingPhotoId(photo.id);
+    try {
+      const result = await deletePhoto(photo.id, photo.photo_path);
+      if (!result.success) {
+        notify('Erro ao excluir', result.error || 'Não foi possível excluir a publicação.');
+        return;
+      }
+
+      setPhotos(current => current.filter(item => item.id !== photo.id));
+      setFavoritePhotos(current => current.filter(item => item.id !== photo.id));
+      setFullscreenPhoto(null);
+      notify('Publicação excluída', result.warning || 'Sua publicação foi removida.');
+    } finally {
+      setDeletingPhotoId(null);
     }
   };
 
@@ -523,8 +548,6 @@ export default function ProfileScreen({ navigation }) {
         avatarUrl={avatarUrl}
         visitedCountryCodes={visitedCountryCodes}
         wishlistCodes={wishlist.map(w => w.country_code)}
-        totalPhotos={totalPhotosCount}
-        totalCities={totalCities}
       />
     </View>
 
@@ -575,6 +598,22 @@ export default function ProfileScreen({ navigation }) {
                   {new Date(fullscreenPhoto.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
                 </Text>
               )}
+              <TouchableOpacity
+                style={styles.deletePhotoButton}
+                onPress={() => handleDeletePhoto(fullscreenPhoto)}
+                disabled={deletingPhotoId !== null}
+                accessibilityRole="button"
+                accessibilityLabel="Excluir publicação"
+              >
+                {deletingPhotoId === fullscreenPhoto.id ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="trash-outline" size={17} color="#fff" />
+                    <Text style={styles.deletePhotoText}>Excluir publicação</Text>
+                  </>
+                )}
+              </TouchableOpacity>
             </View>
           </>
         )}
@@ -857,6 +896,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: '#0D1326',
+  },
+  deletePhotoButton: {
+    minWidth: 190,
+    minHeight: 42,
+    marginTop: 10,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+    backgroundColor: '#D64545',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  deletePhotoText: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '700',
   },
   logoutBtn: {
     margin: 12,
