@@ -258,6 +258,14 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
               Não tem conta? <Text style={styles.linkTextBold}>Cadastre-se grátis</Text>
             </Text>
           </TouchableOpacity>
+
+          {/* Ajuda e suporte, sem precisar estar logado */}
+          <TouchableOpacity
+            style={styles.helpLink}
+            onPress={() => navigation.navigate('Support')}
+          >
+            <Text style={styles.helpLinkText}>Precisa de ajuda?</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </ScrollView>
@@ -459,5 +467,13 @@ const styles = StyleSheet.create({
   linkTextBold: {
     color: COLORS.primary,
     fontWeight: '600',
+  },
+  helpLink: {
+    alignItems: 'center',
+    paddingBottom: 4,
+  },
+  helpLinkText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
   },
 });

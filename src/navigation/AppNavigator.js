@@ -30,6 +30,7 @@ import SavedTripsScreen from '../screens/assistant/SavedTripsScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import ConnectionsScreen from '../screens/profile/ConnectionsScreen';
 import PhotoDetailScreen from '../screens/PhotoDetailScreen';
+import SupportScreen from '../screens/support/SupportScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -40,6 +41,7 @@ function ProfileStack() {
       <Stack.Screen name="ProfileMain" component={ProfileScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="SavedTrips" component={SavedTripsScreen} />
+      <Stack.Screen name="Support" component={SupportScreen} />
     </Stack.Navigator>
   );
 }
@@ -277,6 +279,7 @@ export default function AppNavigator() {
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />
             <Stack.Screen name="ConfirmEmail" component={ConfirmEmailScreen} />
+            <Stack.Screen name="Support" component={SupportScreen} />
           </Stack.Navigator>
         ) : (
           <Stack.Navigator id="RootStack" screenOptions={{ headerShown: false }}>

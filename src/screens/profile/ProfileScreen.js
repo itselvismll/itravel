@@ -144,14 +144,15 @@ export default function ProfileScreen({ navigation }) {
   const handleShare = async () => {
     try {
       if (Platform.OS === 'web') {
+        // Sem width/height fixos: o card cresce em altura conforme o número de
+        // países/wishlist do usuário, e um tamanho travado (era 360x640) cortava
+        // ou espremia o passaporte de quem tinha mais dados que isso.
         const dataUrl = await toPng(shareCardRef.current, {
           pixelRatio: 2,
           backgroundColor: '#0D1326',
           skipFonts: true,
           fontEmbedCSS: '',
           cacheBust: true,
-          width: 360,
-          height: 640,
         });
         const link = document.createElement('a');
         link.href = dataUrl;
@@ -492,6 +493,18 @@ export default function ProfileScreen({ navigation }) {
         </View>
       )}
 
+      {/* Ajuda e suporte */}
+      <TouchableOpacity
+        style={styles.menuItem}
+        onPress={() => navigation.navigate('Support')}
+      >
+        <View style={styles.menuItemLeft}>
+          <Ionicons name="help-buoy-outline" size={18} color="#6C2BD9" />
+          <Text style={styles.menuItemText}>Ajuda e suporte</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color="#bbb" />
+      </TouchableOpacity>
+
       {/* Logout */}
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
         <Text style={styles.logoutText}>Sair da conta</Text>
@@ -507,6 +520,7 @@ export default function ProfileScreen({ navigation }) {
     >
       <ShareCard
         profile={profile}
+        avatarUrl={avatarUrl}
         visitedCountryCodes={visitedCountryCodes}
         wishlistCodes={wishlist.map(w => w.country_code)}
         totalPhotos={totalPhotosCount}
@@ -823,6 +837,26 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 14,
     fontWeight: '700',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    margin: 12,
+    marginBottom: 0,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 14,
+  },
+  menuItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  menuItemText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#0D1326',
   },
   logoutBtn: {
     margin: 12,
