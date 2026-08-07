@@ -11,6 +11,8 @@ import * as Location from 'expo-location';
 import { COLORS } from '../utils/constants';
 import { completeWebOAuthSession, getCurrentUser, supabase } from '../services/supabase';
 import { useUpload } from '../context/UploadContext';
+import { navigationRef } from './navigationRef';
+import GlobalNotificationBanner from '../components/GlobalNotificationBanner';
 
 // Screens
 import ExploreScreen from '../screens/explore/ExploreScreen';
@@ -273,7 +275,7 @@ export default function AppNavigator() {
 
   return (
     <View style={{ flex: 1 }}>
-      <NavigationContainer>
+      <NavigationContainer ref={navigationRef}>
         {!user ? (
           <Stack.Navigator id="AuthStack" screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Login" component={LoginScreen} />
@@ -309,6 +311,12 @@ export default function AppNavigator() {
           </Stack.Navigator>
         )}
       </NavigationContainer>
+
+      {/* Banner global de notificações — irmão do NavigationContainer para cobrir
+          qualquer tela. `suppressed` porque, no nativo, o Modal de upload abre numa
+          janela separada do SO e ficaria por cima do banner: a notificação espera na
+          fila e aparece quando o modal fecha. */}
+      <GlobalNotificationBanner userId={user?.id || null} suppressed={visible} />
 
       {/* Modal global de upload com detecção de GPS */}
       {user && (

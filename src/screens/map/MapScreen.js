@@ -13,6 +13,11 @@ import {
   getCountryNamePtByCode,
 } from '../../utils/countryUtils';
 import {
+  searchCountries,
+  COUNTRY_SEARCH_DEBOUNCE_MS,
+  MIN_COUNTRY_QUERY_LENGTH,
+} from '../../utils/geoSearch';
+import {
   getGeoCountryAlpha2,
   getGeoCountryAlpha3,
   getGeoCountryName,
@@ -36,15 +41,6 @@ const UK_NATION_FEATURES = getUkNationsGeoData();
 
 const normalizeToAlpha2 = (code) =>
   getAlpha2(code)?.toUpperCase() || code?.toUpperCase();
-
-const DIACRITICS_REGEX = new RegExp('[\\u0300-\\u036f]', 'g');
-
-const normalizeSearchText = (value) =>
-  (value || '')
-    .normalize('NFD')
-    .replace(DIACRITICS_REGEX, '')
-    .toLowerCase()
-    .trim();
 
 const WEB_MERCATOR_LATITUDE_LIMIT = 85.05112878;
 const WORLD_BOUNDS = [
@@ -142,7 +138,7 @@ export default function MapScreen({ navigation }) {
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedCountrySearch(countrySearch);
-    }, 120);
+    }, COUNTRY_SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [countrySearch]);
 
@@ -339,26 +335,19 @@ export default function MapScreen({ navigation }) {
     }
   };
 
-  const normalizedCountryQuery = normalizeSearchText(debouncedCountrySearch);
-
   const searchResults = useMemo(() => {
-    if (!countries || normalizedCountryQuery.length < 1) return [];
+    if (!countries) return [];
 
-    return [...countries.features, ...UK_NATION_FEATURES]
+    const entries = [...countries.features, ...UK_NATION_FEATURES]
       .filter(f => Boolean(getGeoCountryAlpha3(f)))
       .map(f => {
         const code = getGeoCountryAlpha3(f);
-        const name = getCountryNamePtByCode(code, getGeoCountryName(f));
-        return { feature: f, code, name };
-      })
-      .filter(({ name }) =>
-        normalizeSearchText(name)
-          .split(/\s+/)
-          .some(word => word.startsWith(normalizedCountryQuery))
-      )
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .slice(0, 8);
-  }, [countries, normalizedCountryQuery]);
+        const nameEn = getGeoCountryName(f);
+        return { feature: f, code, nameEn, name: getCountryNamePtByCode(code, nameEn) };
+      });
+
+    return searchCountries(entries, debouncedCountrySearch);
+  }, [countries, debouncedCountrySearch]);
 
   const openCountrySearch = () => setShowCountrySearch(true);
 
@@ -498,7 +487,7 @@ export default function MapScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            {normalizedCountryQuery.length >= 1 && (
+            {debouncedCountrySearch.trim().length >= MIN_COUNTRY_QUERY_LENGTH && (
               <View style={styles.searchDropdown}>
                 {searchResults.length > 0 ? (
                   searchResults.map(({ feature, code, name }, idx) => (

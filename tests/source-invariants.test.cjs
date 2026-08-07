@@ -6,6 +6,13 @@ const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
+// Invariantes sobre "o que o código faz" precisam ignorar comentários — senão um
+// comentário que apenas *menciona* uma regra passa a violá-la. O `[^:]` antes de `//`
+// preserva URLs (`https://...`), que não são comentário.
+const stripComments = (source) => source
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+
 test('Supabase configuration is environment-only', () => {
   const constants = read('src/utils/constants.js');
   assert.doesNotMatch(constants, /SUPABASE_ANON_KEY:\s*process\.env[^\n]+\|\|/);
@@ -234,12 +241,19 @@ test('client source is free of console calls and centralizes remote flag images'
     }
   };
   visit(sourceRoot);
-  const source = files.map(file => fs.readFileSync(file, 'utf8')).join('\n');
+  const source = files.map(file => stripComments(fs.readFileSync(file, 'utf8'))).join('\n');
   const countryFlag = read('src/components/CountryFlag.js');
   assert.doesNotMatch(source, /console\.(log|debug|info|warn|error)\s*\(/);
-  assert.match(countryFlag, /flagcdn\.com/);
+  assert.match(countryFlag, /https:\/\/flagcdn\.com\//);
   assert.match(countryFlag, /cache: 'force-cache'/);
-  assert.equal((source.match(/flagcdn\.com/g) || []).length, 1);
+
+  // A regra é de centralização: só o CountryFlag pode montar a URL remota da bandeira.
+  // Checar quais arquivos a constroem (em vez de contar ocorrências no texto bruto) dá
+  // uma falha que aponta o culpado e não quebra quando alguém cita o domínio num comentário.
+  const filesBuildingFlagUrls = files
+    .filter(file => /https:\/\/flagcdn\.com\//.test(stripComments(fs.readFileSync(file, 'utf8'))))
+    .map(file => path.relative(root, file).split(path.sep).join('/'));
+  assert.deepEqual(filesBuildingFlagUrls, ['src/components/CountryFlag.js']);
 });
 
 test('explore, feed, and passport keep their responsive visual treatment', () => {
@@ -271,6 +285,42 @@ test('users can delete only their own posts from feed and profile', () => {
   assert.match(profile, /accessibilityLabel="Excluir publicação"/);
   assert.match(migration, /on delete cascade/);
   assert.match(migration, /clear_deleted_photo_cover/);
+});
+
+test('in-app notification banner is global, queued, and deep-linked', () => {
+  const navigator = read('src/navigation/AppNavigator.js');
+  const banner = read('src/components/GlobalNotificationBanner.js');
+  const routing = read('src/utils/notificationRouting.js');
+  const app = read('App.js');
+  const migration = read('supabase/migrations/20260806120000_notification_deeplinks_and_realtime.sql');
+
+  // O banner precisa ficar FORA do NavigationContainer: dentro dele voltaria a ser
+  // recortado pela tela ativa, que é justamente o que o componente global evita.
+  const containerEnd = navigator.indexOf('</NavigationContainer>');
+  const bannerUsage = navigator.indexOf('<GlobalNotificationBanner');
+  assert.ok(containerEnd > 0 && bannerUsage > containerEnd);
+  assert.match(navigator, /<NavigationContainer ref=\{navigationRef\}>/);
+  // Suprimir durante o upload: no nativo o Modal abre em janela própria e cobriria o banner.
+  assert.match(navigator, /suppressed=\{visible\}/);
+  assert.match(app, /<SafeAreaProvider>/);
+
+  // Fila: uma notificação por vez, e nada é descartado enquanto estiver suprimido.
+  assert.match(banner, /if \(suppressed \|\| current \|\| queue\.length === 0\) return;/);
+  assert.match(banner, /setQueue\(prev => \[current, \.\.\.prev\]\)/);
+  assert.match(banner, /event: 'INSERT'/);
+  assert.match(banner, /filter: `user_id=eq\.\$\{userId\}`/);
+  assert.match(banner, /\.update\(\{ read: true \}\)/);
+  assert.match(banner, /removeChannel/);
+
+  // Rotas ainda inexistentes (DMs/passaporte) não podem ser navegadas às cegas.
+  assert.match(banner, /isRouteRegistered\(route\.name\)/);
+  assert.match(routing, /'Conversation'/);
+  assert.match(routing, /'PassportDetail'/);
+  assert.doesNotMatch(routing, /REGISTERED_ROUTES = \[[^\]]*'(Conversation|PassportDetail)'/s);
+
+  // Sem o Realtime habilitado o canal conecta e nunca dispara.
+  assert.match(migration, /alter publication supabase_realtime add table public\.notifications/);
+  assert.match(migration, /add column if not exists target_id text/);
 });
 
 test('README keeps JWT verification enabled for the AI function', () => {

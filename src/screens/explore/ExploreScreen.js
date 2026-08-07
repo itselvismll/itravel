@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Image, TextInput,
   StyleSheet, ActivityIndicator, Modal, FlatList, Alert, Platform
@@ -10,6 +10,10 @@ import {
   ALPHA3_TO_ALPHA2,
   getCountryNamePtByCode,
 } from '../../utils/countryUtils';
+import {
+  searchCountries,
+  COUNTRY_SEARCH_DEBOUNCE_MS,
+} from '../../utils/geoSearch';
 import { followUser, unfollowUser, getFollowing, getRecentPublicPhotos, getUsersToDiscover } from '../../services/followService';
 import { searchTravelers, getSuggestedTravelers, getTravelersByCountry, addToWishlist, removeFromWishlist, isInWishlist } from '../../services/socialService';
 import StarRating from '../../components/StarRating';
@@ -88,6 +92,7 @@ const MOCK_USERS = [
 
 export default function ExploreScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [allCountries, setAllCountries] = useState([]);
   const [popularCountries, setPopularCountries] = useState([]);
   const [following, setFollowing] = useState([]);
@@ -279,14 +284,21 @@ export default function ExploreScreen({ navigation }) {
   }, [selectedCountry]);
 
   useEffect(() => {
-    if (searchQuery.length >= 2 && currentUser) {
-      searchTravelers(searchQuery, currentUser.id).then(r => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, COUNTRY_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (debouncedSearchQuery.length >= 2 && currentUser) {
+      searchTravelers(debouncedSearchQuery, currentUser.id).then(r => {
         if (r.success) setTravelerSearchResults(r.data);
       });
     } else {
       setTravelerSearchResults([]);
     }
-  }, [searchQuery, currentUser]);
+  }, [debouncedSearchQuery, currentUser]);
 
   const toggleCountryWishlist = async () => {
     if (!selectedCountry) return;
@@ -326,12 +338,11 @@ export default function ExploreScreen({ navigation }) {
     }
   };
 
-  const searchResults = searchQuery.length >= 2
-    ? allCountries.filter(c =>
-        c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.nameEn.toLowerCase().includes(searchQuery.toLowerCase())
-      ).slice(0, 6)
-    : [];
+  // Mesma regra da busca do mapa: sem acento, casando por prefixo de palavra.
+  const searchResults = useMemo(
+    () => searchCountries(allCountries, debouncedSearchQuery, 6),
+    [allCountries, debouncedSearchQuery]
+  );
 
   return (
     <View style={styles.container}>

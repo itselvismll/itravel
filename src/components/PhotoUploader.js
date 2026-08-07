@@ -15,6 +15,12 @@ import { API_CONFIG, COLORS, SIZES } from '../utils/constants';
 import { uploadPhoto } from '../services/photoService';
 import { getAlpha2, getAlpha3 } from '../utils/countryUtils';
 import { markCountryAsVisited } from '../services/supabase';
+import {
+  searchCities as searchCitiesApi,
+  formatCityLabel,
+  CITY_SEARCH_DEBOUNCE_MS,
+  MIN_CITY_QUERY_LENGTH,
+} from '../utils/geoSearch';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 
 const GOOGLE_PLACES_KEY = API_CONFIG.GOOGLE_MAPS_API_KEY;
@@ -37,6 +43,7 @@ export default function PhotoUploader({
   const [selectedCity, setSelectedCity] = useState(null);
   const [loadingCities, setLoadingCities] = useState(false);
   const [cityError, setCityError] = useState(false);
+  const [cityLookupFailed, setCityLookupFailed] = useState(false);
   const [isPublic, setIsPublic] = useState(true);
   const [locationName, setLocationName] = useState('');
   const [rating, setRating] = useState(0);
@@ -85,9 +92,10 @@ export default function PhotoUploader({
   }, [preview]);
 
   const searchCities = async (query) => {
-    if (query.length < 3) {
+    if (query.trim().length < MIN_CITY_QUERY_LENGTH) {
       citySearchAbortRef.current?.abort();
       setCitySuggestions([]);
+      setCityLookupFailed(false);
       setLoadingCities(false);
       return;
     }
@@ -96,47 +104,21 @@ export default function PhotoUploader({
     const controller = new AbortController();
     citySearchAbortRef.current = controller;
     setLoadingCities(true);
+    setCityLookupFailed(false);
 
     try {
-      const countryQuery = effectiveCountryNameEn || effectiveCountryName;
-      const searchQuery = countryQuery ? `${query}, ${countryQuery}` : query;
-      const response = await fetch(
-        `https://photon.komoot.io/api/?q=${encodeURIComponent(searchQuery)}&limit=12&lang=pt`,
-        { signal: controller.signal }
-      );
-      if (!response.ok) throw new Error(`Busca de cidades indisponível (${response.status})`);
-      const data = await response.json();
-      const seen = new Set();
-      const cities = (data.features || [])
-        .filter((feature) => {
-          if (!['city', 'town', 'village', 'locality', 'municipality']
-            .includes(feature.properties?.type)) return false;
-          const featureCountryCode = feature.properties?.countrycode?.toLowerCase();
-          return !effectiveCountryAlpha2 ||
-            !featureCountryCode ||
-            featureCountryCode === effectiveCountryAlpha2;
-        })
-        .map((feature) => {
-          const shortName = feature.properties.name;
-          const country = feature.properties.country || effectiveCountryName;
-          const countryCode = feature.properties?.countrycode?.toUpperCase() || '';
-          const key = `${shortName}|${country}`.toLocaleLowerCase('pt-BR');
-          if (!shortName || seen.has(key)) return null;
-          seen.add(key);
-          return {
-            name: `${shortName}, ${country}`,
-            shortName,
-            country,
-            countryCode,
-            lat: feature.geometry.coordinates[1],
-            lng: feature.geometry.coordinates[0],
-          };
-        })
-        .filter(Boolean)
-        .slice(0, 8);
-      setCitySuggestions(cities);
+      const cities = await searchCitiesApi(query, {
+        countryAlpha2: effectiveCountryAlpha2.toUpperCase(),
+        countryNameEn: effectiveCountryNameEn || effectiveCountryName,
+        signal: controller.signal,
+      });
+      if (citySearchAbortRef.current === controller) setCitySuggestions(cities);
     } catch (error) {
-      if (error?.name !== 'AbortError') setCitySuggestions([]);
+      if (error?.name !== 'AbortError') {
+        setCitySuggestions([]);
+        // Falha de rede não é o mesmo que "cidade inexistente" — a mensagem muda.
+        setCityLookupFailed(true);
+      }
     } finally {
       if (citySearchAbortRef.current === controller) {
         setLoadingCities(false);
@@ -204,6 +186,7 @@ export default function PhotoUploader({
     setCitySuggestions([]);
     setSelectedCity(detectedCity);
     setCityError(false);
+    setCityLookupFailed(false);
     setUploadSuccess(false);
     setLocationName('');
     setRating(0);
@@ -350,7 +333,7 @@ export default function PhotoUploader({
                 if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
                 searchTimerRef.current = setTimeout(() => {
                   searchCities(text);
-                }, 400);
+                }, CITY_SEARCH_DEBOUNCE_MS);
               }}
               editable={!uploading}
             />
@@ -360,9 +343,12 @@ export default function PhotoUploader({
                 <Text style={{ fontSize: 11, color: '#999' }}>Buscando cidades...</Text>
               </View>
             )}
-            {!loadingCities && citySuggestions.length === 0 && citySearch.length >= 3 && !selectedCity && (
+            {!loadingCities && citySuggestions.length === 0 &&
+              citySearch.trim().length >= MIN_CITY_QUERY_LENGTH && !selectedCity && (
               <Text style={{ fontSize: 11, color: '#999', marginTop: 4 }}>
-                Nenhuma cidade encontrada. Tente outro nome.
+                {cityLookupFailed
+                  ? 'Não foi possível buscar agora. Verifique sua conexão e tente de novo.'
+                  : 'Nenhuma cidade encontrada. Tente outro nome.'}
               </Text>
             )}
             {citySuggestions.length > 0 && !selectedCity && (
@@ -376,13 +362,13 @@ export default function PhotoUploader({
                     ]}
                     onPress={() => {
                       setSelectedCity(city);
-                      setCitySearch(`${city.shortName}, ${city.country}`);
+                      setCitySearch(formatCityLabel(city));
                       setCitySuggestions([]);
                       setCityError(false);
                     }}
                   >
                     <Ionicons name="location-outline" size={14} color={COLORS.gray} />
-                    <Text style={styles.suggestionText}>{city.shortName}, {city.country}</Text>
+                    <Text style={styles.suggestionText}>{formatCityLabel(city)}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
