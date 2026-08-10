@@ -14,6 +14,7 @@ import { useUpload } from '../../context/UploadContext';
 import StarRating from '../../components/StarRating';
 import Avatar from '../../components/Avatar';
 import CountryFlag from '../../components/CountryFlag';
+import ShareToJourniModal from '../../components/ShareToJourniModal';
 import { confirm, notify } from '../../utils/dialogs';
 
 const timeAgo = (dateStr) => {
@@ -25,6 +26,37 @@ const timeAgo = (dateStr) => {
   if (hours < 24) return `${hours}h atrás`;
   return `${days}d atrás`;
 };
+
+function FeedHeader({ navigation }) {
+  return (
+    <View style={styles.header}>
+      <View style={styles.headerContent}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Início</Text>
+          <Text style={styles.headerSub}>Acompanhe as viagens de quem você segue</Text>
+        </View>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.headerActionButton}
+            onPress={() => navigation.navigate('Messages')}
+            accessibilityRole="button"
+            accessibilityLabel="Abrir conversas"
+          >
+            <Ionicons name="chatbubbles-outline" size={22} color="#FFFFFF" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.headerActionButton}
+            onPress={() => navigation.navigate('Notificações')}
+            accessibilityRole="button"
+            accessibilityLabel="Abrir notificações"
+          >
+            <Ionicons name="notifications-outline" size={22} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+}
 
 export default function FeedScreen({ navigation }) {
   const [currentUser, setCurrentUser] = useState(null);
@@ -39,6 +71,7 @@ export default function FeedScreen({ navigation }) {
   const [newComment, setNewComment] = useState('');
   const [commentLoading, setCommentLoading] = useState(false);
   const [deletingPhotoId, setDeletingPhotoId] = useState(null);
+  const [sharePhoto, setSharePhoto] = useState(null);
 
   const { refreshTrigger } = useUpload();
 
@@ -156,10 +189,7 @@ export default function FeedScreen({ navigation }) {
   if (loading) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Feed</Text>
-          <Text style={styles.headerSub}>Pessoas que você segue</Text>
-        </View>
+        <FeedHeader navigation={navigation} />
         <ActivityIndicator color="#6C2BD9" style={{ marginTop: 40 }} />
       </View>
     );
@@ -169,19 +199,7 @@ export default function FeedScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <View>
-            <Text style={styles.headerTitle}>Feed</Text>
-            <Text style={styles.headerSub}>Pessoas que você segue</Text>
-          </View>
-          <Image
-            source={require('../../../assets/journi_simbolo.png')}
-            style={{ width: 28, height: 28, marginTop: 2 }}
-            resizeMode="contain"
-          />
-        </View>
-      </View>
+      <FeedHeader navigation={navigation} />
 
       {isEmpty ? (
         <View style={styles.emptyState}>
@@ -335,7 +353,7 @@ export default function FeedScreen({ navigation }) {
                     <View style={{ flex: 1 }} />
                     <TouchableOpacity
                       style={styles.actionBtn}
-                      onPress={() => handleSharePhoto(post)}
+                      onPress={() => setSharePhoto(post)}
                     >
                       <Ionicons name="share-outline" size={18} color="#999" />
                     </TouchableOpacity>
@@ -344,7 +362,7 @@ export default function FeedScreen({ navigation }) {
                 </View>
               );
             })}
-            <View style={{ height: 20 }} />
+            <View style={{ height: 96 }} />
           </View>
         </ScrollView>
       )}
@@ -428,15 +446,24 @@ export default function FeedScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+      <ShareToJourniModal
+        visible={!!sharePhoto}
+        onClose={() => setSharePhoto(null)}
+        resource={{ photo: sharePhoto }}
+        onExternalShare={() => sharePhoto && handleSharePhoto(sharePhoto)}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f0f0f0' },
-  header: { backgroundColor: '#0D1326', padding: 20, paddingTop: 48, paddingBottom: 16 },
+  header: { backgroundColor: '#0D1326', paddingHorizontal: 20, paddingTop: 48, paddingBottom: 16 },
+  headerContent: { width: '100%', maxWidth: 760, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 14 },
   headerTitle: { color: 'white', fontSize: 22, fontWeight: '700', fontFamily: 'Poppins_700Bold', letterSpacing: -0.3 },
   headerSub: { color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 2 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerActionButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
   stories: { paddingHorizontal: 12, paddingVertical: 12, gap: 14 },
   storyItem: { alignItems: 'center', gap: 4 },
   storyRing: { width: 52, height: 52, borderRadius: 26, borderWidth: 2, borderColor: '#6C2BD9', padding: 2, alignItems: 'center', justifyContent: 'center' },

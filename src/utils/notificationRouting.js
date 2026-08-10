@@ -1,13 +1,8 @@
-// Tabela única que descreve cada tipo de notificação: como o banner se apresenta e para
-// onde o toque leva. Manter isso fora do componente permite adicionar um tipo novo (ou
-// ligar um que está esperando o schema do parceiro) mexendo em um lugar só.
-
 /**
- * Rotas registradas hoje no RootStack (ver AppNavigator.js).
- * `message` e `passport` apontam para telas que ainda NÃO existem — o roteamento delas já
- * está escrito, mas fica inerte até as telas serem registradas aqui e no navigator.
+ * Rotas que podem ser abertas por notificações, incluindo os destinos sociais
+ * adicionados pelas conversas e pelos passaportes compartilhados.
  */
-export const REGISTERED_ROUTES = [
+export const REGISTERED_ROUTES = Object.freeze([
   'Main',
   'PublicProfile',
   'PhotoDetail',
@@ -15,36 +10,29 @@ export const REGISTERED_ROUTES = [
   'AssistantResult',
   'Notificações',
   'Connections',
-];
+  'Conversation',
+  'PassportDetail',
+]);
 
-export const isRouteRegistered = (routeName) => REGISTERED_ROUTES.includes(routeName);
+export const isRouteRegistered = routeName => REGISTERED_ROUTES.includes(routeName);
 
 const BADGE = {
-  message:  { icon: 'chatbubble',            color: '#FF9A00' },
-  follow:   { icon: 'checkmark',             color: '#00D1C1' },
-  passport: { icon: 'ribbon',                color: '#6C2BD9' },
-  comment:  { icon: 'chatbubble-ellipses',   color: '#FF4D6D' },
+  message: { icon: 'chatbubble', color: '#FF9A00' },
+  follow: { icon: 'checkmark', color: '#00D1C1' },
+  passport: { icon: 'ribbon', color: '#6C2BD9' },
+  comment: { icon: 'chatbubble-ellipses', color: '#FF4D6D' },
 };
 
 const DEFAULT_BADGE = { icon: 'notifications', color: '#6C2BD9' };
 
-export const getBadge = (type) => BADGE[type] || DEFAULT_BADGE;
+export const getBadge = type => BADGE[type] || DEFAULT_BADGE;
 
-/**
- * Título do banner. `actorName` já vem resolvido (display_name > username > 'Alguém').
- * Para os tipos legados (follow/comment) a frase do banco é reaproveitada, que é o texto
- * que a tela de Notificações já mostra hoje.
- */
 export const getTitle = (notification, actorName) => {
   switch (notification?.type) {
-    case 'message':
-      return `${actorName} te enviou uma mensagem`;
-    case 'follow':
-      return `${actorName} começou a seguir você`;
-    case 'passport':
-      return 'Você recebeu um passaporte';
-    case 'comment':
-      return `${actorName} comentou sua foto`;
+    case 'message': return `${actorName} te enviou uma mensagem`;
+    case 'follow': return `${actorName} começou a seguir você`;
+    case 'passport': return `${actorName} compartilhou um passaporte`;
+    case 'comment': return `${actorName} comentou sua foto`;
     default:
       return notification?.message
         ? `${actorName} ${notification.message}`
@@ -53,43 +41,44 @@ export const getTitle = (notification, actorName) => {
 };
 
 /**
- * Destino do deep link. Retorna null quando não há para onde ir (ex.: notificação sem o
- * id de destino preenchido), e o chamador apenas descarta o banner.
- *
- * @param {{ type?: string, target_id?: string, photo_id?: any, actor?: { id?: string, username?: string } }} notification
- * @returns {{ name: string, params: object } | null}
+ * Resolve primeiro os destinos com FK tipada. O target_id legado continua como
+ * fallback para notificações criadas antes da migração social.
  */
-export const getRoute = (notification) => {
+export const getRoute = notification => {
   const actor = notification?.actor;
-  const targetId = notification?.target_id || null;
 
   switch (notification?.type) {
-    case 'message':
-      // Aguardando o schema de DMs: `target_id` guardará o conversation_id.
-      if (!targetId) return null;
+    case 'message': {
+      const conversationId = notification?.conversation_id || notification?.target_id;
+      if (!conversationId) return null;
       return {
         name: 'Conversation',
         params: {
-          conversationId: targetId,
+          conversationId,
+          profile: actor || null,
           userId: actor?.id,
           username: actor?.username,
         },
       };
+    }
 
-    case 'passport':
-      // Aguardando o schema de passaportes: `target_id` guardará o passport_id.
-      if (!targetId) return null;
-      return { name: 'PassportDetail', params: { passportId: targetId } };
+    case 'passport': {
+      const passportShareId = notification?.passport_share_id || notification?.target_id;
+      if (!passportShareId) return null;
+      return {
+        name: 'PassportDetail',
+        params: { passportShareId, passportId: passportShareId },
+      };
+    }
 
     case 'comment': {
-      const photoId = targetId || notification?.photo_id;
-      if (!photoId) return null;
-      return { name: 'PhotoDetail', params: { photoId } };
+      const photoId = notification?.photo_id || notification?.target_id;
+      return photoId ? { name: 'PhotoDetail', params: { photoId } } : null;
     }
 
     case 'follow':
     default: {
-      const userId = targetId || actor?.id;
+      const userId = actor?.id || notification?.target_id;
       if (!userId) return null;
       return {
         name: 'PublicProfile',
@@ -98,3 +87,6 @@ export const getRoute = (notification) => {
     }
   }
 };
+
+export const getNotificationDestination = (notification, actor) =>
+  getRoute({ ...notification, actor: actor || notification?.actor || null });

@@ -4,7 +4,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import {
   TouchableOpacity, View, ActivityIndicator,
-  Modal, ScrollView, Text, Platform,
+  Modal, ScrollView, Text, Platform, useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
@@ -23,6 +23,8 @@ import EditProfileScreen from '../screens/profile/EditProfileScreen';
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import ConfirmEmailScreen from '../screens/auth/ConfirmEmailScreen';
+import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
+import ResetPasswordScreen from '../screens/auth/ResetPasswordScreen';
 import UploadPlaceholder from '../screens/upload/UploadPlaceholder';
 import PhotoUploader from '../components/PhotoUploader';
 import PublicProfileScreen from '../screens/profile/PublicProfileScreen';
@@ -33,6 +35,9 @@ import NotificationsScreen from '../screens/NotificationsScreen';
 import ConnectionsScreen from '../screens/profile/ConnectionsScreen';
 import PhotoDetailScreen from '../screens/PhotoDetailScreen';
 import SupportScreen from '../screens/support/SupportScreen';
+import MessagesScreen from '../screens/messages/MessagesScreen';
+import ConversationScreen from '../screens/messages/ConversationScreen';
+import PassportDetailScreen from '../screens/profile/PassportDetailScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -50,28 +55,66 @@ function ProfileStack() {
 
 function TabNavigator() {
   const { openUploader } = useUpload();
+  const { width } = useWindowDimensions();
+  const tabBarWidth = Math.min(Math.max(width - 24, 300), 680);
   return (
     <Tab.Navigator
       id="MainTabs"
+      initialRouteName="Feed"
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#333',
-        tabBarInactiveTintColor: '#999',
+        tabBarActiveTintColor: '#FFFFFF',
+        tabBarInactiveTintColor: '#8F96B3',
+        tabBarActiveBackgroundColor: 'rgba(108,43,217,0.34)',
+        tabBarHideOnKeyboard: true,
         tabBarStyle: {
-          backgroundColor: '#FFFFFF',
+          position: 'absolute',
+          alignSelf: 'center',
+          left: (width - tabBarWidth) / 2,
+          bottom: Platform.OS === 'web' ? 14 : 18,
+          width: tabBarWidth,
+          backgroundColor: '#12182B',
           borderTopWidth: 1,
-          borderTopColor: COLORS.border,
-          paddingBottom: 5,
-          paddingTop: 5,
-          height: 60,
+          borderWidth: 1,
+          borderColor: 'rgba(167,139,250,0.28)',
+          paddingHorizontal: 6,
+          paddingVertical: 6,
+          height: 70,
+          borderRadius: 35,
+          ...Platform.select({
+            web: { boxShadow: '0 12px 32px rgba(4,7,18,0.42)' },
+            default: {
+              shadowColor: '#050816',
+              shadowOffset: { width: 0, height: 10 },
+              shadowOpacity: 0.34,
+              shadowRadius: 18,
+              elevation: 14,
+            },
+          }),
+        },
+        tabBarItemStyle: {
+          borderRadius: 28,
+          marginHorizontal: 2,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
-          marginTop: 2,
+          fontSize: 10,
+          fontWeight: '700',
+          marginTop: 1,
+          marginBottom: 4,
         },
       }}
     >
+      <Tab.Screen
+        name="Feed"
+        component={FeedScreen}
+        options={{
+          tabBarLabel: 'Início',
+          tabBarIcon: ({ size, color, focused }) => (
+            <Ionicons name={focused ? 'home' : 'home-outline'} size={size} color={color} />
+          ),
+        }}
+      />
+
       <Tab.Screen
         name="Map"
         component={MapScreen}
@@ -79,17 +122,6 @@ function TabNavigator() {
           tabBarLabel: 'Mapa',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="map-outline" size={size} color={color} />
-          ),
-        }}
-      />
-
-      <Tab.Screen
-        name="Explore"
-        component={ExploreScreen}
-        options={{
-          tabBarLabel: 'Explorar',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="compass-outline" size={size} color={color} />
           ),
         }}
       />
@@ -107,7 +139,7 @@ function TabNavigator() {
               backgroundColor: '#6C2BD9',
               alignItems: 'center',
               justifyContent: 'center',
-              marginTop: -16,
+              marginTop: -13,
               ...Platform.select({
                 web: { boxShadow: '0 4px 8px rgba(108,43,217,0.4)' },
                 default: {
@@ -133,12 +165,12 @@ function TabNavigator() {
       />
 
       <Tab.Screen
-        name="Feed"
-        component={FeedScreen}
+        name="Explore"
+        component={ExploreScreen}
         options={{
-          tabBarLabel: 'Feed',
-          tabBarIcon: ({ size, color }) => (
-            <Ionicons name="newspaper-outline" size={size} color={color} />
+          tabBarLabel: 'Explorar',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="compass-outline" size={size} color={color} />
           ),
         }}
       />
@@ -160,6 +192,11 @@ function TabNavigator() {
 export default function AppNavigator() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [passwordRecovery, setPasswordRecovery] = useState(() => (
+    Platform.OS === 'web'
+    && typeof window !== 'undefined'
+    && new URL(window.location.href).searchParams.get('recovery') === '1'
+  ));
 
   const { visible, openUploader, closeUploader, notifyUploadComplete } = useUpload();
   const [detectedLocation, setDetectedLocation] = useState(null);
@@ -185,7 +222,8 @@ export default function AppNavigator() {
 
     checkUser();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true);
       if (session?.user) {
         setUser(session.user);
       } else {
@@ -196,6 +234,16 @@ export default function AppNavigator() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  const finishPasswordRecovery = () => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete('recovery');
+      window.history.replaceState({}, document.title, `${cleanUrl.pathname}${cleanUrl.search}`);
+    }
+    setUser(null);
+    setPasswordRecovery(false);
+  };
 
   useEffect(() => {
     if (visible) {
@@ -276,11 +324,18 @@ export default function AppNavigator() {
   return (
     <View style={{ flex: 1 }}>
       <NavigationContainer ref={navigationRef}>
-        {!user ? (
+        {passwordRecovery ? (
+          <Stack.Navigator id="PasswordRecoveryStack" screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="ResetPassword">
+              {props => <ResetPasswordScreen {...props} onComplete={finishPasswordRecovery} />}
+            </Stack.Screen>
+          </Stack.Navigator>
+        ) : !user ? (
           <Stack.Navigator id="AuthStack" screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />
             <Stack.Screen name="ConfirmEmail" component={ConfirmEmailScreen} />
+            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
             <Stack.Screen name="Support" component={SupportScreen} />
           </Stack.Navigator>
         ) : (
@@ -288,6 +343,9 @@ export default function AppNavigator() {
             <Stack.Screen name="Main" component={TabNavigator} />
             <Stack.Screen name="PublicProfile" component={PublicProfileScreen} />
             <Stack.Screen name="PhotoDetail" component={PhotoDetailScreen} />
+            <Stack.Screen name="Messages" component={MessagesScreen} />
+            <Stack.Screen name="Conversation" component={ConversationScreen} />
+            <Stack.Screen name="PassportDetail" component={PassportDetailScreen} />
             <Stack.Screen
               name="TripPlanner"
               component={TripPlannerScreen}

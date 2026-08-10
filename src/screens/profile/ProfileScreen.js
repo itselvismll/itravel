@@ -5,6 +5,7 @@ import { toPng } from 'html-to-image';
 import * as Sharing from 'expo-sharing';
 import { Platform } from 'react-native';
 import ShareCard from '../../components/ShareCard';
+import ShareToJourniModal from '../../components/ShareToJourniModal';
 import {
   View,
   Text,
@@ -19,7 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getCurrentUser, signOut, getVisitedCountries, supabase } from '../../services/supabase';
 import { getWishlist } from '../../services/socialService';
 import { getProfile } from '../../services/profileService';
-import { deletePhoto, getFavoritePhotos, getAllUserPhotos } from '../../services/photoService';
+import { deletePhoto, getAllUserPhotos, getPhotoCommentCounts } from '../../services/photoService';
 import {
   getAlpha2,
   getStampRotation,
@@ -35,7 +36,6 @@ export default function ProfileScreen({ navigation }) {
   const [profile, setProfile] = useState(null);
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [visitedCountries, setVisitedCountries] = useState([]);
-  const [favoritePhotos, setFavoritePhotos] = useState([]);
   const [photos, setPhotos] = useState([]);
   const [followersCount, setFollowersCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
@@ -44,6 +44,8 @@ export default function ProfileScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
   const [deletingPhotoId, setDeletingPhotoId] = useState(null);
+  const [postMenuPhoto, setPostMenuPhoto] = useState(null);
+  const [passportShareVisible, setPassportShareVisible] = useState(false);
 
   const { refreshTrigger } = useUpload();
   const shareCardRef = useRef(null);
@@ -66,16 +68,17 @@ export default function ProfileScreen({ navigation }) {
         setProfile(profileResult.data);
       }
 
-      const [countriesResult, favResult, photosResult, wishlistResult] = await Promise.all([
+      const [countriesResult, photosResult, wishlistResult] = await Promise.all([
         getVisitedCountries(user.id),
-        getFavoritePhotos(user.id),
         getAllUserPhotos(user.id),
         getWishlist(user.id),
       ]);
 
       if (countriesResult.success) setVisitedCountries(countriesResult.data);
-      if (favResult.success) setFavoritePhotos(favResult.data);
-      if (photosResult.success) setPhotos(photosResult.data);
+      if (photosResult.success) {
+        const countsResult = await getPhotoCommentCounts(photosResult.data.map(photo => photo.id));
+        setPhotos(photosResult.data.map(photo => ({ ...photo, comment_count: countsResult.data?.[photo.id] || 0 })));
+      }
       if (wishlistResult.success) setWishlist(wishlistResult.data);
 
       const { count: followers } = await supabase
@@ -93,10 +96,11 @@ export default function ProfileScreen({ navigation }) {
 
       const { data: notifs } = await supabase
         .from('notifications')
-        .select('id')
+        .select('id, type, actor_id, photo_id, message')
         .eq('user_id', user.id)
         .eq('read', false);
-      setUnreadCount((notifs || []).length);
+      const uniqueNotifications = new Set((notifs || []).map(item => `${item.type}:${item.actor_id}:${item.photo_id || ''}:${item.message}`));
+      setUnreadCount(uniqueNotifications.size);
     } catch {
       setProfile(null);
     } finally {
@@ -140,12 +144,9 @@ export default function ProfileScreen({ navigation }) {
   const countriesToNext = levelInfo.next ? levelInfo.next.minCountries - visitedCountries.length : 0;
   const visitedCountryCodes = visitedCountries.map(c => c.country_code);
 
-  const handleShare = async () => {
+  const sharePassportExternally = async () => {
     try {
       if (Platform.OS === 'web') {
-        // Sem width/height fixos: o card cresce em altura conforme o número de
-        // países/wishlist do usuário, e um tamanho travado (era 360x640) cortava
-        // ou espremia o passaporte de quem tinha mais dados que isso.
         const dataUrl = await toPng(shareCardRef.current, {
           pixelRatio: 2,
           backgroundColor: '#0D1326',
@@ -153,10 +154,21 @@ export default function ProfileScreen({ navigation }) {
           fontEmbedCSS: '',
           cacheBust: true,
         });
+        const blob = await fetch(dataUrl).then(response => response.blob());
+        const file = new File([blob], 'meu-passaporte-journi.png', { type: 'image/png' });
+        if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+          await navigator.share({
+            title: 'Meu passaporte Journi',
+            text: 'Veja os países que conheci no Journi!',
+            files: [file],
+          });
+          return;
+        }
         const link = document.createElement('a');
         link.href = dataUrl;
         link.download = 'meu-passaporte-journi.png';
         link.click();
+        notify('Passaporte baixado', 'A imagem foi salva. Agora você pode enviá-la pelo WhatsApp, Instagram ou outro aplicativo.');
       } else {
         const uri = await captureRef(shareCardRef, { format: 'png', quality: 1 });
         await Sharing.shareAsync(uri);
@@ -184,7 +196,6 @@ export default function ProfileScreen({ navigation }) {
       }
 
       setPhotos(current => current.filter(item => item.id !== photo.id));
-      setFavoritePhotos(current => current.filter(item => item.id !== photo.id));
       setFullscreenPhoto(null);
       notify('Publicação excluída', result.warning || 'Sua publicação foi removida.');
     } finally {
@@ -402,47 +413,16 @@ export default function ProfileScreen({ navigation }) {
         <Ionicons name="chevron-forward" size={20} color="#8D95B4" />
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
+      <TouchableOpacity style={styles.shareBtn} onPress={() => setPassportShareVisible(true)}>
         <Ionicons name="share-social-outline" size={18} color="white" />
         <Text style={styles.shareBtnText}>Compartilhar meu passaporte</Text>
       </TouchableOpacity>
 
-      {/* Fotos favoritas */}
-      {favoritePhotos.length > 0 && (
-        <View style={styles.card}>
-          <View style={styles.cardTitleRow}>
-            <Ionicons name="star-outline" size={14} color="#999" />
-            <Text style={styles.cardTitle}>FOTOS FAVORITAS</Text>
-          </View>
-          <View style={styles.favGrid}>
-            {favoritePhotos.slice(0, 6).map((photo, i) => (
-              <TouchableOpacity
-                key={i}
-                style={styles.favPhoto}
-                onPress={() => setFullscreenPhoto(photo)}
-                activeOpacity={0.85}
-              >
-                <Image
-                  source={{ uri: photo.photo_url }}
-                  style={{ width: '100%', height: '100%' }}
-                  resizeMode="cover"
-                />
-                {photo.city && (
-                  <View style={styles.favOverlay}>
-                    <Text style={styles.favCity}>{photo.city}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      )}
-
-      {/* Fotos recentes */}
+      {/* Publicações do usuário */}
       <View style={styles.card}>
         <View style={styles.cardTitleRow}>
-          <Ionicons name="images-outline" size={14} color="#999" />
-          <Text style={styles.cardTitle}>FOTOS RECENTES</Text>
+          <Ionicons name="newspaper-outline" size={14} color="#999" />
+          <Text style={styles.cardTitle}>PUBLICAÇÕES</Text>
         </View>
         {photos.length === 0 ? (
           <View style={styles.emptyFav}>
@@ -450,32 +430,33 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.emptyFavText}>Nenhuma foto ainda</Text>
           </View>
         ) : (
-          <View style={styles.favGrid}>
-            {photos.slice(0, 9).map((photo, i) => (
-              <TouchableOpacity
-                key={i}
-                style={styles.favPhoto}
-                onPress={() => setFullscreenPhoto(photo)}
-                activeOpacity={0.85}
-              >
-                <Image
-                  source={{ uri: photo.photo_url }}
-                  style={{ width: '100%', height: '100%' }}
-                  resizeMode="cover"
-                />
-                {photo.location_name && (
-                  <View style={styles.photoOverlay}>
-                    <Text style={styles.photoOverlayText} numberOfLines={1}>
-                      {photo.location_name}
-                    </Text>
+          <View style={styles.publicationsGrid}>
+            {photos.map(photo => (
+              <View key={photo.id} style={styles.publicationCard}>
+                <TouchableOpacity
+                  style={styles.publicationMenu}
+                  onPress={() => setPostMenuPhoto(photo)}
+                  accessibilityLabel="Opções da publicação"
+                >
+                  <Ionicons name="ellipsis-horizontal" size={21} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.88}
+                  onPress={() => navigation.getParent()?.getParent()?.navigate('PhotoDetail', { photoId: photo.id })}
+                >
+                  <Image source={{ uri: photo.photo_url }} style={styles.publicationImage} resizeMode="cover" />
+                </TouchableOpacity>
+                <View style={styles.publicationInfo}>
+                  <View style={styles.publicationLocation}>
+                    {!!photo.country_code && <CountryFlag countryCode={photo.country_code} width={20} height={14} borderRadius={2} />}
+                    <Text style={styles.publicationLocationText} numberOfLines={1}>{photo.location_name || photo.city || photo.country_name}</Text>
                   </View>
-                )}
-                {photo.rating > 0 && (
-                  <View style={styles.ratingBadge}>
-                    <Text style={styles.ratingBadgeText}>★ {photo.rating}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
+                  {!!photo.rating && <StarRating rating={photo.rating} size={11} />}
+                  {!!photo.caption && <Text style={styles.publicationCaption} numberOfLines={2}>{photo.caption}</Text>}
+                  {!!photo.review && <Text style={styles.publicationReview} numberOfLines={2}>“{photo.review}”</Text>}
+                  <View style={styles.publicationComments}><Ionicons name="chatbubble-outline" size={13} color="#8D95B4" /><Text style={styles.publicationCommentsText}>{photo.comment_count || 0} comentários</Text></View>
+                </View>
+              </View>
             ))}
           </View>
         )}
@@ -550,6 +531,44 @@ export default function ProfileScreen({ navigation }) {
         wishlistCodes={wishlist.map(w => w.country_code)}
       />
     </View>
+
+    <Modal visible={!!postMenuPhoto} transparent animationType="fade" onRequestClose={() => setPostMenuPhoto(null)}>
+      <TouchableOpacity style={styles.postMenuOverlay} activeOpacity={1} onPress={() => setPostMenuPhoto(null)}>
+        <View style={styles.postMenuSheet}>
+          <Text style={styles.postMenuTitle}>Opções da publicação</Text>
+          <TouchableOpacity
+            style={styles.postMenuDelete}
+            onPress={() => {
+              const photo = postMenuPhoto;
+              setPostMenuPhoto(null);
+              handleDeletePhoto(photo);
+            }}
+          >
+            <Ionicons name="trash-outline" size={20} color="#FF6B7D" />
+            <Text style={styles.postMenuDeleteText}>Excluir publicação</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.postMenuCancel} onPress={() => setPostMenuPhoto(null)}><Text style={styles.postMenuCancelText}>Cancelar</Text></TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+
+    <ShareToJourniModal
+      visible={passportShareVisible}
+      onClose={() => setPassportShareVisible(false)}
+      resource={{
+        passport: {
+          profile: profile ? {
+            id: profile.id,
+            username: profile.username,
+            display_name: profile.display_name,
+            avatar_url: profile.avatar_url || avatarUrl,
+          } : null,
+          visitedCountries,
+          wishlist,
+        },
+      }}
+      onExternalShare={sharePassportExternally}
+    />
 
     <Modal
       visible={fullscreenPhoto !== null}
@@ -806,35 +825,24 @@ const styles = StyleSheet.create({
   },
   emptyPassport: { alignItems: 'center', paddingVertical: 20, gap: 10 },
   emptyPassportText: { fontSize: 12, color: '#bbb', textAlign: 'center', lineHeight: 18 },
-  photoOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.5)', padding: 3 },
-  photoOverlayText: { color: 'white', fontSize: 8 },
-  ratingBadge: { position: 'absolute', top: 4, right: 4, backgroundColor: 'rgba(255,107,53,0.9)', borderRadius: 6, paddingHorizontal: 4, paddingVertical: 1 },
-  ratingBadgeText: { color: 'white', fontSize: 8, fontWeight: '600' },
-  favGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-  },
-  favPhoto: {
-    width: '31.5%',
-    aspectRatio: 1,
-    borderRadius: 8,
-    overflow: 'hidden',
-    backgroundColor: '#ddd',
-  },
-  favOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    padding: 4,
-  },
-  favCity: {
-    color: 'white',
-    fontSize: 8,
-    fontWeight: '500',
-  },
+  publicationsGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'stretch', gap: 12 },
+  publicationCard: { width: '48%', minWidth: 156, flexGrow: 1, maxWidth: 430, borderRadius: 14, overflow: 'hidden', backgroundColor: '#171D36', position: 'relative' },
+  publicationImage: { width: '100%', aspectRatio: 4 / 3, backgroundColor: '#252B42' },
+  publicationMenu: { position: 'absolute', top: 8, right: 8, zIndex: 4, width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(13,19,38,0.82)', alignItems: 'center', justifyContent: 'center' },
+  publicationInfo: { padding: 11, gap: 6 },
+  publicationLocation: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  publicationLocationText: { color: '#F7F7F2', flex: 1, fontSize: 11, fontWeight: '800' },
+  publicationCaption: { color: '#D8DBE8', fontSize: 11, lineHeight: 16 },
+  publicationReview: { color: '#929AB8', fontSize: 10, lineHeight: 15, fontStyle: 'italic' },
+  publicationComments: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
+  publicationCommentsText: { color: '#8D95B4', fontSize: 9 },
+  postMenuOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.62)' },
+  postMenuSheet: { backgroundColor: '#171D36', padding: 18, paddingBottom: 26, borderTopLeftRadius: 22, borderTopRightRadius: 22, gap: 10 },
+  postMenuTitle: { color: '#F7F7F2', fontSize: 16, fontWeight: '900', marginBottom: 4 },
+  postMenuDelete: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 50, paddingHorizontal: 13, borderRadius: 13, backgroundColor: 'rgba(255,77,109,0.1)' },
+  postMenuDeleteText: { color: '#FF8AA0', fontSize: 13, fontWeight: '800' },
+  postMenuCancel: { minHeight: 46, alignItems: 'center', justifyContent: 'center' },
+  postMenuCancelText: { color: '#929AB8', fontSize: 12, fontWeight: '700' },
   countryRow: {
     flexDirection: 'row',
     alignItems: 'center',

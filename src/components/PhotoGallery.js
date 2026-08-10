@@ -39,6 +39,7 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
   const [fullscreenIndex, setFullscreenIndex] = useState(0);
   const [favoriteIds, setFavoriteIds] = useState(new Set());
   const [privacyToast, setPrivacyToast] = useState(null);
+  const [deletingPhotoId, setDeletingPhotoId] = useState(null);
 
   const loadPhotos = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -102,12 +103,18 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
     const confirmacao = await confirm('Excluir foto', 'Tem certeza que deseja deletar esta foto?');
     if (!confirmacao) return;
 
-    const result = await deletePhoto(photoId, photoPath);
-    if (result.success) {
-      notify('Foto excluída', 'Foto deletada com sucesso!');
-      loadPhotos();
-    } else {
-      notify('Erro ao excluir', result.error || 'Não foi possível deletar a foto.');
+    setDeletingPhotoId(photoId);
+    try {
+      const result = await deletePhoto(photoId, photoPath);
+      if (result.success) {
+        setFullscreenPhoto(null);
+        notify('Foto excluída', 'Foto deletada com sucesso!');
+        await loadPhotos();
+      } else {
+        notify('Erro ao excluir', result.error || 'Não foi possível deletar a foto.');
+      }
+    } finally {
+      setDeletingPhotoId(null);
     }
   };
 
@@ -445,6 +452,21 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
             <Ionicons name="close" size={24} color="white" />
           </TouchableOpacity>
 
+          {fullscreenPhoto && (
+            <TouchableOpacity
+              style={styles.fullscreenDelete}
+              onPress={() => handleDelete(fullscreenPhoto.id, fullscreenPhoto.photo_path)}
+              disabled={deletingPhotoId === fullscreenPhoto.id}
+              accessibilityLabel="Excluir esta foto"
+            >
+              {deletingPhotoId === fullscreenPhoto.id ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <Ionicons name="trash-outline" size={22} color="white" />
+              )}
+            </TouchableOpacity>
+          )}
+
           <Text style={styles.fullscreenCounter}>
             {fullscreenIndex + 1} / {photos.length}
           </Text>
@@ -647,6 +669,18 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fullscreenDelete: {
+    position: 'absolute',
+    top: 48,
+    left: 20,
+    zIndex: 10,
+    width: 40,
+    height: 40,
+    backgroundColor: 'rgba(220,38,38,0.88)',
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
