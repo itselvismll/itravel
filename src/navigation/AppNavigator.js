@@ -17,7 +17,7 @@ import GlobalNotificationBanner from '../components/GlobalNotificationBanner';
 // Screens
 import ExploreScreen from '../screens/explore/ExploreScreen';
 import FeedScreen from '../screens/feed/FeedScreen';
-import MapScreen from '../screens/map/MapScreen';
+import GlobeScreen from '../screens/map/GlobeScreen';
 import ProfileScreen from '../screens/profile/ProfileScreen';
 import EditProfileScreen from '../screens/profile/EditProfileScreen';
 import LoginScreen from '../screens/auth/LoginScreen';
@@ -74,7 +74,7 @@ function TabNavigator() {
     >
       <Tab.Screen
         name="Map"
-        component={MapScreen}
+        component={GlobeScreen}
         options={{
           tabBarLabel: 'Mapa',
           tabBarIcon: ({ color, size }) => (

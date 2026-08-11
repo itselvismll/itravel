@@ -31,7 +31,12 @@
       "Bash(curl -s \"https://countriesnow.space/api/v0.1/countries/capital\" -H \"Content-Type: application/json\" -d '{\"country\":\"Brazil\"}')",
       "Bash(curl -s \"https://raw.githubusercontent.com/mledoze/countries/master/dist/countries.min.json\")",
       "Bash(curl -sI \"https://raw.githubusercontent.com/mledoze/countries/master/dist/countries.min.json\")",
-      "Bash(pkill -f \"expo start\")"
+      "Bash(pkill -f \"expo start\")",
+      "Bash(rm src/components/map/sampleVisitedCountries.js)",
+      "Bash(npm run *)",
+      "Bash(node --test tests/globe-badges.test.cjs)",
+      "Bash(grep -vE \"^\\\\s+at |^\\\\s*$\")",
+      "Bash(npm test *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\elvis.leite.de.lima\\Documents\\itravel-video"

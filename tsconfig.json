@@ -5,5 +5,5 @@
     "noImplicitAny": false
   },
   "extends": "expo/tsconfig.base",
-  "exclude": ["dist", "supabase/functions"]
+  "exclude": ["dist", "supabase/functions", "public"]
 }
