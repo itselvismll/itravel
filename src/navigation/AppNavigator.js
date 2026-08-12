@@ -94,7 +94,9 @@ function TabNavigator() {
         },
         tabBarItemStyle: {
           borderRadius: 28,
-          marginHorizontal: 2,
+          marginHorizontal: 3,
+          marginVertical: 1,
+          overflow: 'hidden',
         },
         tabBarLabelStyle: {
           fontSize: 10,

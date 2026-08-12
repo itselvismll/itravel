@@ -147,3 +147,18 @@ export const getConversationMessages = async (conversationId) => {
   const { data, error } = await supabase.from('messages').select('*').eq('conversation_id', conversationId).order('created_at', { ascending: true }).limit(200);
   return { success: !error, data: data || [], error: error?.message };
 };
+
+export const markConversationRead = async conversationId => {
+  if (!conversationId || conversationId.startsWith('local-conversation-')) {
+    return { success: true };
+  }
+  const { error } = await supabase.rpc('mark_conversation_read', {
+    conversation_uuid: conversationId,
+  });
+  return { success: !error, error: error?.message };
+};
+
+export const getUnreadMessageCount = async () => {
+  const { data, error } = await supabase.rpc('get_unread_message_count');
+  return { success: !error, data: Number(data) || 0, error: error?.message };
+};

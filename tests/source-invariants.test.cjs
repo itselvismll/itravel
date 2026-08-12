@@ -449,3 +449,50 @@ test('README keeps JWT verification enabled for the AI function', () => {
   const readme = read('README.md');
   assert.doesNotMatch(readme, /functions deploy travel-assistant --no-verify-jwt/);
 });
+
+test('message, seasonal explore, requirements, and decimal budget fixes stay integrated', () => {
+  const migration = read('supabase/migrations/20260810162000_fix_message_notifications_and_unread.sql');
+  const feed = read('src/screens/feed/FeedScreen.js');
+  const publicProfile = read('src/screens/profile/PublicProfileScreen.js');
+  const currency = read('src/services/currencyService.js');
+  const budget = read('src/components/DestinationBudgetPlanner.js');
+  const explore = read('src/screens/explore/ExploreScreen.js');
+  const map = read('src/screens/map/MapScreen.js');
+  const requirements = read('src/services/travelRequirementsService.js');
+  const assistant = read('supabase/functions/travel-assistant/index.ts');
+
+  assert.match(migration, /'message', 'passport'/);
+  assert.match(migration, /get_unread_message_count/);
+  assert.match(feed, /CountBadge/);
+  assert.doesNotMatch(feed, /styles\.stories/);
+  assert.match(publicProfile, />Mensagem</);
+  assert.match(currency, /sanitizeMoneyInput/);
+  assert.match(budget, /keyboardType="decimal-pad"/);
+  assert.match(explore, /DESTINOS EM ALTA NESTA ÉPOCA/);
+  assert.match(explore, /getTourismImage/);
+  assert.doesNotMatch(explore, /CountryRequirementsCard/);
+  assert.match(map, /CountryRequirementsCard/);
+  assert.match(requirements, /MAY_REQUIRE_YELLOW_FEVER_CIVP/);
+  assert.match(requirements, /ETIAS ainda não está em operação/);
+  assert.match(assistant, /maxItems: 3/);
+  assert.match(assistant, /gemini-3\.5-flash-lite/);
+});
+
+test('result details, exact maps, realtime chat, passport share, and follow-back stay integrated', () => {
+  const result = read('src/screens/assistant/AssistantResultScreen.js');
+  const assistant = read('supabase/functions/travel-assistant/index.ts');
+  const conversation = read('src/screens/messages/ConversationScreen.js');
+  const realtime = read('supabase/migrations/20260810203000_messages_realtime.sql');
+  const passport = read('src/screens/profile/PassportDetailScreen.js');
+  const profile = read('src/screens/profile/PublicProfileScreen.js');
+
+  assert.match(result, /plan\.budget\?\.items \|\| \[\]\)\.map/);
+  assert.doesNotMatch(result, /Ver detalhamento completo/);
+  assert.match(result, /query_place_id/);
+  assert.match(assistant, /placeId/);
+  assert.match(assistant, /'hotel'\),/);
+  assert.match(conversation, /postgres_changes/);
+  assert.match(realtime, /supabase_realtime add table public\.messages/);
+  assert.match(passport, /<ShareCard/);
+  assert.match(profile, /Seguir de volta/);
+});

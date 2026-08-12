@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../../components/Avatar';
-import { getCurrentUser } from '../../services/supabase';
-import { getConversationMessages, sendMessage } from '../../services/messageService';
+import { getCurrentUser, supabase } from '../../services/supabase';
+import { getConversationMessages, markConversationRead, sendMessage } from '../../services/messageService';
 
 export default function ConversationScreen({ route, navigation }) {
   const { conversationId, profile } = route.params || {};
@@ -17,9 +17,38 @@ export default function ConversationScreen({ route, navigation }) {
     const [user, result] = await Promise.all([getCurrentUser(), getConversationMessages(conversationId)]);
     setUserId(user?.id || null);
     setMessages(result.data || []);
+    await markConversationRead(conversationId);
     setLoading(false);
   }, [conversationId]);
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!conversationId || conversationId.startsWith('local-conversation-')) return undefined;
+
+    const channel = supabase
+      .channel(`conversation-${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        payload => {
+          const incoming = payload.new;
+          setMessages(current => (
+            current.some(message => message.id === incoming.id)
+              ? current
+              : [...current, incoming]
+          ));
+          if (incoming.sender_id !== userId) markConversationRead(conversationId);
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [conversationId, userId]);
 
   const submit = async () => {
     if (!text.trim() || sending) return;

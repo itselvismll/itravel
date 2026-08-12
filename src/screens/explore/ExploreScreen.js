@@ -24,6 +24,7 @@ import CountryFlag from '../../components/CountryFlag';
 import { useUpload } from '../../context/UploadContext';
 import { COUNTRIES_STATIC } from '../../data/countriesStaticData';
 import { confirm, notify } from '../../utils/dialogs';
+import { getTourismImage } from '../../services/tourismImageService';
 
 const MOCK_USERS = [
   { id: '1', username: 'maria_viaja', display_name: 'Maria', avatar_url: null, countries: 12 },
@@ -32,6 +33,29 @@ const MOCK_USERS = [
   { id: '4', username: 'pedro_explora', display_name: 'Pedro', avatar_url: null, countries: 15 },
   { id: '5', username: 'carla_aventura', display_name: 'Carla', avatar_url: null, countries: 3 },
 ];
+
+// Tendência sazonal combinada com sinais reais do app (buscas, fotos, wishlist e
+// pessoas seguidas). Assim a lista muda ao longo do ano sem fingir números externos.
+const SEASONAL_COUNTRIES_BY_MONTH = {
+  0: ['ARG', 'CHL', 'URY', 'AUS', 'NZL'],
+  1: ['BRA', 'ARG', 'CHL', 'THA', 'IDN'],
+  2: ['JPN', 'NLD', 'PRT', 'MAR', 'EGY'],
+  3: ['JPN', 'NLD', 'FRA', 'ITA', 'ESP'],
+  4: ['ITA', 'PRT', 'GRC', 'TUR', 'FRA'],
+  5: ['ITA', 'GRC', 'HRV', 'ESP', 'PRT'],
+  6: ['FRA', 'ITA', 'GRC', 'HRV', 'GBR'],
+  7: ['PRT', 'ESP', 'FRA', 'ITA', 'GBR'],
+  8: ['ITA', 'GRC', 'TUR', 'PRT', 'ZAF'],
+  9: ['USA', 'CAN', 'DEU', 'CZE', 'JPN'],
+  10: ['USA', 'MEX', 'ARG', 'CHL', 'EGY'],
+  11: ['BRA', 'ARG', 'CHL', 'AUT', 'CHE'],
+};
+
+const getSeasonalBoost = countryCode => {
+  const seasonal = SEASONAL_COUNTRIES_BY_MONTH[new Date().getMonth()] || [];
+  const position = seasonal.indexOf(countryCode);
+  return position < 0 ? 0 : (seasonal.length - position) * 3;
+};
 
 export default function ExploreScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -110,19 +134,41 @@ export default function ExploreScreen({ navigation }) {
     photos.forEach(photo => {
       const code = getAlpha3(photo.country_code)?.toUpperCase();
       if (!code) return;
-      if (!countries[code]) countries[code] = { country_code: code, country_name: photo.country_name, count: 0, totalRating: 0, ratingCount: 0, users: new Set(), score: interactionScores[code] || 0 };
+      if (!countries[code]) countries[code] = { country_code: code, country_name: photo.country_name, count: 0, totalRating: 0, ratingCount: 0, users: new Set(), score: interactionScores[code] || 0, coverUrl: photo.photo_url, imageSource: 'Comunidade Journi' };
       const entry = countries[code];
       entry.count += 1;
       entry.users.add(photo.user_id);
       entry.score += 1 + (followedIds.has(photo.user_id) ? 3 : 0) + (wishlistCodes.has(code) ? 4 : 0);
       if (photo.rating) { entry.totalRating += photo.rating; entry.ratingCount += 1; }
     });
+    const seasonalCodes = SEASONAL_COUNTRIES_BY_MONTH[new Date().getMonth()] || [];
+    seasonalCodes.forEach(code => {
+      if (countries[code]) return;
+      countries[code] = {
+        country_code: code,
+        country_name: getCountryNamePtByCode(code, COUNTRIES_STATIC[code]?.name || code),
+        count: 0,
+        totalRating: 0,
+        ratingCount: 0,
+        users: new Set(),
+        score: 0,
+        seasonal: true,
+      };
+    });
     const ranked = Object.values(countries).map(country => ({
       ...country,
       avgRating: country.ratingCount ? (country.totalRating / country.ratingCount).toFixed(1) : null,
-      score: country.score + country.users.size * 2,
+      score: country.score + country.users.size * 2 + getSeasonalBoost(country.country_code),
     })).sort((a, b) => b.score - a.score || b.count - a.count);
-    setPopularCountries(ranked.slice(0, 8));
+    const topCountries = await Promise.all(ranked.slice(0, 8).map(async country => {
+      if (country.coverUrl) return country;
+      const image = await getTourismImage(
+        country.country_code,
+        COUNTRIES_STATIC[country.country_code]?.name || country.country_name
+      );
+      return image ? { ...country, coverUrl: image.url, imageSource: image.source } : country;
+    }));
+    setPopularCountries(topCountries);
 
     const countryRank = new Map(ranked.map((country, index) => [country.country_code, ranked.length - index]));
     const sortedPhotos = [...photos].sort((a, b) => {
@@ -374,7 +420,7 @@ export default function ExploreScreen({ navigation }) {
             {/* DESTINOS POPULARES */}
             {popularCountries.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>DESTINOS POPULARES</Text>
+                <Text style={styles.sectionTitle}>DESTINOS EM ALTA NESTA ÉPOCA</Text>
                 <View style={styles.destGrid}>
                   {popularCountries.map((country, i) => (
                     <TouchableOpacity
@@ -383,11 +429,15 @@ export default function ExploreScreen({ navigation }) {
                       onPress={() => handleCountryPress(country)}
                       activeOpacity={0.85}
                     >
+                      {!!country.coverUrl && (
+                        <Image source={{ uri: country.coverUrl }} style={styles.destinationBackground} resizeMode="cover" />
+                      )}
+                      <View style={styles.destinationShade} />
                       <CountryFlag
                         countryCode={country.country_code}
-                        width={96}
-                        height={64}
-                        borderRadius={10}
+                        width={38}
+                        height={25}
+                        borderRadius={4}
                         style={styles.destinationFlag}
                       />
                       <Text style={styles.destName} numberOfLines={1}>
@@ -395,12 +445,15 @@ export default function ExploreScreen({ navigation }) {
                       </Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={styles.destCount}>
-                          {country.count} {country.count === 1 ? 'foto' : 'fotos'}
+                          {country.count
+                            ? `${country.count} ${country.count === 1 ? 'foto' : 'fotos'}`
+                            : 'Tendência sazonal'}
                         </Text>
                         {country.avgRating && (
                           <Text style={styles.destRating}>★ {country.avgRating}</Text>
                         )}
                       </View>
+                      {!!country.imageSource && <Text style={styles.imageSource}>{country.imageSource}</Text>}
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -699,16 +752,19 @@ const styles = StyleSheet.create({
   destGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   destinationCard: {
     width: '47.5%',
-    minHeight: 164,
+    minHeight: 190,
     backgroundColor: '#1b1f3a',
     borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 14,
+    alignItems: 'flex-start',
+    justifyContent: 'flex-end',
     gap: 8,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
+    overflow: 'hidden',
   },
+  destinationBackground: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
+  destinationShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(7,11,25,0.48)' },
   destinationFlag: {
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
@@ -719,6 +775,7 @@ const styles = StyleSheet.create({
   destName: { color: 'white', fontSize: 13, fontWeight: '700' },
   destCount: { color: 'rgba(255,255,255,0.7)', fontSize: 10 },
   destRating: { color: '#6C2BD9', fontSize: 10, fontWeight: '600' },
+  imageSource: { color: 'rgba(255,255,255,0.58)', fontSize: 8 },
   card: { backgroundColor: 'white', borderRadius: 12, margin: 12, padding: 14 },
   userRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: '#f0f0f0' },
   userAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#6C2BD9', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },

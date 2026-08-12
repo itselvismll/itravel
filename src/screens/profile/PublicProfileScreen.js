@@ -21,6 +21,7 @@ import { getPhotoCommentCounts } from '../../services/photoService';
 import CountryFlag from '../../components/CountryFlag';
 import Avatar from '../../components/Avatar';
 import StarRating from '../../components/StarRating';
+import { getOrCreateConversation } from '../../services/messageService';
 
 const LEVELS = [
   { min: 0, max: 2, name: 'Iniciante', emoji: '🌱' },
@@ -41,6 +42,7 @@ export default function PublicProfileScreen({ route, navigation }) {
   const [photos, setPhotos] = useState([]);
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
   const [isFollowing, setIsFollowing] = useState(false);
+  const [followsMe, setFollowsMe] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
 
   useEffect(() => {
@@ -100,13 +102,22 @@ export default function PublicProfileScreen({ route, navigation }) {
         setFollowCounts(followCountsRes);
 
         if (myId && myId !== userId) {
-          const followingRes = await getFollowing(myId);
+          const [followingRes, followsMeRes] = await Promise.all([
+            getFollowing(myId),
+            supabase
+              .from('followers')
+              .select('follower_id')
+              .eq('follower_id', userId)
+              .eq('following_id', myId)
+              .maybeSingle(),
+          ]);
           if (!active) return;
           setIsFollowing(
             followingRes.success &&
             Array.isArray(followingRes.data) &&
             followingRes.data.includes(userId)
           );
+          setFollowsMe(!!followsMeRes.data);
         }
       } catch {
         if (active) setProfile(null);
@@ -138,6 +149,16 @@ export default function PublicProfileScreen({ route, navigation }) {
       ...current,
       followers: Math.max(0, current.followers + (isFollowing ? -1 : 1)),
     }));
+  };
+
+  const openConversation = async () => {
+    if (!currentUserId || currentUserId === userId) return;
+    const result = await getOrCreateConversation(userId);
+    if (!result.success) {
+      Alert.alert('Erro', result.error || 'Não foi possível abrir a conversa.');
+      return;
+    }
+    navigation.navigate('Conversation', { conversationId: result.data, profile });
   };
 
   const openPhoto = (photo) => {
@@ -225,14 +246,20 @@ export default function PublicProfileScreen({ route, navigation }) {
           </View>
 
           {!isOwnProfile ? (
-            <TouchableOpacity
-              onPress={toggleFollow}
-              style={[styles.followButton, isFollowing && styles.followingButton]}
-            >
-              <Text style={[styles.followText, isFollowing && styles.followingText]}>
-                {isFollowing ? 'Seguindo ✓' : 'Seguir'}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.profileActions}>
+              <TouchableOpacity
+                onPress={toggleFollow}
+                style={[styles.followButton, isFollowing && styles.followingButton]}
+              >
+                <Text style={[styles.followText, isFollowing && styles.followingText]}>
+                  {isFollowing ? 'Seguindo ✓' : followsMe ? 'Seguir de volta' : 'Seguir'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={openConversation} style={styles.messageButton}>
+                <Ionicons name="chatbubble-ellipses-outline" size={18} color="#F7F7F2" />
+                <Text style={styles.messageButtonText}>Mensagem</Text>
+              </TouchableOpacity>
+            </View>
           ) : null}
         </View>
 
@@ -387,6 +414,7 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 19, fontWeight: '700', color: '#FF9A00' },
   statLabel: { fontSize: 10, color: '#9aa0c6', marginTop: 2 },
   statDivider: { width: 1, height: 30, backgroundColor: '#2a2f50' },
+  profileActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   followButton: {
     paddingVertical: 10,
     paddingHorizontal: 44,
@@ -396,6 +424,8 @@ const styles = StyleSheet.create({
   followingButton: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#6C2BD9' },
   followText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   followingText: { color: '#9b65ef' },
+  messageButton: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 18, borderRadius: 24, backgroundColor: '#202744', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
+  messageButtonText: { color: '#F7F7F2', fontWeight: '700', fontSize: 14 },
   section: { width: '100%', maxWidth: 1000, paddingHorizontal: 18, marginBottom: 24 },
   sectionTitle: {
     fontSize: 11,

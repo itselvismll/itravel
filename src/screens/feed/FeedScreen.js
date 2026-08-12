@@ -5,8 +5,9 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { getCurrentUser } from '../../services/supabase';
-import { getFeedPhotos, getFollowingProfiles } from '../../services/followService';
+import { getCurrentUser, supabase } from '../../services/supabase';
+import { getFeedPhotos } from '../../services/followService';
+import { getUnreadMessageCount } from '../../services/messageService';
 import { getComments, addComment } from '../../services/socialService';
 import { deletePhoto } from '../../services/photoService';
 import { getCountryNamePtByCode } from '../../utils/countryUtils';
@@ -27,7 +28,16 @@ const timeAgo = (dateStr) => {
   return `${days}d atrás`;
 };
 
-function FeedHeader({ navigation }) {
+function CountBadge({ count }) {
+  if (!count) return null;
+  return (
+    <View style={styles.countBadge}>
+      <Text style={styles.countBadgeText}>{count > 99 ? '99+' : count}</Text>
+    </View>
+  );
+}
+
+function FeedHeader({ navigation, unreadMessages, unreadNotifications }) {
   return (
     <View style={styles.header}>
       <View style={styles.headerContent}>
@@ -43,6 +53,7 @@ function FeedHeader({ navigation }) {
             accessibilityLabel="Abrir conversas"
           >
             <Ionicons name="chatbubbles-outline" size={22} color="#FFFFFF" />
+            <CountBadge count={unreadMessages} />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.headerActionButton}
@@ -51,6 +62,7 @@ function FeedHeader({ navigation }) {
             accessibilityLabel="Abrir notificações"
           >
             <Ionicons name="notifications-outline" size={22} color="#FFFFFF" />
+            <CountBadge count={unreadNotifications} />
           </TouchableOpacity>
         </View>
       </View>
@@ -61,7 +73,8 @@ function FeedHeader({ navigation }) {
 export default function FeedScreen({ navigation }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [feed, setFeed] = useState([]);
-  const [following, setFollowing] = useState([]);
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [likedIds, setLikedIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
 
@@ -75,6 +88,21 @@ export default function FeedScreen({ navigation }) {
 
   const { refreshTrigger } = useUpload();
 
+  const refreshPendingCounts = useCallback(async userId => {
+    if (!userId) return;
+    const [messagesResult, notificationsResult] = await Promise.all([
+      getUnreadMessageCount(),
+      supabase
+        .from('notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('read', false)
+        .neq('type', 'message'),
+    ]);
+    if (messagesResult.success) setUnreadMessages(messagesResult.data);
+    setUnreadNotifications(notificationsResult.count || 0);
+  }, []);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -82,13 +110,20 @@ export default function FeedScreen({ navigation }) {
       setCurrentUser(user);
       if (!user) return;
 
-      const [feedResult, followingResult] = await Promise.all([
+      const [feedResult, messagesResult, notificationsResult] = await Promise.all([
         getFeedPhotos(user.id),
-        getFollowingProfiles(user.id),
+        getUnreadMessageCount(),
+        supabase
+          .from('notifications')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('read', false)
+          .neq('type', 'message'),
       ]);
 
       if (feedResult.success) setFeed(feedResult.data);
-      if (followingResult.success) setFollowing(followingResult.data);
+      if (messagesResult.success) setUnreadMessages(messagesResult.data);
+      setUnreadNotifications(notificationsResult.count || 0);
     } catch {
       setFeed([]);
     } finally {
@@ -99,6 +134,19 @@ export default function FeedScreen({ navigation }) {
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
   useEffect(() => { if (refreshTrigger > 0) loadData(); }, [refreshTrigger]);
+
+  useEffect(() => {
+    if (!currentUser?.id) return undefined;
+    const channel = supabase
+      .channel(`feed-header-counts-${currentUser.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${currentUser.id}` },
+        () => refreshPendingCounts(currentUser.id)
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUser?.id, refreshPendingCounts]);
 
   const handleLike = (photoId) => {
     setLikedIds(prev => {
@@ -189,7 +237,7 @@ export default function FeedScreen({ navigation }) {
   if (loading) {
     return (
       <View style={styles.container}>
-        <FeedHeader navigation={navigation} />
+        <FeedHeader navigation={navigation} unreadMessages={unreadMessages} unreadNotifications={unreadNotifications} />
         <ActivityIndicator color="#6C2BD9" style={{ marginTop: 40 }} />
       </View>
     );
@@ -199,7 +247,7 @@ export default function FeedScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <FeedHeader navigation={navigation} />
+      <FeedHeader navigation={navigation} unreadMessages={unreadMessages} unreadNotifications={unreadNotifications} />
 
       {isEmpty ? (
         <View style={styles.emptyState}>
@@ -217,29 +265,6 @@ export default function FeedScreen({ navigation }) {
         </View>
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>
-
-          {following.length > 0 && (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.stories}
-            >
-              {following.map((user) => (
-                <View key={user.id} style={styles.storyItem}>
-                  <View style={styles.storyRing}>
-                    <Avatar
-                      profile={user}
-                      fallbackName={user.display_name || user.username}
-                      size={44}
-                    />
-                  </View>
-                  <Text style={styles.storyName} numberOfLines={1}>
-                    {user.username}
-                  </Text>
-                </View>
-              ))}
-            </ScrollView>
-          )}
 
           <View style={styles.body}>
             {feed.map((post) => {
@@ -394,7 +419,18 @@ export default function FeedScreen({ navigation }) {
                 </Text>
               }
               renderItem={({ item }) => (
-                <View style={styles.commentRow}>
+                <TouchableOpacity
+                  style={styles.commentRow}
+                  onPress={() => {
+                    setCommentModal(false);
+                    if (item.profiles?.id) {
+                      navigation.navigate('PublicProfile', {
+                        userId: item.profiles.id,
+                        username: item.profiles.username,
+                      });
+                    }
+                  }}
+                >
                   <View style={styles.commentAvatar}>
                     {item.profiles?.avatar_url ? (
                       <Image
@@ -413,7 +449,7 @@ export default function FeedScreen({ navigation }) {
                     </Text>
                     <Text style={styles.commentContent}>{item.content}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               )}
             />
 
@@ -463,11 +499,9 @@ const styles = StyleSheet.create({
   headerTitle: { color: 'white', fontSize: 22, fontWeight: '700', fontFamily: 'Poppins_700Bold', letterSpacing: -0.3 },
   headerSub: { color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 2 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerActionButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
-  stories: { paddingHorizontal: 12, paddingVertical: 12, gap: 14 },
-  storyItem: { alignItems: 'center', gap: 4 },
-  storyRing: { width: 52, height: 52, borderRadius: 26, borderWidth: 2, borderColor: '#6C2BD9', padding: 2, alignItems: 'center', justifyContent: 'center' },
-  storyName: { fontSize: 10, color: '#888', maxWidth: 52, textAlign: 'center' },
+  headerActionButton: { position: 'relative', width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
+  countBadge: { position: 'absolute', top: -5, right: -5, minWidth: 19, height: 19, borderRadius: 10, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FF4D75', borderWidth: 2, borderColor: '#0D1326' },
+  countBadgeText: { color: '#fff', fontSize: 9, fontWeight: '900' },
   body: {
     width: '100%',
     maxWidth: 760,

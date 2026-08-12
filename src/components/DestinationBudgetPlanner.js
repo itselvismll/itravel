@@ -10,6 +10,7 @@ import {
   getCountryCurrency,
   getDailyExchangeRate,
   parseMoneyInput,
+  sanitizeMoneyInput,
 } from '../services/currencyService';
 
 const formatCurrency = (value, currency) => {
@@ -136,7 +137,7 @@ export default function DestinationBudgetPlanner({
   }, [rows, total]);
 
   const updateAmount = (countryCode, value) => {
-    const formatted = formatMoneyInput(value);
+    const formatted = sanitizeMoneyInput(value);
     setRows(current => current.map(row => row.countryCode === countryCode
       ? {
         ...row,
@@ -154,7 +155,7 @@ export default function DestinationBudgetPlanner({
       return {
         ...row,
         direction: row.direction === LOCAL_TO_BASE ? BASE_TO_LOCAL : LOCAL_TO_BASE,
-        amount: formatMoneyInput(Math.round(output)),
+        amount: formatMoneyInput(output),
         convertedAmount: input,
       };
     }));
@@ -227,7 +228,7 @@ export default function DestinationBudgetPlanner({
                 onChangeText={value => updateAmount(row.countryCode, value)}
                 placeholder="0"
                 placeholderTextColor="#687191"
-                keyboardType="number-pad"
+                keyboardType="decimal-pad"
                 editable={!row.loading && !!row.currency}
               />
             </View>

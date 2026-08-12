@@ -72,30 +72,31 @@ export const getDailyExchangeRate = async (from, to) => {
   if (cached) return { success: true, ...cached, cached: true };
 
   try {
-    const response = await fetch(`https://api.frankfurter.dev/v2/rate/${encodeURIComponent(from)}/${encodeURIComponent(to)}`);
+    // A fonte aberta cobre 165 moedas, inclusive moedas que a Frankfurter não oferece.
+    const response = await fetch(`https://open.er-api.com/v6/latest/${encodeURIComponent(from)}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    const rate = Number(data?.rate);
-    if (!Number.isFinite(rate)) throw new Error('Cotação indisponível');
+    const rate = Number(data?.rates?.[to]);
+    if (data?.result !== 'success' || !Number.isFinite(rate)) throw new Error('Cotação indisponível');
 
-    const result = { rate, date: data.date || todayKey(), source: 'Frankfurter' };
+    const result = {
+      rate,
+      date: data.time_last_update_unix
+        ? new Date(data.time_last_update_unix * 1000).toISOString().slice(0, 10)
+        : todayKey(),
+      source: 'ExchangeRate-API',
+    };
     writeCache({ ...readCache(), [cacheId]: result });
     return { success: true, ...result };
   } catch {
     try {
-      const response = await fetch(`https://open.er-api.com/v6/latest/${encodeURIComponent(from)}`);
+      const response = await fetch(`https://api.frankfurter.dev/v2/rate/${encodeURIComponent(from)}/${encodeURIComponent(to)}`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
-      const rate = Number(data?.rates?.[to]);
-      if (data?.result !== 'success' || !Number.isFinite(rate)) throw new Error('Cotação indisponível');
+      const rate = Number(data?.rate);
+      if (!Number.isFinite(rate)) throw new Error('Cotação indisponível');
 
-      const result = {
-        rate,
-        date: data.time_last_update_unix
-          ? new Date(data.time_last_update_unix * 1000).toISOString().slice(0, 10)
-          : todayKey(),
-        source: 'ExchangeRate-API',
-      };
+      const result = { rate, date: data.date || todayKey(), source: 'Frankfurter' };
       writeCache({ ...readCache(), [cacheId]: result });
       return { success: true, ...result };
     } catch {
@@ -177,10 +178,34 @@ export const getCountryCurrency = async countryCode => {
   }
 };
 
-export const parseMoneyInput = (value) => Number(String(value || '').replace(/\D/g, '')) || 0;
+export const sanitizeMoneyInput = value => {
+  const raw = String(value ?? '').replace(/[^\d,.]/g, '');
+  if (!raw) return '';
+
+  if (raw.includes(',')) {
+    const [integer = '', ...decimalParts] = raw.replace(/\./g, '').split(',');
+    const decimals = decimalParts.join('').slice(0, 2);
+    const separator = raw.endsWith(',') && !decimals ? ',' : decimals ? `,${decimals}` : '';
+    return `${integer.replace(/^0+(?=\d)/, '') || '0'}${separator}`;
+  }
+
+  const dotParts = raw.split('.');
+  if (dotParts.length === 2 && dotParts[1].length <= 2) {
+    return `${dotParts[0].replace(/^0+(?=\d)/, '') || '0'},${dotParts[1]}`;
+  }
+  return raw.replace(/\./g, '').replace(/^0+(?=\d)/, '');
+};
+
+export const parseMoneyInput = value => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const sanitized = sanitizeMoneyInput(value);
+  return Number(sanitized.replace(',', '.')) || 0;
+};
 
 export const formatMoneyInput = (value) => {
   const number = parseMoneyInput(value);
-  return number ? new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(number) : '';
+  return number
+    ? new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(number)
+    : '';
 };
 

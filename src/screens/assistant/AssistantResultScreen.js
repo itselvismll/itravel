@@ -115,11 +115,20 @@ export default function AssistantResultScreen({ route, navigation }) {
       await Linking.openURL(activity.mapsUrl);
       return;
     }
-    if (activity.latitude && activity.longitude) {
-      await Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${activity.latitude},${activity.longitude}`);
+    const exactQuery = [activity.title, activity.location].filter(Boolean).join(', ');
+    if (activity.placeId) {
+      await Linking.openURL(
+        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(exactQuery)}&query_place_id=${encodeURIComponent(activity.placeId)}`
+      );
       return;
     }
-    const query = activity.mapQuery || `${activity.location}, ${request.destination}`;
+    if (activity.latitude && activity.longitude) {
+      await Linking.openURL(
+        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${activity.latitude},${activity.longitude}`)}`
+      );
+      return;
+    }
+    const query = exactQuery || activity.mapQuery || `${activity.location}, ${request.destination}`;
     await Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`);
   };
 
@@ -242,9 +251,19 @@ export default function AssistantResultScreen({ route, navigation }) {
                 ? '✓ Compras pessoais possuem uma verba própria na estimativa.'
                 : 'Compras pessoais não estão incluídas nesta estimativa.'}
             </Text>
-            <TouchableOpacity onPress={() => setActiveTab('budget')}>
-              <Text style={styles.seeBudgetLink}>Ver detalhamento completo</Text>
-            </TouchableOpacity>
+            <View style={styles.summaryBudgetList}>
+              {(plan.budget?.items || []).map(item => (
+                <View key={item.category} style={styles.summaryBudgetRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.summaryBudgetCategory}>{item.category}</Text>
+                    {!!item.note && <Text style={styles.summaryBudgetNote}>{item.note}</Text>}
+                  </View>
+                  <Text style={styles.summaryBudgetAmount}>
+                    {formatMoney(item.amount, plan.budget?.currency || request.currency)}
+                  </Text>
+                </View>
+              ))}
+            </View>
           </View>
           {!!plan.weatherNote && <View style={styles.weatherBox}><Ionicons name="partly-sunny-outline" size={18} color="#35D3C8" /><Text style={styles.weatherText}>{plan.weatherNote}</Text></View>}
         </View>
@@ -526,7 +545,11 @@ const styles = StyleSheet.create({
   budgetScopeTitle: { color: '#E8E9F3', fontSize: 12, fontWeight: '800' },
   budgetScopeText: { color: '#9BA2BF', fontSize: 10, lineHeight: 16, marginTop: 7 },
   shoppingStatus: { color: '#9DE8E1', fontSize: 10, lineHeight: 16, marginTop: 6, fontWeight: '700' },
-  seeBudgetLink: { color: '#C4B5FD', fontSize: 10, fontWeight: '800', marginTop: 8 },
+  summaryBudgetList: { gap: 7, marginTop: 11, paddingTop: 9, borderTopWidth: 1, borderTopColor: 'rgba(167,139,250,0.14)' },
+  summaryBudgetRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  summaryBudgetCategory: { color: '#E8E2FF', fontSize: 10, fontWeight: '800' },
+  summaryBudgetNote: { color: '#858DAD', fontSize: 8, lineHeight: 12, marginTop: 1 },
+  summaryBudgetAmount: { color: '#9DE8E1', fontSize: 10, fontWeight: '900', fontVariant: ['tabular-nums'] },
   weatherBox: { flexDirection: 'row', gap: 9, backgroundColor: 'rgba(0,209,193,0.08)', borderRadius: 11, padding: 11 },
   weatherText: { color: '#A8DCD8', flex: 1, fontSize: 11, lineHeight: 17 },
   listGap: { gap: 13 },

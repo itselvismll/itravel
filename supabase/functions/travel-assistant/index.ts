@@ -94,28 +94,38 @@ const getLiveContext = async (
   let placesProvider = ''
   if (googlePlacesKey && place?.latitude && place?.longitude) {
     placesSourceUrl = 'https://places.googleapis.com/v1/places:searchText'
-    const placesData = await fetchJson(placesSourceUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': googlePlacesKey,
-        'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.regularOpeningHours,places.googleMapsUri,places.websiteUri',
-      },
-      body: JSON.stringify({
-        textQuery: `atrações ${interests.join(' ')} em ${destination}`,
-        languageCode: 'pt-BR',
-        maxResultCount: 15,
-        locationBias: {
-          circle: {
-            center: { latitude: place.latitude, longitude: place.longitude },
-            radius: 18000,
-          },
+    const searchPlaces = async (textQuery: string, category: string) => {
+      const placesData = await fetchJson(placesSourceUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': googlePlacesKey,
+          'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.regularOpeningHours,places.googleMapsUri,places.websiteUri',
         },
-      }),
-    })
-    realPlaces = (placesData?.places || []).map((item: any) => ({
+        body: JSON.stringify({
+          textQuery,
+          languageCode: 'pt-BR',
+          maxResultCount: 6,
+          locationBias: {
+            circle: {
+              center: { latitude: place.latitude, longitude: place.longitude },
+              radius: 18000,
+            },
+          },
+        }),
+      })
+      return (placesData?.places || []).map((item: any) => ({ ...item, category }))
+    }
+    const placeGroups = await Promise.all([
+      searchPlaces(`principais atrações ${interests.join(' ')} em ${destination}`, 'passeio'),
+      searchPlaces(`restaurantes bem avaliados em ${destination}`, 'restaurante'),
+      searchPlaces(`hotéis bem avaliados em ${destination}`, 'hotel'),
+    ])
+    realPlaces = placeGroups.flat().map((item: any) => ({
+      placeId: item.id,
       name: item.displayName?.text,
       address: item.formattedAddress,
+      category: item.category,
       latitude: item.location?.latitude,
       longitude: item.location?.longitude,
       rating: item.rating || null,
@@ -129,11 +139,14 @@ const getLiveContext = async (
   }
 
   if (!realPlaces.length && place?.latitude && place?.longitude) {
-    const overpassQuery = `[out:json][timeout:12];(nwr(around:15000,${place.latitude},${place.longitude})[tourism~"attraction|museum|gallery|viewpoint|zoo|theme_park"][name];);out center tags 20;`
+    const overpassQuery = `[out:json][timeout:12];(nwr(around:15000,${place.latitude},${place.longitude})[tourism~"attraction|museum|gallery|viewpoint|zoo|theme_park|hotel"][name];nwr(around:15000,${place.latitude},${place.longitude})[amenity~"restaurant|cafe"][name];);out center tags 30;`
     placesSourceUrl = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery)}`
     const osmData = await fetchJson(placesSourceUrl, { headers: { 'Accept-Language': 'pt-BR' } })
     realPlaces = (osmData?.elements || []).slice(0, 20).map((item: any) => ({
       name: item.tags?.name,
+      category: item.tags?.amenity === 'restaurant' || item.tags?.amenity === 'cafe'
+        ? 'restaurante'
+        : item.tags?.tourism === 'hotel' ? 'hotel' : 'passeio',
       address: [item.tags?.['addr:street'], item.tags?.['addr:housenumber']].filter(Boolean).join(', '),
       latitude: item.lat || item.center?.lat,
       longitude: item.lon || item.center?.lon,
@@ -202,9 +215,11 @@ const planSchema = {
           day: { type: 'INTEGER' },
           date: { type: 'STRING' },
           theme: { type: 'STRING' },
-          activities: {
-            type: 'ARRAY',
-            items: {
+            activities: {
+              type: 'ARRAY',
+              minItems: 3,
+              maxItems: 3,
+              items: {
               type: 'OBJECT',
               required: ['period', 'title', 'description', 'location', 'duration', 'estimatedCost', 'mapQuery', 'indoor', 'purchaseNote'],
               properties: {
@@ -223,6 +238,7 @@ const planSchema = {
                 openingHours: { type: 'ARRAY', items: { type: 'STRING' } },
                 mapsUrl: { type: 'STRING' },
                 officialUrl: { type: 'STRING' },
+                placeId: { type: 'STRING' },
                 verificationSource: { type: 'STRING' },
                 purchaseNote: { type: 'STRING' },
               },
@@ -383,6 +399,7 @@ Operação: ${operationInstruction}
 
 Regras:
 - Crie exatamente ${duration} dias, respeitando datas, ritmo, interesses, alimentação, acessibilidade e todos os países selecionados em destinations.
+- Crie exatamente 3 atividades objetivas por dia (manhã, tarde e noite). Mantenha title, description e purchaseNote concisos para que roteiros longos não sejam cortados.
 - O padrão de orçamento é ${safeRequest.budgetLevel}: economy significa econômico/barato, balanced significa médio e premium significa caro/confortável.
 - Distribua manhã, tarde e noite sem deslocamentos impossíveis; agrupe locais próximos.
 - Todos os custos devem ser numéricos em ${currency}, para ${travelers} viajante(s), e o total deve respeitar o orçamento quando ele for maior que zero.
@@ -393,6 +410,7 @@ Regras:
 - Atividades realmente gratuitas devem ter estimatedCost igual a 0. Não use textos como "grátis" no campo numérico.
 - mapQuery deve ser uma busca precisa no formato "local, cidade, país".
 - Priorize os locais de realPlaces. Ao usar um deles, copie nome, latitude, longitude, avaliação, quantidade de avaliações, horários e mapsUrl sem alterar os dados; copie website para officialUrl e provider para verificationSource.
+- Combine a categoria: refeições usam realPlaces.category restaurante, hospedagem usa hotel e passeios usam passeio. Copie também placeId sem alterar.
 - officialUrl só pode receber uma URL presente nos dados externos. Nunca invente links de ingresso, afiliados ou sites de compra.
 - Em purchaseNote, quando houver officialUrl, oriente a conferir/comprar no site oficial. Sem officialUrl, oriente a consultar ingressos e canais oficiais na ficha do local no Maps. Para atividade gratuita, informe que o valor é 0 e que as regras devem ser confirmadas.
 - Se uma fonte não trouxer avaliação ou horário, deixe o campo ausente; nunca fabrique reviews ou horários.
@@ -414,25 +432,39 @@ Regras:
       },
     }
 
-    const geminiResponse = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            maxOutputTokens: 65535,
-            responseMimeType: 'application/json',
-            responseSchema,
-          },
-        }),
-      },
-    )
+    const configuredModel = Deno.env.get('GEMINI_MODEL') || 'gemini-3.6-flash'
+    const models = [...new Set([configuredModel, 'gemini-3.5-flash-lite'])]
+    let geminiResponse: Response | null = null
+    let geminiData: any = null
 
-    const geminiData = await geminiResponse.json().catch(() => null)
-    if (!geminiResponse.ok || !geminiData) {
-      return jsonResponse({ success: false, error: 'A IA não conseguiu montar o roteiro agora' }, 502)
+    for (const model of models) {
+      geminiResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              maxOutputTokens: 65535,
+              responseMimeType: 'application/json',
+              responseSchema,
+            },
+          }),
+        },
+      )
+      geminiData = await geminiResponse.json().catch(() => null)
+      if (geminiResponse.ok && geminiData) break
+    }
+
+    if (!geminiResponse?.ok || !geminiData) {
+      const providerStatus = geminiData?.error?.status
+      const responseStatus = geminiResponse?.status || 502
+      const error = responseStatus === 429
+        ? 'O limite temporário da IA foi atingido. Aguarde um minuto e tente novamente.'
+        : 'A IA não conseguiu montar o roteiro agora. Tente novamente em instantes.'
+      console.error('travel-assistant provider failure', { status: responseStatus, providerStatus })
+      return jsonResponse({ success: false, error }, responseStatus === 429 ? 429 : 502)
     }
 
     const responseText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text

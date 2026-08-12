@@ -25,6 +25,7 @@ import {
 import PhotoGallery from '../../components/PhotoGallery';
 import PhotoUploader from '../../components/PhotoUploader';
 import CountryFlag from '../../components/CountryFlag';
+import CountryRequirementsCard from '../../components/CountryRequirementsCard';
 import { useUpload } from '../../context/UploadContext';
 import { getCoverPhoto, getTopPlacesByCountry } from '../../services/photoService';
 import { getWorldGeoData, getUkNationsGeoData } from '../../services/geoService';
@@ -766,6 +767,10 @@ export default function MapScreen({ navigation }) {
 
                 {/* Scroll com fundo cinza */}
                 <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+
+                  <View style={{ marginBottom: 12 }}>
+                    <CountryRequirementsCard countryCode={selectedCountry?.code} light />
+                  </View>
 
                   {/* Accordion "Sobre o país" */}
                   <TouchableOpacity
