@@ -49,6 +49,9 @@ export const API_CONFIG = {
   SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
   GOOGLE_MAPS_API_KEY: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '',
   WEB_APP_URL: process.env.EXPO_PUBLIC_WEB_APP_URL || 'https://journi.expo.app',
+  // Tiles do mapa (Stadia Maps). Em localhost e em domínios autorizados no painel
+  // da Stadia a key é opcional; fora deles os tiles retornam 401 sem ela.
+  STADIA_API_KEY: process.env.EXPO_PUBLIC_STADIA_API_KEY || '',
 };
 
 export const LIMITS = {

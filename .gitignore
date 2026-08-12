@@ -48,3 +48,6 @@ supabase/.temp/
 
 # Playwright MCP logs
 .playwright-mcp/
+
+# Worker do maplibre-gl copiado do node_modules pelo postinstall
+public/maplibre/

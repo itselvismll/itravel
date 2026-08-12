@@ -35,7 +35,7 @@ test('travel planner is personalized, structured, cancellable, and editable', ()
   const assistant = read('src/services/assistantService.js');
   const planner = read('src/screens/assistant/TripPlannerScreen.js');
   const result = read('src/screens/assistant/AssistantResultScreen.js');
-  const map = read('src/screens/map/MapScreen.js');
+  const map = read('src/screens/map/GlobeScreen.js');
   assert.match(assistant, /refreshSession/);
   assert.match(assistant, /AbortController/);
   assert.match(assistant, /regeneratePlanActivity/);
@@ -153,29 +153,39 @@ test('photo uploads always synchronize their country as visited', () => {
   assert.doesNotMatch(uploader, /lat:\s*0/);
 });
 
-test('map refreshes visits after uploads and centers the chart label', () => {
-  const map = read('src/screens/map/MapScreen.js');
-  assert.match(map, /normalizeToAlpha2/);
-  assert.match(map, /circleChartLabel/);
-  assert.match(map, /justifyContent: 'center'/);
+test('map refreshes visits after uploads and counts them from normalized codes', () => {
+  // Era a MapScreen quem normalizava os códigos do banco e desenhava o anel de
+  // porcentagem. Com o globo no lugar dela, a normalização virou toAlpha3Set e a
+  // estatística virou a barra de progresso — os dados e a conta são os mesmos.
+  const status = read('src/components/map/countryStatus.js');
+  const globe = read('src/screens/map/GlobeScreen.js');
+  assert.match(status, /getAlpha3/);
+  assert.match(status, /toAlpha3Set/);
+  assert.match(globe, /visitedCount \/ TOTAL_COUNTRIES/);
+  assert.match(globe, /progressFill/);
 });
 
-test('web map is constrained to one world without blank polar areas', () => {
-  const map = read('src/screens/map/MapScreen.js');
-  assert.match(map, /WEB_MERCATOR_LATITUDE_LIMIT/);
-  assert.match(map, /maxBounds=\{WORLD_BOUNDS\}/);
-  assert.match(map, /maxBoundsViscosity=\{1\}/);
-  assert.match(map, /noWrap/);
-  assert.match(map, /getMinimumWorldZoom/);
+test('the globe keeps the whole planet in frame instead of a bounded flat world', () => {
+  // O invariante do Leaflet (maxBounds/noWrap contra áreas polares em branco) não
+  // tem equivalente aqui: numa esfera não existe borda por onde vazar. O que
+  // precisa ficar preso é a projeção globe e o limite de afastamento da câmera.
+  const config = read('src/components/map/globeConfig.js');
+  const globeMap = read('src/components/map/GlobeMap.web.js');
+  assert.match(globeMap, /setProjection\(\{ type: 'globe' \}\)/);
+  assert.match(config, /minZoom: 0/);
+  assert.match(globeMap, /minZoom: GLOBE_INITIAL_VIEW\.minZoom/);
 });
 
 test('map resolves sovereign countries that arrive without ISO codes', () => {
   const geoCountryUtils = read('src/utils/geo-country-utils.js');
-  const map = read('src/screens/map/MapScreen.js');
+  const fill = read('src/components/map/countryFill.js');
+  const anchors = read('src/components/map/countryCentroids.js');
   assert.match(geoCountryUtils, /France: 'FRA'/);
   assert.match(geoCountryUtils, /Norway: 'NOR'/);
-  assert.match(map, /getGeoCountryAlpha3\(feature\)/);
-  assert.doesNotMatch(map, /countryCode === '-99'/);
+  // Território pintado e badge resolvem o código pela mesma função, senão os dois
+  // discordam sobre quais features são países.
+  assert.match(fill, /getGeoCountryAlpha3\(feature\)/);
+  assert.match(anchors, /getGeoCountryAlpha3\(feature\)/);
 });
 
 test('follow events create notifications and connection lists are navigable', () => {
@@ -457,7 +467,7 @@ test('message, seasonal explore, requirements, and decimal budget fixes stay int
   const currency = read('src/services/currencyService.js');
   const budget = read('src/components/DestinationBudgetPlanner.js');
   const explore = read('src/screens/explore/ExploreScreen.js');
-  const map = read('src/screens/map/MapScreen.js');
+  const countryModal = read('src/components/map/CountryDetailModal.js');
   const requirements = read('src/services/travelRequirementsService.js');
   const assistant = read('supabase/functions/travel-assistant/index.ts');
 
@@ -471,7 +481,7 @@ test('message, seasonal explore, requirements, and decimal budget fixes stay int
   assert.match(explore, /DESTINOS EM ALTA NESTA ÉPOCA/);
   assert.match(explore, /getTourismImage/);
   assert.doesNotMatch(explore, /CountryRequirementsCard/);
-  assert.match(map, /CountryRequirementsCard/);
+  assert.match(countryModal, /CountryRequirementsCard/);
   assert.match(requirements, /MAY_REQUIRE_YELLOW_FEVER_CIVP/);
   assert.match(requirements, /ETIAS ainda não está em operação/);
   assert.match(assistant, /maxItems: 3/);
@@ -495,4 +505,118 @@ test('result details, exact maps, realtime chat, passport share, and follow-back
   assert.match(realtime, /supabase_realtime add table public\.messages/);
   assert.match(passport, /<ShareCard/);
   assert.match(profile, /Seguir de volta/);
+});
+
+test('country modal lives in its own component, with the loading logic inside it', () => {
+  // O modal era JSX inline dentro da MapScreen (Leaflet), que saiu do projeto na
+  // promoção do globo. Ele continua num componente próprio: é o que permitiu as
+  // duas telas coexistirem durante a migração, e o que deixa a próxima tela que
+  // precisar do modal (passaporte, explorar) usá-lo sem copiar nada.
+  const modal = read('src/components/map/CountryDetailModal.js');
+  const globe = stripComments(read('src/screens/map/GlobeScreen.js'));
+
+  assert.match(globe, /<CountryDetailModal/);
+  assert.match(globe, /onVisitedChange=/);
+  assert.match(globe, /onWishlistChange=/);
+
+  // A tela não pode voltar a montar modal de país por conta própria.
+  assert.doesNotMatch(globe, /<Modal\b/);
+
+  // A lógica que estava na tela foi junto, inteira: detalhes, lugares, vizinhos,
+  // marcação de visitado e wishlist, galeria e upload.
+  for (const symbol of [
+    'getCountryInfo',
+    'getTopPlacesByCountry',
+    'getBorderCountries',
+    'getCountryCulturalData',
+    'markCountryAsVisited',
+    'unmarkCountryAsVisited',
+    'addToWishlist',
+    'removeFromWishlist',
+    'isInWishlist',
+    'PhotoGallery',
+    'PhotoUploader',
+  ]) {
+    assert.match(modal, new RegExp(symbol), `${symbol} não sobreviveu à extração`);
+  }
+});
+
+test('globe reuses the map controls instead of reimplementing them', () => {
+  const globe = stripComments(read('src/screens/map/GlobeScreen.js'));
+
+  // Barra de IA: mesmo destino de navegação da MapScreen.
+  assert.match(globe, /navigation\.navigate\('TripPlanner'\)/);
+
+  // Lupa: mesma busca e mesmas constantes compartilhadas, não uma cópia local.
+  assert.match(globe, /searchCountries/);
+  assert.match(globe, /COUNTRY_SEARCH_DEBOUNCE_MS/);
+  assert.match(globe, /MIN_COUNTRY_QUERY_LENGTH/);
+
+  // Selecionar na busca move a câmera do globo e abre o país.
+  assert.match(globe, /flyTo/);
+
+  // Estatística: mesma conta e mesmo denominador da MapScreen (195 soberanos + 4
+  // nações do Reino Unido). Números diferentes fariam as duas telas discordarem.
+  assert.match(globe, /TOTAL_COUNTRIES = 199/);
+  assert.match(globe, /visitedCount \/ TOTAL_COUNTRIES/);
+
+  // Clique no território e no badge levam ao mesmo lugar.
+  assert.match(globe, /onSelectCountry=\{handleSelectByCode\}/);
+  assert.match(globe, /onSelect=\{openCountry\}/);
+});
+
+test('the globe does no layout work while the camera is moving', () => {
+  // As travadas do arrasto vinham daqui: ler offsetWidth força o browser a
+  // recalcular o layout na hora, e isso acontecia ~240 vezes por quadro, logo
+  // depois de os 240 markers terem se mexido e invalidado tudo. A medição fica
+  // pendente durante o gesto e é cobrada no fim.
+  const markers = stripComments(read('src/components/map/CountryBadgeMarkers.web.js'));
+
+  assert.match(markers, /isMoving\?\.\(\)/);
+  assert.match(markers, /pendingMeasureRef/);
+  // O flush tem de estar preso a eventos de FIM de movimento.
+  assert.match(markers, /\['moveend', 'zoomend', 'idle'\]/);
+
+  // Escrita em style dentro do laço por quadro só quando o valor muda.
+  assert.match(markers, /if \(entry\.pointerEvents !== pointerEvents\)/);
+  assert.match(markers, /if \(entry\.zIndex !== zIndex\)/);
+
+  // O recálculo continua limitado a um por quadro.
+  assert.match(markers, /requestAnimationFrame/);
+
+  // Os badges se movem por transform a cada quadro; sem o aviso, o browser os
+  // mantém na camada de pintura comum.
+  assert.match(markers, /willChange = 'transform'/);
+});
+
+test('the globe fades in from a branded overlay instead of flashing', () => {
+  const globeMap = stripComments(read('src/components/map/GlobeMap.web.js'));
+  const config = stripComments(read('src/components/map/globeConfig.js'));
+
+  // 'load' e não 'style.load': o segundo dispara com a esfera ainda sem textura.
+  assert.match(globeMap, /map\.on\('load', handleLoad\)/);
+  assert.match(globeMap, /opacity: ready \? 1 : 0/);
+  assert.match(globeMap, /transition: `opacity \$\{FADE_MS\}ms/);
+  assert.match(globeMap, /GlobeLoadingOverlay/);
+  // Identidade visual: fundo Journi e o mesmo céu do mapa, para a transição ser
+  // só a esfera surgindo.
+  assert.match(globeMap, /#0D1326/);
+  assert.match(globeMap, /STARFIELD_BACKGROUND_STYLE/);
+  // Erro de tile não pode prender o overlay para sempre.
+  assert.match(globeMap, /setReady\(true\)/);
+
+  // Handshake com a Stadia adiantado para o import do módulo.
+  assert.match(config, /rel = 'preconnect'/);
+  assert.match(globeMap, /preconnectToStadia\(\)/);
+});
+
+test('client source sticks to APIs that exist on react-native-web', () => {
+  // `Image.resolveAssetSource` só existe no react-native nativo. No web ele é
+  // undefined, e a chamada estoura no CARREGAMENTO do módulo — tela branca, sem
+  // erro de compilação para avisar antes. Assets se carregam pelo componente
+  // <Image source={require(...)} />, que sabe lidar com cada plataforma.
+  const files = ['src/components/map/GlobeMap.web.js', 'src/screens/map/GlobeScreen.js'];
+  for (const file of files) {
+    assert.doesNotMatch(stripComments(read(file)), /resolveAssetSource/, `${file} usa API nativa`);
+  }
 });

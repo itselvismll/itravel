@@ -10,7 +10,7 @@ export default function CountryRequirementsCard({ countryCode, light = false }) 
     : { card: '#171D36', title: '#F7F7F2', text: '#A5ACC8', border: 'rgba(255,255,255,0.08)' };
 
   return (
-    <View style={[styles.card, { backgroundColor: palette.card, borderColor: palette.border }]}> 
+    <View style={[styles.card, { backgroundColor: palette.card, borderColor: palette.border }]}>
       <View style={styles.heading}>
         <Ionicons name="shield-checkmark-outline" size={19} color="#8B5CF6" />
         <Text style={[styles.headingText, { color: palette.title }]}>Entrada e saúde — {requirements.countryName}</Text>
