@@ -9,7 +9,7 @@ import { getCurrentUser, supabase } from '../../services/supabase';
 import { getFeedPhotos } from '../../services/followService';
 import { getUnreadMessageCount } from '../../services/messageService';
 import { getComments, addComment } from '../../services/socialService';
-import { deletePhoto } from '../../services/photoService';
+import { addFavorite, deletePhoto, removeFavorite } from '../../services/photoService';
 import { getCountryNamePtByCode } from '../../utils/countryUtils';
 import { useUpload } from '../../context/UploadContext';
 import StarRating from '../../components/StarRating';
@@ -17,6 +17,7 @@ import Avatar from '../../components/Avatar';
 import CountryFlag from '../../components/CountryFlag';
 import ShareToJourniModal from '../../components/ShareToJourniModal';
 import { confirm, notify } from '../../utils/dialogs';
+import { SOCIAL_NOTIFICATION_TYPES, isSocialNotification } from '../../utils/socialNotifications';
 
 const timeAgo = (dateStr) => {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -97,7 +98,7 @@ export default function FeedScreen({ navigation }) {
         .select('id', { count: 'exact', head: true })
         .eq('user_id', userId)
         .eq('read', false)
-        .neq('type', 'message'),
+        .in('type', SOCIAL_NOTIFICATION_TYPES),
     ]);
     if (messagesResult.success) setUnreadMessages(messagesResult.data);
     setUnreadNotifications(notificationsResult.count || 0);
@@ -118,12 +119,18 @@ export default function FeedScreen({ navigation }) {
           .select('id', { count: 'exact', head: true })
           .eq('user_id', user.id)
           .eq('read', false)
-          .neq('type', 'message'),
+          .in('type', SOCIAL_NOTIFICATION_TYPES),
       ]);
 
       if (feedResult.success) setFeed(feedResult.data);
       if (messagesResult.success) setUnreadMessages(messagesResult.data);
       setUnreadNotifications(notificationsResult.count || 0);
+
+      const { data: favorites } = await supabase
+        .from('favorite_photos')
+        .select('photo_id')
+        .eq('user_id', user.id);
+      setLikedIds(new Set((favorites || []).map(item => item.photo_id)));
     } catch {
       setFeed([]);
     } finally {
@@ -142,19 +149,38 @@ export default function FeedScreen({ navigation }) {
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${currentUser.id}` },
-        () => refreshPendingCounts(currentUser.id)
+        payload => {
+          if (isSocialNotification(payload.new)) refreshPendingCounts(currentUser.id);
+        }
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [currentUser?.id, refreshPendingCounts]);
 
-  const handleLike = (photoId) => {
-    setLikedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(photoId)) next.delete(photoId);
+  const handleLike = async photoId => {
+    if (!currentUser?.id) return;
+    const wasLiked = likedIds.has(photoId);
+
+    setLikedIds(previous => {
+      const next = new Set(previous);
+      if (wasLiked) next.delete(photoId);
       else next.add(photoId);
       return next;
     });
+
+    const result = wasLiked
+      ? await removeFavorite(currentUser.id, photoId)
+      : await addFavorite(currentUser.id, photoId);
+
+    if (!result.success) {
+      setLikedIds(previous => {
+        const next = new Set(previous);
+        if (wasLiked) next.add(photoId);
+        else next.delete(photoId);
+        return next;
+      });
+      notify('Não foi possível atualizar a curtida', result.error || 'Tente novamente.');
+    }
   };
 
   const openComments = async (photo) => {

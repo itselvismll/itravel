@@ -5,9 +5,20 @@ const CACHE_KEY = 'journi.dailyExchangeRates';
 const COUNTRY_CURRENCY_CACHE_KEY = 'journi.countryCurrencies';
 let memoryCache = {};
 let countryCurrencyMemoryCache = {};
+let countryCurrenciesRequest = null;
+
+// Territórios cuja moeda local tem paridade legal 1:1 com outra moeda usam a
+// cotação da moeda de reserva quando os provedores não publicam uma série própria.
+const RATE_PROXY_CODES = Object.freeze({ CKD: 'NZD' });
+
+// O catálogo internacional ainda lista o antigo conjunto multimoeda do Zimbábue.
+// A moeda nacional vigente é o Zimbabwe Gold (ZiG), código ZWG.
+const COUNTRY_CURRENCY_OVERRIDES = Object.freeze({
+  ZWE: { code: 'ZWG', name: 'Zimbabwe Gold', symbol: 'ZiG' },
+});
 
 // Fonte local usada antes da rede. Além de deixar o formulário instantâneo,
-// evita que uma indisponibilidade do Rest Countries bloqueie o orçamento.
+// evita que uma indisponibilidade do catálogo remoto bloqueie o orçamento.
 const CURRENCY_NAME_TO_CODE = {
   'Argentine peso': 'ARS',
   'Australian dollar': 'AUD',
@@ -65,42 +76,82 @@ const writeCache = (cache) => {
 
 export const getDailyExchangeRate = async (from, to) => {
   if (!from || !to) return { success: false, error: 'Selecione as duas moedas.' };
-  if (from === to) return { success: true, rate: 1, date: todayKey(), source: 'Conversão direta' };
+  const sourceCurrency = String(from).toUpperCase();
+  const targetCurrency = String(to).toUpperCase();
+  if (sourceCurrency === targetCurrency) {
+    return { success: true, rate: 1, date: todayKey(), source: 'Conversão direta' };
+  }
 
-  const cacheId = `${todayKey()}:${from}:${to}`;
+  const cacheId = `${todayKey()}:${sourceCurrency}:${targetCurrency}`;
   const cached = readCache()[cacheId];
   if (cached) return { success: true, ...cached, cached: true };
 
+  const rateSourceCurrency = RATE_PROXY_CODES[sourceCurrency] || sourceCurrency;
+  const rateTargetCurrency = RATE_PROXY_CODES[targetCurrency] || targetCurrency;
+  const proxyDescription = [sourceCurrency, targetCurrency]
+    .filter(code => RATE_PROXY_CODES[code])
+    .map(code => `${code}/${RATE_PROXY_CODES[code]}`)
+    .join(', ');
+  const base = rateSourceCurrency.toLowerCase();
+  const quote = rateTargetCurrency.toLowerCase();
+
   try {
-    // A fonte aberta cobre 165 moedas, inclusive moedas que a Frankfurter não oferece.
-    const response = await fetch(`https://open.er-api.com/v6/latest/${encodeURIComponent(from)}`);
+    // Fonte primária sem chave: mais de 200 códigos, incluindo todas as moedas
+    // ISO retornadas pelo catálogo de países. Cripto/metais não entram no seletor.
+    const response = await fetch(
+      `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/${base}.min.json`
+    );
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    const rate = Number(data?.rates?.[to]);
-    if (data?.result !== 'success' || !Number.isFinite(rate)) throw new Error('Cotação indisponível');
+    const rate = Number(data?.[base]?.[quote]);
+    if (!Number.isFinite(rate)) throw new Error('Cotação indisponível');
 
     const result = {
       rate,
-      date: data.time_last_update_unix
-        ? new Date(data.time_last_update_unix * 1000).toISOString().slice(0, 10)
-        : todayKey(),
-      source: 'ExchangeRate-API',
+      date: data.date || todayKey(),
+      source: proxyDescription ? `Currency API (paridade ${proxyDescription})` : 'Currency API',
     };
     writeCache({ ...readCache(), [cacheId]: result });
     return { success: true, ...result };
   } catch {
     try {
-      const response = await fetch(`https://api.frankfurter.dev/v2/rate/${encodeURIComponent(from)}/${encodeURIComponent(to)}`);
+      // Segundo provedor possui ampla cobertura de moedas fiduciárias e evita
+      // indisponibilidade quando o CDN principal estiver fora do ar.
+      const response = await fetch(`https://open.er-api.com/v6/latest/${encodeURIComponent(rateSourceCurrency)}`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
-      const rate = Number(data?.rate);
-      if (!Number.isFinite(rate)) throw new Error('Cotação indisponível');
+      const rate = Number(data?.rates?.[rateTargetCurrency]);
+      if (data?.result !== 'success' || !Number.isFinite(rate)) throw new Error('Cotação indisponível');
 
-      const result = { rate, date: data.date || todayKey(), source: 'Frankfurter' };
+      const result = {
+        rate,
+        date: data.time_last_update_unix
+          ? new Date(data.time_last_update_unix * 1000).toISOString().slice(0, 10)
+          : todayKey(),
+        source: proxyDescription ? `ExchangeRate-API (paridade ${proxyDescription})` : 'ExchangeRate-API',
+      };
       writeCache({ ...readCache(), [cacheId]: result });
       return { success: true, ...result };
     } catch {
-      return { success: false, error: 'Cotação indisponível agora. O roteiro pode ser criado sem conversão.' };
+      try {
+        const response = await fetch(
+          `https://api.frankfurter.dev/v2/rate/${encodeURIComponent(rateSourceCurrency)}/${encodeURIComponent(rateTargetCurrency)}`
+        );
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const rate = Number(data?.rate);
+        if (!Number.isFinite(rate)) throw new Error('Cotação indisponível');
+
+        const result = {
+          rate,
+          date: data.date || todayKey(),
+          source: proxyDescription ? `Frankfurter (paridade ${proxyDescription})` : 'Frankfurter',
+        };
+        writeCache({ ...readCache(), [cacheId]: result });
+        return { success: true, ...result };
+      } catch {
+        return { success: false, error: 'Cotação indisponível agora. O roteiro pode ser criado sem conversão.' };
+      }
     }
   }
 };
@@ -137,9 +188,50 @@ const writeCountryCurrencyCache = cache => {
   }
 };
 
+const currencyFromCountry = country => {
+  const [code, details] = Object.entries(country?.currencies || {})[0] || [];
+  if (!code) return null;
+  return {
+    code: code.toUpperCase(),
+    name: details?.name || code.toUpperCase(),
+    symbol: details?.symbol || code.toUpperCase(),
+  };
+};
+
+const loadAllCountryCurrencies = async () => {
+  if (countryCurrenciesRequest) return countryCurrenciesRequest;
+
+  countryCurrenciesRequest = (async () => {
+    const response = await fetch(
+      'https://cdn.jsdelivr.net/npm/world-countries@latest/dist/countries.json'
+    );
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const countries = await response.json();
+    const nextCache = { ...readCountryCurrencyCache() };
+
+    (countries || []).forEach(country => {
+      const currency = currencyFromCountry(country);
+      if (!currency) return;
+      [country.cca2, country.cca3].filter(Boolean).forEach(code => {
+        nextCache[String(code).toUpperCase()] = currency;
+      });
+    });
+
+    writeCountryCurrencyCache(nextCache);
+    return nextCache;
+  })().finally(() => {
+    countryCurrenciesRequest = null;
+  });
+
+  return countryCurrenciesRequest;
+};
+
 export const getCountryCurrency = async countryCode => {
   const normalizedCode = String(countryCode || '').toUpperCase();
   if (!normalizedCode) return { success: false, error: 'País inválido.' };
+
+  const override = COUNTRY_CURRENCY_OVERRIDES[normalizedCode];
+  if (override) return { success: true, ...override, source: 'Base atualizada' };
 
   const cached = readCountryCurrencyCache()[normalizedCode];
   if (cached) return { success: true, ...cached, cached: true };
@@ -157,22 +249,10 @@ export const getCountryCurrency = async countryCode => {
   }
 
   try {
-    const response = await fetch(
-      `https://restcountries.com/v3.1/alpha/${encodeURIComponent(normalizedCode)}?fields=currencies`
-    );
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    const country = Array.isArray(data) ? data[0] : data;
-    const [code, details] = Object.entries(country?.currencies || {})[0] || [];
-    if (!code) throw new Error('Moeda não encontrada');
-
-    const result = {
-      code,
-      name: details?.name || code,
-      symbol: details?.symbol || code,
-    };
-    writeCountryCurrencyCache({ ...readCountryCurrencyCache(), [normalizedCode]: result });
-    return { success: true, ...result };
+    const allCurrencies = await loadAllCountryCurrencies();
+    const currency = allCurrencies[normalizedCode];
+    if (currency) return { success: true, ...currency, source: 'World Countries' };
+    throw new Error('Moeda não encontrada');
   } catch {
     return { success: false, error: 'Não foi possível identificar a moeda deste destino.' };
   }

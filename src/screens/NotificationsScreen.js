@@ -9,13 +9,12 @@ import { supabase, getCurrentUser } from '../services/supabase';
 import { COLORS } from '../utils/constants';
 import Avatar from '../components/Avatar';
 import { getNotificationDestination } from '../utils/notificationRouting';
+import { SOCIAL_NOTIFICATION_TYPES } from '../utils/socialNotifications';
 
 const TYPE_ICON = {
   follow:  { name: 'person-add',    color: '#6C2BD9' },
   comment: { name: 'chatbubble',     color: '#0ea5e9' },
   like:    { name: 'heart',          color: '#ef4444' },
-  message: { name: 'chatbubbles',    color: '#6C2BD9' },
-  passport:{ name: 'book',           color: '#00A89C' },
 };
 
 function timeAgo(dateStr) {
@@ -53,6 +52,7 @@ export default function NotificationsScreen({ navigation }) {
         actor:actor_id(id, username, display_name, avatar_url)
       `)
       .eq('user_id', user.id)
+      .in('type', SOCIAL_NOTIFICATION_TYPES)
       .order('created_at', { ascending: false })
       .limit(50);
 
@@ -65,9 +65,8 @@ export default function NotificationsScreen({ navigation }) {
 
     const unique = new Map();
     (data || []).forEach(item => {
-      const target = item.photo_id || item.conversation_id || item.passport_share_id || '';
-      const eventId = item.type === 'message' ? item.id : '';
-      const key = `${item.type}:${item.actor_id || ''}:${target}:${item.message}:${eventId}`;
+      const target = item.photo_id || '';
+      const key = `${item.type}:${item.actor_id || ''}:${target}:${item.message}`;
       if (!unique.has(key)) unique.set(key, item);
     });
     setNotifications([...unique.values()]);
@@ -77,6 +76,7 @@ export default function NotificationsScreen({ navigation }) {
       .from('notifications')
       .update({ read: true })
       .eq('user_id', user.id)
+      .in('type', SOCIAL_NOTIFICATION_TYPES)
       .eq('read', false);
   }, []);
 

@@ -405,7 +405,7 @@ test('trip budget is allocated per destination and consolidated in BRL', () => {
   assert.match(destinationBudget, /getCountryCurrency/);
   assert.match(destinationBudget, /Inverter moedas de/);
   assert.match(destinationBudget, /BASE_TO_LOCAL/);
-  assert.match(currency, /restcountries\.com\/v3\.1\/alpha/);
+  assert.match(currency, /world-countries@latest\/dist\/countries\.json/);
   assert.match(currency, /'Argentine peso': 'ARS'/);
   assert.match(currency, /open\.er-api\.com\/v6\/latest/);
   assert.match(assistant, /amountInBRL/);
@@ -507,6 +507,30 @@ test('result details, exact maps, realtime chat, passport share, and follow-back
   assert.match(profile, /Seguir de volta/);
 });
 
+test('map, currencies, and social notifications do not depend on partial providers', () => {
+  const globeConfig = read('src/components/map/globeConfig.js');
+  const currency = read('src/services/currencyService.js');
+  const notifications = read('src/screens/NotificationsScreen.js');
+  const feed = read('src/screens/feed/FeedScreen.js');
+  const banner = read('src/components/GlobalNotificationBanner.js');
+  const socialTypes = read('src/utils/socialNotifications.js');
+  const migration = read('supabase/migrations/20260812130000_social_notifications_only.sql');
+
+  assert.match(globeConfig, /tiles\.openfreemap\.org\/styles\/liberty/);
+  assert.doesNotMatch(globeConfig, /stadiamaps/i);
+  assert.match(currency, /@fawazahmed0\/currency-api@latest/);
+  assert.match(currency, /world-countries@latest\/dist\/countries\.json/);
+  assert.match(currency, /open\.er-api\.com\/v6\/latest/);
+  assert.match(currency, /api\.frankfurter\.dev\/v2\/rate/);
+  assert.match(socialTypes, /\['follow', 'comment', 'like'\]/);
+  assert.match(notifications, /\.in\('type', SOCIAL_NOTIFICATION_TYPES\)/);
+  assert.match(feed, /\.in\('type', SOCIAL_NOTIFICATION_TYPES\)/);
+  assert.match(banner, /isSocialNotification\(row\)/);
+  assert.match(migration, /drop trigger if exists on_message_created_notify/);
+  assert.match(migration, /delete from public\.notifications where type in \('message', 'passport'\)/);
+  assert.match(migration, /sync_photo_like_notification/);
+});
+
 test('country modal lives in its own component, with the loading logic inside it', () => {
   // O modal era JSX inline dentro da MapScreen (Leaflet), que saiu do projeto na
   // promoção do globo. Ele continua num componente próprio: é o que permitiu as
@@ -605,9 +629,10 @@ test('the globe fades in from a branded overlay instead of flashing', () => {
   // Erro de tile não pode prender o overlay para sempre.
   assert.match(globeMap, /setReady\(true\)/);
 
-  // Handshake com a Stadia adiantado para o import do módulo.
+  // Handshake com o provedor de tiles adiantado para o import do módulo.
   assert.match(config, /rel = 'preconnect'/);
-  assert.match(globeMap, /preconnectToStadia\(\)/);
+  assert.match(config, /tiles\.openfreemap\.org\/styles\/liberty/);
+  assert.match(globeMap, /preconnectToMapTiles\(\)/);
 });
 
 test('client source sticks to APIs that exist on react-native-web', () => {

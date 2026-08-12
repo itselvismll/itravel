@@ -1,13 +1,13 @@
 // Traduz os rótulos do mapa para português.
 //
-// O schema OpenMapTiles (usado pela Stadia) traz um campo `name:<idioma>` por
+// O schema OpenMapTiles traz um campo `name:<idioma>` por
 // feature, mas as styles vêm montadas em cima de `name:latin` + `name:nonlatin`
-// — daí "RUSSIA / РОССИЯ" em duas linhas. Verifiquei nos tiles da Stadia que
-// `name:pt` existe e está bem preenchido (países, cidades, água, POIs).
+// — daí "RUSSIA / РОССИЯ" em duas linhas. O campo `name:pt` existe e
+// está bem preenchido para países, cidades, água e POIs.
 //
 // Em vez de reescrever cada text-field na mão (a style tem ~24 symbol layers com
 // 4 formatos diferentes de expressão), caminhamos a expressão recursivamente e
-// trocamos só as referências a nome. Assim continua funcionando se a Stadia
+// trocamos só as referências a nome. Assim continua funcionando se o provedor
 // mexer na style, e detalhes como a altitude dos picos (`... "\n" ele " m"`)
 // sobrevivem intactos.
 //

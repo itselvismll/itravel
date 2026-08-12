@@ -28,8 +28,8 @@ import {
   GLOBE_INITIAL_VIEW,
   GLOBE_SPACE_BACKGROUND,
   GLOBE_SKY,
-  SATELLITE_IMAGERY_ATTRIBUTION,
-  preconnectToStadia,
+  MAP_DATA_ATTRIBUTION,
+  preconnectToMapTiles,
 } from './globeConfig';
 import { localizeMapLabels } from './styleLocalization';
 import { STARFIELD_BACKGROUND_STYLE } from './starfield';
@@ -41,7 +41,7 @@ maplibreConfig.WORKER_URL = '/maplibre/maplibre-gl-worker.mjs';
 
 // No import, não na montagem: quando o componente monta, o React já gastou o
 // tempo de render que a conexão poderia ter usado.
-preconnectToStadia();
+preconnectToMapTiles();
 
 // Duração do fade do globo entrando em cena. Curto o bastante para não parecer
 // lentidão, longo o bastante para não ler como "piscada".
@@ -174,8 +174,7 @@ export default function GlobeMap({
       zoom: GLOBE_INITIAL_VIEW.zoom,
       minZoom: GLOBE_INITIAL_VIEW.minZoom,
       maxZoom: GLOBE_MAX_ZOOM,
-      // Desligado aqui para adicionar o control abaixo já com o crédito extra
-      // obrigatório da imagem de satélite.
+      // Desligado aqui para adicionar o controle com a atribuição do provedor.
       attributionControl: false,
     });
     mapRef.current = map;
@@ -183,7 +182,7 @@ export default function GlobeMap({
     map.addControl(
       new AttributionControl({
         compact: true,
-        customAttribution: SATELLITE_IMAGERY_ATTRIBUTION,
+        customAttribution: MAP_DATA_ATTRIBUTION,
       }),
       'bottom-left'
     );
@@ -197,7 +196,7 @@ export default function GlobeMap({
       map.setProjection({ type: 'globe' });
       // Halo azul na borda da esfera.
       map.setSky(GLOBE_SKY);
-      // Rótulos em português (a style da Stadia vem em name:latin/name:nonlatin).
+      // Rótulos em português a partir dos campos multilíngues do OpenMapTiles.
       localizeMapLabels(map);
       onMapReadyRef.current?.(map);
     };

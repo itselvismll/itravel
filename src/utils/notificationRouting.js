@@ -21,6 +21,7 @@ const BADGE = {
   follow: { icon: 'checkmark', color: '#00D1C1' },
   passport: { icon: 'ribbon', color: '#6C2BD9' },
   comment: { icon: 'chatbubble-ellipses', color: '#FF4D6D' },
+  like: { icon: 'heart', color: '#FF4D6D' },
 };
 
 const DEFAULT_BADGE = { icon: 'notifications', color: '#6C2BD9' };
@@ -33,6 +34,7 @@ export const getTitle = (notification, actorName) => {
     case 'follow': return `${actorName} começou a seguir você`;
     case 'passport': return `${actorName} compartilhou um passaporte`;
     case 'comment': return `${actorName} comentou sua foto`;
+    case 'like': return `${actorName} curtiu sua foto`;
     default:
       return notification?.message
         ? `${actorName} ${notification.message}`
@@ -71,7 +73,8 @@ export const getRoute = notification => {
       };
     }
 
-    case 'comment': {
+    case 'comment':
+    case 'like': {
       const photoId = notification?.photo_id || notification?.target_id;
       return photoId ? { name: 'PhotoDetail', params: { photoId } } : null;
     }
