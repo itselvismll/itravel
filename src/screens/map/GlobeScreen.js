@@ -18,6 +18,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import GlobeMap from '../../components/map/GlobeMap';
 import CountryBadgeMarkers from '../../components/map/CountryBadgeMarkers';
 import CountryFillLayer from '../../components/map/CountryFillLayer';
@@ -30,10 +31,11 @@ import {
   MIN_COUNTRY_QUERY_LENGTH,
 } from '../../utils/geoSearch';
 
-// 195 países soberanos + Inglaterra, Escócia, País de Gales e Irlanda do Norte
-// como entradas independentes. O mapa tem âncora para ~240 territórios, mas o
-// denominador da estatística continua sendo este — mudar aqui faria a
-// porcentagem discordar do resto do app (conquistas, passaporte).
+// Denominador de partida do pill, usado só enquanto o GeoJSON não chegou. Assim
+// que `countries` carrega, o total passa a ser o tamanho real da lista — é o
+// mesmo universo de países que o globo desenha, então o "x de y" fecha com o que
+// está na tela. 199 = 195 soberanos + as 4 nações do Reino Unido, que é o
+// denominador usado no resto do app (conquistas, passaporte).
 const TOTAL_COUNTRIES = 199;
 
 // Para onde a câmera vai quando a busca escolhe um país: perto o bastante para o
@@ -42,6 +44,10 @@ const SEARCH_FLY_ZOOM = 4;
 
 export default function GlobeScreen({ navigation }) {
   const [map, setMap] = useState(null);
+  // Dentro das bottom tabs o inset de baixo já é consumido pela própria tab bar
+  // (o react-navigation zera o bottom no contexto da tela), então isto some
+  // quando a tab bar está presente e volta a valer se a tela for aberta sem ela.
+  const insets = useSafeAreaInsets();
   const {
     countries,
     geoData,
@@ -63,9 +69,7 @@ export default function GlobeScreen({ navigation }) {
   const handleMapReady = useCallback((instance) => setMap(instance), []);
 
   const visitedCount = visited.size;
-  const wishlistCount = wishlist.size;
-  const visitedPercentage = (visitedCount / TOTAL_COUNTRIES) * 100;
-  const remainingCount = Math.max(TOTAL_COUNTRIES - visitedCount, 0);
+  const totalCountries = countries.length || TOTAL_COUNTRIES;
 
   // Índice por código: o clique no território devolve só o alpha-3, e o modal
   // precisa do nome em português.
@@ -248,35 +252,19 @@ export default function GlobeScreen({ navigation }) {
         )}
       </View>
 
-      {/* Estatísticas de países visitados.
-          Mesmos dados e mesma conta do mapa anterior; mudou a forma. O card
-          branco com anel SVG era desenhado para um mapa claro — sobre o satélite
-          e o espaço ele vira um retângulo aceso no meio da cena. Aqui virou uma
-          barra de vidro escuro, que é o material do resto da interface do globo. */}
-      <View style={styles.statsCard}>
-        <View style={styles.statsHeader}>
-          <Text style={styles.statsPercentage}>{visitedPercentage.toFixed(1)}%</Text>
-          <Text style={styles.statsCaption}>do mundo</Text>
-        </View>
-
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${Math.min(visitedPercentage, 100)}%` }]} />
-        </View>
-
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <View style={[styles.statDot, { backgroundColor: '#6C2BD9' }]} />
-            <Text style={styles.statText}>{visitedCount} visitados</Text>
-          </View>
-          <View style={styles.statItem}>
-            <View style={[styles.statDot, { backgroundColor: '#FFFFFF' }]} />
-            <Text style={styles.statText}>{wishlistCount} na wishlist</Text>
-          </View>
-          <View style={styles.statItem}>
-            <View style={[styles.statDot, { backgroundColor: 'rgba(255,255,255,0.25)' }]} />
-            <Text style={styles.statText}>{remainingCount} restantes</Text>
-          </View>
-        </View>
+      {/* Países visitados — pill no canto inferior direito.
+          Mora fora do fluxo do globo e acima da tab bar: `bottom` soma o inset
+          inferior para que em aparelho com barra de gestos ele não encoste nela.
+          O contador é o número real de visitados sobre o total de países que o
+          globo desenha. */}
+      <View
+        style={[styles.visitedPill, { bottom: 16 + insets.bottom }]}
+        accessibilityRole="text"
+        accessibilityLabel={`${visitedCount} de ${totalCountries} países visitados`}
+      >
+        <Ionicons name="location" size={14} color="#6C2BD9" />
+        <Text style={styles.visitedCount}>{visitedCount}</Text>
+        <Text style={styles.visitedTotal}>de {totalCountries} países</Text>
       </View>
 
       {(loading || error) && (
@@ -300,6 +288,13 @@ export default function GlobeScreen({ navigation }) {
     </View>
   );
 }
+
+// backdrop-filter é CSS: só existe no web, e no nativo a chave seria ignorada
+// (com aviso do RN). Fora do web o pill fica no fundo sólido translúcido.
+const blur =
+  process.env.EXPO_OS === 'web'
+    ? { backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }
+    : null;
 
 const glass = {
   backgroundColor: 'rgba(13,19,38,0.92)',
@@ -380,48 +375,33 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     flex: 1,
   },
-  statsCard: {
+  visitedPill: {
     position: 'absolute',
-    left: 16,
-    bottom: 16,
-    width: 230,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 8,
-    ...glass,
-  },
-  statsHeader: {
+    right: 16,
+    // `bottom` vem do componente (16 + safe area inset).
+    zIndex: 1001,
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     gap: 6,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(13,19,38,0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(108,43,217,0.4)',
+    ...blur,
   },
-  statsPercentage: {
+  visitedCount: {
     color: '#FFFFFF',
     fontFamily: 'Poppins_600SemiBold',
-    fontSize: 22,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontSize: 14,
+    fontWeight: '700',
   },
-  statsCaption: {
-    color: 'rgba(255,255,255,0.45)',
+  visitedTotal: {
+    color: '#7A7E8C',
     fontFamily: 'Poppins_400Regular',
-    fontSize: 11,
+    fontSize: 12,
   },
-  progressTrack: {
-    height: 6,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 999,
-    backgroundColor: '#6C2BD9',
-  },
-  statsRow: { gap: 4 },
-  statItem: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  statDot: { width: 7, height: 7, borderRadius: 4 },
   statText: {
     color: 'rgba(255,255,255,0.65)',
     fontFamily: 'Poppins_400Regular',
