@@ -155,13 +155,13 @@ test('photo uploads always synchronize their country as visited', () => {
 test('map refreshes visits after uploads and counts them from normalized codes', () => {
   // Era a MapScreen quem normalizava os códigos do banco e desenhava o anel de
   // porcentagem. Com o globo no lugar dela, a normalização virou toAlpha3Set e a
-  // estatística virou a barra de progresso — os dados e a conta são os mesmos.
+  // estatística virou o pill de países visitados — os dados são os mesmos.
   const status = read('src/components/map/countryStatus.js');
-  const globe = read('src/screens/map/GlobeScreen.js');
+  const globe = stripComments(read('src/screens/map/GlobeScreen.js'));
   assert.match(status, /getAlpha3/);
   assert.match(status, /toAlpha3Set/);
-  assert.match(globe, /visitedCount \/ TOTAL_COUNTRIES/);
-  assert.match(globe, /progressFill/);
+  assert.match(globe, /visitedCount = visited\.size/);
+  assert.match(globe, /styles\.visitedPill/);
 });
 
 test('the globe keeps the whole planet in frame instead of a bounded flat world', () => {
@@ -386,10 +386,17 @@ test('globe reuses the map controls instead of reimplementing them', () => {
   // Selecionar na busca move a câmera do globo e abre o país.
   assert.match(globe, /flyTo/);
 
-  // Estatística: mesma conta e mesmo denominador da MapScreen (195 soberanos + 4
-  // nações do Reino Unido). Números diferentes fariam as duas telas discordarem.
+  // Estatística: o pill conta os visitados de verdade sobre o total de países
+  // que o próprio globo desenha — nada de denominador escrito à mão, que
+  // discordaria da lista assim que ela mudasse. O 199 sobrou só como valor de
+  // partida enquanto o GeoJSON não chegou.
   assert.match(globe, /TOTAL_COUNTRIES = 199/);
-  assert.match(globe, /visitedCount \/ TOTAL_COUNTRIES/);
+  assert.match(globe, /countries\.length \|\| TOTAL_COUNTRIES/);
+
+  // O pill fica no canto inferior direito, acima da tab bar: sem o inset ele
+  // encostaria na barra de gestos dos aparelhos que a têm.
+  assert.match(globe, /useSafeAreaInsets/);
+  assert.match(globe, /bottom: 16 \+ insets\.bottom/);
 
   // Clique no território e no badge levam ao mesmo lugar.
   assert.match(globe, /onSelectCountry=\{handleSelectByCode\}/);
