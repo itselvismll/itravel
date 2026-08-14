@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 
-const ASSISTANT_TIMEOUT_MS = 60000;
+const BASE_ASSISTANT_TIMEOUT_MS = 60000;
 
 export const TRAVEL_INTERESTS = [
   'Cultura', 'Gastronomia', 'Natureza', 'Praia', 'História',
@@ -34,6 +34,7 @@ const createLocalPreviewPlan = (request) => {
           estimatedCost: 0,
           mapQuery: `centro turístico, ${destination}`,
           indoor: false,
+          purchaseNote: 'Atividade gratuita. Confirme regras e acesso na ficha do local no Maps.',
         },
         {
           period: 'Tarde',
@@ -44,6 +45,7 @@ const createLocalPreviewPlan = (request) => {
           estimatedCost: 80,
           mapQuery: `${request.interests?.[0] || 'atração cultural'}, ${destination}`,
           indoor: true,
+          purchaseNote: 'Confira ingressos e o canal oficial na ficha do local no Maps.',
         },
         {
           period: 'Noite',
@@ -54,11 +56,13 @@ const createLocalPreviewPlan = (request) => {
           estimatedCost: 120,
           mapQuery: `restaurante ${request.foodPreferences || 'comida local'}, ${destination}`,
           indoor: true,
+          purchaseNote: 'O valor é uma estimativa de alimentação e pode variar conforme o restaurante.',
         },
       ],
     };
   });
-  const requestedBudget = Number(request.budget) || days.length * 500;
+  const dailyBudget = request.budgetLevel === 'economy' ? 300 : request.budgetLevel === 'premium' ? 1200 : 650;
+  const requestedBudget = Number(request.budget) || days.length * dailyBudget * (Number(request.travelers) || 1);
   return {
     title: `${days.length} dias em ${request.destination}`,
     summary: 'Prévia local do novo planejador. Após a aprovação, a IA combinará dados atuais com suas preferências para preencher cada atividade.',
@@ -70,11 +74,14 @@ const createLocalPreviewPlan = (request) => {
     budget: {
       total: requestedBudget,
       currency: request.currency || 'BRL',
+      shoppingIncluded: true,
+      scopeNote: 'Inclui hospedagem, alimentação, transporte local, passeios, uma verba para compras e reserva. Passagens de ida e volta não estão incluídas nesta prévia local.',
       items: [
         { category: 'Hospedagem', amount: requestedBudget * 0.38, note: 'Estimativa para todo o período.' },
         { category: 'Alimentação', amount: requestedBudget * 0.24, note: 'Refeições e pequenos lanches.' },
         { category: 'Transporte', amount: requestedBudget * 0.18, note: 'Deslocamentos locais.' },
-        { category: 'Passeios', amount: requestedBudget * 0.15, note: 'Ingressos e experiências.' },
+        { category: 'Passeios e ingressos', amount: requestedBudget * 0.12, note: 'Atividades pagas do roteiro.' },
+        { category: 'Compras', amount: requestedBudget * 0.03, note: 'Verba opcional para compras pessoais.' },
         { category: 'Reserva', amount: requestedBudget * 0.05, note: 'Margem para imprevistos.' },
       ],
     },
@@ -93,7 +100,9 @@ const createLocalPreviewPlan = (request) => {
 
 const invokeAssistant = async (payload) => {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), ASSISTANT_TIMEOUT_MS);
+  const requestedDuration = Number(payload?.planRequest?.duration) || 3;
+  const timeoutMs = Math.min(180000, Math.max(BASE_ASSISTANT_TIMEOUT_MS, requestedDuration * 6000));
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     let { data: { session } } = await supabase.auth.getSession();

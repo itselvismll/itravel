@@ -28,7 +28,7 @@ test('AI function validates authentication and destination input', () => {
   assert.doesNotMatch(handler, /gemini-1\.5-flash/);
   assert.doesNotMatch(handler, /temperature:/);
   assert.match(handler, /responseMimeType: 'application\/json'/);
-  assert.match(handler, /responseSchema: planSchema/);
+  assert.match(handler, /responseSchema,/);
 });
 
 test('travel planner is personalized, structured, cancellable, and editable', () => {
@@ -59,20 +59,21 @@ test('AI planner enriches plans with dated weather, verified places, currency, a
   assert.match(handler, /GOOGLE_PLACES_API_KEY/);
   assert.match(handler, /overpass-api\.de/);
   assert.match(handler, /restcountries\.com/);
-  assert.match(handler, /api\.frankfurter\.app/);
+  assert.match(handler, /api\.frankfurter\.dev\/v2\/rate/);
   assert.match(handler, /adjust_plan/);
   assert.match(result, /activity\.rating/);
   assert.match(result, /activity\.openingHours/);
 });
 
-test('travel planner masks Brazilian dates and sends ISO dates to the backend', () => {
+test('travel planner uses a calendar, blocks past dates, and sends ISO dates', () => {
   const planner = read('src/screens/assistant/TripPlannerScreen.js');
+  const calendar = read('src/components/CalendarField.js');
   const dateUtils = read('src/utils/dateUtils.js');
   const result = read('src/screens/assistant/AssistantResultScreen.js');
-  assert.match(planner, /placeholder="DD\/MM\/AAAA"/);
-  assert.match(planner, /maskBrazilianDate\(value, form\.startDate\)/);
-  assert.match(planner, /startDate: toIsoDate\(form\.startDate\)/);
-  assert.match(dateUtils, /digits\.length === 2/);
+  assert.match(planner, /<CalendarField/);
+  assert.match(planner, /A data de ida não pode estar no passado/);
+  assert.match(planner, /startDate: form\.useDates \? toIsoDate\(form\.startDate\)/);
+  assert.match(calendar, /disabled = startOfDay\(date\) < minimum/);
   assert.match(dateUtils, /parseBrazilianDate/);
   assert.match(result, /toBrazilianDate\(request\.startDate\)/);
 });
@@ -204,10 +205,46 @@ test('comment notifications keep a photo target and open the publication', () =>
   const navigation = read('src/navigation/AppNavigator.js');
   assert.match(migration, /notifications_photo_id_fkey/);
   assert.match(migration, /attach_comment_notification_target/);
-  assert.match(notifications, /item\.type === 'comment' && item\.photo_id/);
-  assert.match(notifications, /navigation\.navigate\('PhotoDetail'/);
-  assert.match(notifications, /photo\.photo_url/);
+  assert.match(notifications, /getNotificationDestination/);
+  assert.doesNotMatch(notifications, /photoThumb/);
   assert.match(navigation, /name="PhotoDetail"/);
+});
+
+test('planning, messaging, passport, and explore improvements stay integrated', () => {
+  const planner = read('src/screens/assistant/TripPlannerScreen.js');
+  const result = read('src/screens/assistant/AssistantResultScreen.js');
+  const messages = read('src/services/messageService.js');
+  const navigation = read('src/navigation/AppNavigator.js');
+  const profile = read('src/screens/profile/ProfileScreen.js');
+  const explore = read('src/screens/explore/ExploreScreen.js');
+  const migration = read('supabase/migrations/20260805190000_social_planning_and_explore.sql');
+  const notificationMigration = read('supabase/migrations/20260807193000_message_passport_notifications.sql');
+  const routing = read('src/utils/notificationRouting.js');
+  assert.match(planner, /DestinationBudgetPlanner/);
+  assert.match(planner, /LocationAutocomplete/);
+  assert.match(planner, /MultiCountrySelector/);
+  assert.match(planner, /formatMoneyInput/);
+  assert.match(planner, /form\.travelerType === 'Casal'/);
+  assert.match(result, /Abrir meus roteiros salvos/);
+  assert.match(navigation, /name="Messages"/);
+  assert.match(navigation, /name="Conversation"/);
+  assert.match(navigation, /name="PassportDetail"/);
+  assert.match(messages, /shared_plan/);
+  assert.match(messages, /shared_passport/);
+  assert.match(routing, /REGISTERED_ROUTES/);
+  assert.match(routing, /passportShareId/);
+  assert.match(profile, /Opções da publicação/);
+  assert.match(profile, /navigator\.share/);
+  assert.doesNotMatch(explore, />EXPLORAR POR DESTINO</);
+  assert.match(explore, /getAlpha3\(photo\.country_code\)/);
+  assert.match(migration, /remove_visited_country_from_wishlist/);
+  assert.match(migration, /notify_comment_once/);
+  assert.match(migration, /create table if not exists public\.conversations/);
+  assert.match(notificationMigration, /create table if not exists public\.passport_shares/);
+  assert.match(notificationMigration, /notify_new_message/);
+  assert.match(notificationMigration, /notify_received_passport/);
+  assert.match(notificationMigration, /notifications_conversation_id_fkey/);
+  assert.match(notificationMigration, /notifications_passport_share_id_fkey/);
 });
 
 test('public profiles show spaced photo cards with captions and comments', () => {
@@ -297,6 +334,91 @@ test('users can delete only their own posts from feed and profile', () => {
   assert.match(migration, /clear_deleted_photo_cover/);
 });
 
+test('feed is the home tab with floating navigation and top-level social actions', () => {
+  const navigator = read('src/navigation/AppNavigator.js');
+  const feed = read('src/screens/feed/FeedScreen.js');
+  assert.match(navigator, /initialRouteName="Feed"/);
+  assert.match(navigator, /borderRadius: 35/);
+  assert.match(navigator, /name="Messages" component=\{MessagesScreen\}/);
+  assert.doesNotMatch(navigator, /tabBarLabel: 'Conversas'/);
+  assert.match(feed, /accessibilityLabel="Abrir conversas"/);
+  assert.match(feed, /accessibilityLabel="Abrir notificações"/);
+});
+
+test('planner converts currencies, keeps free activities at zero, and exposes verified ticket sites', () => {
+  const currency = read('src/services/currencyService.js');
+  const planner = read('src/screens/assistant/TripPlannerScreen.js');
+  const result = read('src/screens/assistant/AssistantResultScreen.js');
+  const assistant = read('supabase/functions/travel-assistant/index.ts');
+  const explore = read('src/screens/explore/ExploreScreen.js');
+
+  assert.match(currency, /api\.frankfurter\.dev\/v2\/rate/);
+  assert.match(planner, /destinationBudgets/);
+  assert.match(planner, /destinations\.map/);
+  assert.match(result, /Number\(value\) === 0/);
+  assert.match(result, /Site oficial/);
+  assert.match(assistant, /officialUrl/);
+  assert.match(assistant, /Nunca invente links de ingresso/);
+  assert.match(explore, /!!fullscreenPhoto && fullscreenPhoto\.user_id === currentUser\?\.id/);
+  assert.match(explore, /handleDeleteCountryPhoto/);
+});
+
+test('password recovery sends a secure link and requires a new password', () => {
+  const login = read('src/screens/auth/LoginScreen.js');
+  const forgot = read('src/screens/auth/ForgotPasswordScreen.js');
+  const reset = read('src/screens/auth/ResetPasswordScreen.js');
+  const auth = read('src/services/supabase.js');
+  const navigator = read('src/navigation/AppNavigator.js');
+  assert.match(login, /Esqueceu sua senha\?/);
+  assert.match(auth, /resetPasswordForEmail/);
+  assert.match(auth, /redirectTo: getPasswordRecoveryRedirectUrl\(\)/);
+  assert.match(reset, /updateRecoveredPassword/);
+  assert.match(forgot, /requestPasswordReset/);
+  assert.match(navigator, /PASSWORD_RECOVERY/);
+});
+
+test('long AI plans must contain exactly the requested duration and explain every cost', () => {
+  const assistant = read('supabase/functions/travel-assistant/index.ts');
+  const service = read('src/services/assistantService.js');
+  const result = read('src/screens/assistant/AssistantResultScreen.js');
+  assert.match(assistant, /minItems: duration/);
+  assert.match(assistant, /maxItems: duration/);
+  assert.match(assistant, /maxOutputTokens: 65535/);
+  assert.match(assistant, /plan\.days\.length !== duration/);
+  assert.match(service, /requestedDuration \* 6000/);
+  assert.match(assistant, /shoppingIncluded/);
+  assert.match(assistant, /Passagens, Hospedagem, Alimentação, Transporte local, Passeios e ingressos, Compras e Reserva/);
+  assert.match(result, /O que esse valor inclui\?/);
+  assert.match(result, /purchaseNote/);
+});
+
+test('trip budget is allocated per destination and consolidated in BRL', () => {
+  const planner = read('src/screens/assistant/TripPlannerScreen.js');
+  const destinationBudget = read('src/components/DestinationBudgetPlanner.js');
+  const currency = read('src/services/currencyService.js');
+  const assistant = read('supabase/functions/travel-assistant/index.ts');
+  assert.match(planner, /<DestinationBudgetPlanner/);
+  assert.match(planner, /destinationBudgets/);
+  assert.match(destinationBudget, /Orçamento da viagem/);
+  assert.match(destinationBudget, /Informe em reais e veja quanto terá na moeda de cada destino/);
+  assert.match(destinationBudget, /TOTAL ESTIMADO/);
+  assert.match(destinationBudget, /getCountryCurrency/);
+  assert.match(destinationBudget, /Inverter moedas de/);
+  assert.match(destinationBudget, /BASE_TO_LOCAL/);
+  assert.match(currency, /world-countries@latest\/dist\/countries\.json/);
+  assert.match(currency, /'Argentine peso': 'ARS'/);
+  assert.match(currency, /open\.er-api\.com\/v6\/latest/);
+  assert.match(assistant, /amountInBRL/);
+});
+
+test('country photo fullscreen lets the owner delete the selected photo', () => {
+  const gallery = read('src/components/PhotoGallery.js');
+  const photoService = read('src/services/photoService.js');
+  assert.match(gallery, /accessibilityLabel="Excluir esta foto"/);
+  assert.match(gallery, /handleDelete\(fullscreenPhoto\.id, fullscreenPhoto\.photo_path\)/);
+  assert.match(photoService, /\.eq\('user_id', user\.id\)/);
+});
+
 test('in-app notification banner is global, queued, and deep-linked', () => {
   const navigator = read('src/navigation/AppNavigator.js');
   const banner = read('src/components/GlobalNotificationBanner.js');
@@ -336,6 +458,77 @@ test('in-app notification banner is global, queued, and deep-linked', () => {
 test('README keeps JWT verification enabled for the AI function', () => {
   const readme = read('README.md');
   assert.doesNotMatch(readme, /functions deploy travel-assistant --no-verify-jwt/);
+});
+
+test('message, seasonal explore, requirements, and decimal budget fixes stay integrated', () => {
+  const migration = read('supabase/migrations/20260810162000_fix_message_notifications_and_unread.sql');
+  const feed = read('src/screens/feed/FeedScreen.js');
+  const publicProfile = read('src/screens/profile/PublicProfileScreen.js');
+  const currency = read('src/services/currencyService.js');
+  const budget = read('src/components/DestinationBudgetPlanner.js');
+  const explore = read('src/screens/explore/ExploreScreen.js');
+  const countryModal = read('src/components/map/CountryDetailModal.js');
+  const requirements = read('src/services/travelRequirementsService.js');
+  const assistant = read('supabase/functions/travel-assistant/index.ts');
+
+  assert.match(migration, /'message', 'passport'/);
+  assert.match(migration, /get_unread_message_count/);
+  assert.match(feed, /CountBadge/);
+  assert.doesNotMatch(feed, /styles\.stories/);
+  assert.match(publicProfile, />Mensagem</);
+  assert.match(currency, /sanitizeMoneyInput/);
+  assert.match(budget, /keyboardType="decimal-pad"/);
+  assert.match(explore, /DESTINOS EM ALTA NESTA ÉPOCA/);
+  assert.match(explore, /getTourismImage/);
+  assert.doesNotMatch(explore, /CountryRequirementsCard/);
+  assert.match(countryModal, /CountryRequirementsCard/);
+  assert.match(requirements, /MAY_REQUIRE_YELLOW_FEVER_CIVP/);
+  assert.match(requirements, /ETIAS ainda não está em operação/);
+  assert.match(assistant, /maxItems: 3/);
+  assert.match(assistant, /gemini-3\.5-flash-lite/);
+});
+
+test('result details, exact maps, realtime chat, passport share, and follow-back stay integrated', () => {
+  const result = read('src/screens/assistant/AssistantResultScreen.js');
+  const assistant = read('supabase/functions/travel-assistant/index.ts');
+  const conversation = read('src/screens/messages/ConversationScreen.js');
+  const realtime = read('supabase/migrations/20260810203000_messages_realtime.sql');
+  const passport = read('src/screens/profile/PassportDetailScreen.js');
+  const profile = read('src/screens/profile/PublicProfileScreen.js');
+
+  assert.match(result, /plan\.budget\?\.items \|\| \[\]\)\.map/);
+  assert.doesNotMatch(result, /Ver detalhamento completo/);
+  assert.match(result, /query_place_id/);
+  assert.match(assistant, /placeId/);
+  assert.match(assistant, /'hotel'\),/);
+  assert.match(conversation, /postgres_changes/);
+  assert.match(realtime, /supabase_realtime add table public\.messages/);
+  assert.match(passport, /<ShareCard/);
+  assert.match(profile, /Seguir de volta/);
+});
+
+test('map, currencies, and social notifications do not depend on partial providers', () => {
+  const globeConfig = read('src/components/map/globeConfig.js');
+  const currency = read('src/services/currencyService.js');
+  const notifications = read('src/screens/NotificationsScreen.js');
+  const feed = read('src/screens/feed/FeedScreen.js');
+  const banner = read('src/components/GlobalNotificationBanner.js');
+  const socialTypes = read('src/utils/socialNotifications.js');
+  const migration = read('supabase/migrations/20260812130000_social_notifications_only.sql');
+
+  assert.match(globeConfig, /tiles\.openfreemap\.org\/styles\/liberty/);
+  assert.doesNotMatch(globeConfig, /stadiamaps/i);
+  assert.match(currency, /@fawazahmed0\/currency-api@latest/);
+  assert.match(currency, /world-countries@latest\/dist\/countries\.json/);
+  assert.match(currency, /open\.er-api\.com\/v6\/latest/);
+  assert.match(currency, /api\.frankfurter\.dev\/v2\/rate/);
+  assert.match(socialTypes, /\['follow', 'comment', 'like'\]/);
+  assert.match(notifications, /\.in\('type', SOCIAL_NOTIFICATION_TYPES\)/);
+  assert.match(feed, /\.in\('type', SOCIAL_NOTIFICATION_TYPES\)/);
+  assert.match(banner, /isSocialNotification\(row\)/);
+  assert.match(migration, /drop trigger if exists on_message_created_notify/);
+  assert.match(migration, /delete from public\.notifications where type in \('message', 'passport'\)/);
+  assert.match(migration, /sync_photo_like_notification/);
 });
 
 test('country modal lives in its own component, with the loading logic inside it', () => {
@@ -454,9 +647,10 @@ test('the globe fades in from a branded overlay instead of flashing', () => {
   // Erro de tile não pode prender o overlay para sempre.
   assert.match(globeMap, /setReady\(true\)/);
 
-  // Handshake com a Stadia adiantado para o import do módulo.
+  // Handshake com o provedor de tiles adiantado para o import do módulo.
   assert.match(config, /rel = 'preconnect'/);
-  assert.match(globeMap, /preconnectToStadia\(\)/);
+  assert.match(config, /tiles\.openfreemap\.org\/styles\/liberty/);
+  assert.match(globeMap, /preconnectToMapTiles\(\)/);
 });
 
 test('client source sticks to APIs that exist on react-native-web', () => {

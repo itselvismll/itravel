@@ -116,6 +116,38 @@ export async function signIn(email, password) {
   }
 }
 
+const getPasswordRecoveryRedirectUrl = () => {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    const url = new URL(window.location.origin);
+    url.searchParams.set('recovery', '1');
+    return url.toString();
+  }
+
+  return Linking.createURL('reset-password', { queryParams: { recovery: '1' } });
+};
+
+export async function requestPasswordReset(email) {
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: getPasswordRecoveryRedirectUrl(),
+    });
+    if (error) throw error;
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+export async function updateRecoveredPassword(password) {
+  try {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) throw error;
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
 const getGoogleRedirectUrl = () => {
   // Web OAuth always returns to the hosted app. This avoids completing Google
   // login on a localhost port that may no longer be running.
@@ -260,6 +292,15 @@ export async function markCountryAsVisited(userId, countryCode, countryName) {
       .select();
 
     if (error) throw error;
+    const countryVariants = [
+      normalizedCountryCode,
+      getAlpha2(normalizedCountryCode)?.toUpperCase(),
+    ].filter(Boolean);
+    await supabase
+      .from('wishlist')
+      .delete()
+      .eq('user_id', userId)
+      .in('country_code', countryVariants);
     return { success: true, data: data[0] };
   } catch (error) {
     return { success: false, error: error.message };

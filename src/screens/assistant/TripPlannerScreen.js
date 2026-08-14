@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -11,6 +11,10 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import CalendarField from '../../components/CalendarField';
+import DestinationBudgetPlanner from '../../components/DestinationBudgetPlanner';
+import LocationAutocomplete from '../../components/LocationAutocomplete';
+import MultiCountrySelector from '../../components/MultiCountrySelector';
 import { getCurrentUser, getVisitedCountries } from '../../services/supabase';
 import { getWishlist } from '../../services/socialService';
 import {
@@ -20,24 +24,31 @@ import {
 } from '../../services/assistantService';
 import { getCountryNamePtByCode } from '../../utils/countryUtils';
 import {
-  maskBrazilianDate,
   parseBrazilianDate,
   toBrazilianDate,
   toIsoDate,
 } from '../../utils/dateUtils';
+import { formatMoneyInput, parseMoneyInput } from '../../services/currencyService';
 
 const TRAVELER_TYPES = ['Solo', 'Casal', 'Família', 'Amigos', 'Trabalho'];
-const CURRENCIES = ['BRL', 'USD', 'EUR', 'GBP'];
-
 const initialForm = {
   origin: '',
+  originDetails: null,
   destination: '',
+  destinationCode: '',
+  destinations: [],
+  preferredPlaces: '',
+  useDates: true,
   startDate: '',
   endDate: '',
+  duration: '3',
   travelers: '1',
   travelerType: 'Solo',
   budget: '',
-  currency: 'BRL',
+  destinationBudgets: [],
+  budgetLevel: 'balanced',
+  budgetCurrency: 'BRL',
+  displayCurrency: 'BRL',
   pace: 'balanced',
   interests: [],
   foodPreferences: '',
@@ -54,18 +65,35 @@ export default function TripPlannerScreen({ navigation, route }) {
       startDate: toBrazilianDate(initialRequest.startDate),
       endDate: toBrazilianDate(initialRequest.endDate),
       travelers: String(initialRequest.travelers || initialForm.travelers),
-      budget: initialRequest.budget ? String(initialRequest.budget) : '',
+      duration: String(initialRequest.duration || initialForm.duration),
+      budget: initialRequest.budget ? formatMoneyInput(initialRequest.budget) : '',
+      budgetCurrency: initialRequest.budgetCurrency || initialRequest.currency || 'BRL',
+      displayCurrency: initialRequest.displayCurrency || 'BRL',
+      destinationBudgets: initialRequest.destinationBudgets || [],
+      destinations: Array.isArray(initialRequest.destinations) && initialRequest.destinations.length
+        ? initialRequest.destinations.map(item => typeof item === 'string' ? { code: '', name: item } : item)
+        : initialRequest.destination
+          ? [{ code: initialRequest.destinationCode || '', name: initialRequest.destination }]
+          : [],
     };
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const scrollRef = useRef(null);
 
   const duration = useMemo(() => {
+    if (!form.useDates) return Math.max(1, Number(form.duration) || 0) || null;
     const start = parseBrazilianDate(form.startDate);
     const end = parseBrazilianDate(form.endDate);
     if (!start || !end || end < start) return null;
     return Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
-  }, [form.endDate, form.startDate]);
+  }, [form.duration, form.endDate, form.startDate, form.useDates]);
+
+  useEffect(() => {
+    if (form.travelerType === 'Casal' && form.travelers !== '2') {
+      setForm(current => ({ ...current, travelers: '2' }));
+    }
+  }, [form.travelerType]);
 
   const update = (field, value) => {
     setForm(current => ({ ...current, [field]: value }));
@@ -82,17 +110,20 @@ export default function TripPlannerScreen({ navigation, route }) {
   };
 
   const validate = () => {
-    if (!form.destination.trim()) return 'Informe para onde você quer viajar.';
-    if (!form.origin.trim()) return 'Informe sua cidade de origem.';
-    const start = parseBrazilianDate(form.startDate);
-    const end = parseBrazilianDate(form.endDate);
-    if (!start || !end) return 'Use datas válidas no formato DD/MM/AAAA.';
-    if (end < start) return 'A data de volta deve ser posterior à data de ida.';
-    if (duration > 14) return 'Nesta versão, o roteiro pode ter no máximo 14 dias.';
+    if (!form.destinations.length) return 'Selecione pelo menos um país para a viagem.';
+    if (form.useDates) {
+      const start = parseBrazilianDate(form.startDate);
+      const end = parseBrazilianDate(form.endDate);
+      if (!start || !end) return 'Selecione as datas de ida e volta no calendário.';
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (start < today) return 'A data de ida não pode estar no passado.';
+      if (end < start) return 'A data de volta deve ser posterior à data de ida.';
+    }
+    if (!duration || duration < 1) return 'Informe quantos dias terá a viagem.';
     if (Number(form.travelers) < 1 || Number(form.travelers) > 30) {
       return 'Informe de 1 a 30 viajantes.';
     }
-    if (form.interests.length === 0) return 'Escolha pelo menos um interesse.';
     return null;
   };
 
@@ -125,12 +156,19 @@ export default function TripPlannerScreen({ navigation, route }) {
     const planRequest = {
       ...form,
       origin: form.origin.trim(),
-      destination: form.destination.trim(),
-      startDate: toIsoDate(form.startDate),
-      endDate: toIsoDate(form.endDate),
+      destination: form.destinations.map(item => item.name).join(', '),
+      destinationCode: form.destinations[0]?.code || '',
+      destinations: form.destinations,
+      preferredPlaces: form.destinations.map(item => item.name).join(', '),
+      startDate: form.useDates ? toIsoDate(form.startDate) : '',
+      endDate: form.useDates ? toIsoDate(form.endDate) : '',
       duration,
       travelers: Number(form.travelers),
-      budget: Number(form.budget) || 0,
+      budget: parseMoneyInput(form.budget),
+      currency: 'BRL',
+      budgetCurrency: 'BRL',
+      displayCurrency: 'BRL',
+      destinationBudgets: form.destinationBudgets,
     };
 
     try {
@@ -170,6 +208,7 @@ export default function TripPlannerScreen({ navigation, route }) {
       </View>
 
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -183,33 +222,55 @@ export default function TripPlannerScreen({ navigation, route }) {
         </View>
 
         <FormSection icon="location-outline" title="Trajeto">
-          <Field label="Saindo de" value={form.origin} onChangeText={value => update('origin', value)} placeholder="Ex: São Paulo" />
-          <Field label="Destino" value={form.destination} onChangeText={value => update('destination', value)} placeholder="Ex: Paris, França" />
+          <LocationAutocomplete
+            label="Saindo de (opcional)"
+            value={form.origin}
+            onChange={(name, location) => setForm(current => ({
+              ...current,
+              origin: name,
+              originDetails: location,
+            }))}
+            placeholder="Busque uma cidade ou país"
+          />
+          <MultiCountrySelector
+            label="Destinos da viagem"
+            selected={form.destinations}
+            onChange={destinations => setForm(current => ({
+              ...current,
+              destinations,
+              destination: destinations.map(item => item.name).join(', '),
+              destinationCode: destinations[0]?.code || '',
+            }))}
+          />
         </FormSection>
 
         <FormSection icon="calendar-outline" title="Datas">
-          <View style={styles.row}>
+          <ChipGroup
+            values={['Tenho as datas', 'Só sei a duração']}
+            selected={[form.useDates ? 'Tenho as datas' : 'Só sei a duração']}
+            onPress={value => update('useDates', value === 'Tenho as datas')}
+          />
+          {form.useDates ? (
+            <View style={styles.row}>
+              <CalendarField label="Ida" value={form.startDate} onChange={value => update('startDate', value)} />
+              <CalendarField
+                label="Volta"
+                value={form.endDate}
+                minDate={parseBrazilianDate(form.startDate) || new Date()}
+                onChange={value => update('endDate', value)}
+              />
+            </View>
+          ) : (
             <Field
-              compact
-              label="Ida"
-              value={form.startDate}
-              onChangeText={value => update('startDate', maskBrazilianDate(value, form.startDate))}
-              placeholder="DD/MM/AAAA"
+              label="Quantos dias?"
+              value={form.duration}
+              onChangeText={value => update('duration', value.replace(/\D/g, '').slice(0, 3))}
               keyboardType="number-pad"
-              maxLength={10}
+              placeholder="Ex: 7"
             />
-            <Field
-              compact
-              label="Volta"
-              value={form.endDate}
-              onChangeText={value => update('endDate', maskBrazilianDate(value, form.endDate))}
-              placeholder="DD/MM/AAAA"
-              keyboardType="number-pad"
-              maxLength={10}
-            />
-          </View>
+          )}
           <Text style={styles.helperText}>
-            {duration ? `${duration} dia${duration > 1 ? 's' : ''} de roteiro` : 'Máximo de 14 dias por roteiro'}
+            {duration ? `${duration} dia${duration > 1 ? 's' : ''} de roteiro` : 'Escolha datas futuras ou informe a duração'}
           </Text>
         </FormSection>
 
@@ -224,14 +285,25 @@ export default function TripPlannerScreen({ navigation, route }) {
           <ChipGroup values={TRAVELER_TYPES} selected={[form.travelerType]} onPress={value => update('travelerType', value)} />
         </FormSection>
 
-        <FormSection icon="wallet-outline" title="Orçamento total">
-          <View style={styles.row}>
-            <Field compact label="Valor" value={form.budget} onChangeText={value => update('budget', value.replace(/[^0-9.,]/g, ''))} keyboardType="decimal-pad" placeholder="Ex: 8000" />
-            <View style={styles.compactField}>
-              <Text style={styles.label}>Moeda</Text>
-              <ChipGroup values={CURRENCIES} selected={[form.currency]} onPress={value => update('currency', value)} compact />
-            </View>
-          </View>
+        <FormSection icon="wallet-outline" title="Orçamento">
+          <DestinationBudgetPlanner
+            destinations={form.destinations}
+            initialBudgets={form.destinationBudgets}
+            budgetLevel={form.budgetLevel}
+            onBudgetLevelChange={value => update('budgetLevel', value)}
+            onChange={(destinationBudgets, total) => setForm(current => ({
+              ...current,
+              destinationBudgets,
+              budget: formatMoneyInput(Math.round(total)),
+              budgetCurrency: 'BRL',
+              displayCurrency: 'BRL',
+            }))}
+            onRemoveDestination={countryCode => setForm(current => ({
+              ...current,
+              destinations: current.destinations.filter(item => item.code !== countryCode),
+            }))}
+            onAddDestination={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
+          />
         </FormSection>
 
         <FormSection icon="speedometer-outline" title="Ritmo da viagem">
@@ -336,6 +408,10 @@ const styles = StyleSheet.create({
   multiline: { minHeight: 72, textAlignVertical: 'top' },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   helperText: { color: '#757D9D', fontSize: 11, lineHeight: 17 },
+  converterCard: { gap: 9, backgroundColor: '#10162B', borderRadius: 14, padding: 13, borderWidth: 1, borderColor: 'rgba(53,211,200,0.2)' },
+  converterLabel: { color: '#727B9D', fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  convertedValue: { color: '#35D3C8', fontSize: 24, fontWeight: '900' },
+  exchangeSource: { color: '#687191', fontSize: 9 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   compactChips: { gap: 5 },
   chip: { paddingHorizontal: 12, paddingVertical: 9, borderRadius: 99, backgroundColor: '#202744', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },

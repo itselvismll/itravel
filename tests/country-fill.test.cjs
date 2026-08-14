@@ -199,7 +199,7 @@ test('a fill layer entra abaixo do primeiro symbol layer', () => {
   assert.equal(findFirstSymbolLayerId(undefined), undefined);
 });
 
-test('os ids das layers não colidem com os da style da Stadia', () => {
+test('os ids das layers não colidem com os da style base', () => {
   for (const id of [COUNTRY_SOURCE_ID, COUNTRY_FILL_LAYER_ID, COUNTRY_OUTLINE_LAYER_ID]) {
     assert.match(id, /^journi-/);
   }
@@ -212,7 +212,7 @@ test('os ids das layers não colidem com os da style da Stadia', () => {
 // que a layer entra antes do primeiro symbol, que nada é duplicado e — o bug
 // desta rodada — que a montagem não depende de isStyleLoaded().
 
-const STADIA_LAYERS = [
+const BASE_STYLE_LAYERS = [
   { id: 'background', type: 'background' },
   { id: 'satellite', type: 'raster' },
   { id: 'landcover', type: 'fill' },
@@ -220,7 +220,7 @@ const STADIA_LAYERS = [
   { id: 'place_label', type: 'symbol' },
 ];
 
-const fakeMap = ({ layers = STADIA_LAYERS } = {}) => {
+const fakeMap = ({ layers = BASE_STYLE_LAYERS } = {}) => {
   const sources = new Map();
   const added = [];
   const calls = [];

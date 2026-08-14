@@ -81,6 +81,14 @@ export default function PhotoDetailScreen({ route, navigation }) {
     });
   };
 
+  const openCommentAuthorProfile = profile => {
+    if (!profile?.id) return;
+    navigation.navigate('PublicProfile', {
+      userId: profile.id,
+      username: profile.username,
+    });
+  };
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -173,7 +181,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
             <Text style={styles.emptyComments}>Nenhum comentário ainda.</Text>
           )}
           renderItem={({ item }) => (
-            <View style={styles.commentRow}>
+            <TouchableOpacity style={styles.commentRow} onPress={() => openCommentAuthorProfile(item.profiles)}>
               <Avatar profile={item.profiles} size={34} />
               <View style={styles.commentBubble}>
                 <Text style={styles.commentAuthor}>
@@ -181,7 +189,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
                 </Text>
                 <Text style={styles.commentContent}>{item.content}</Text>
               </View>
-            </View>
+            </TouchableOpacity>
           )}
         />
       )}

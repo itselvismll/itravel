@@ -50,7 +50,7 @@ export const saveTripPlan = async ({ planId, request, plan }) => {
     end_date: request.endDate || null,
     travelers: Number(request.travelers) || 1,
     budget: request.budget ? Number(request.budget) : null,
-    currency: request.currency || 'BRL',
+    currency: request.budgetCurrency || request.currency || 'BRL',
     status: 'planned',
     request_data: request,
     plan_data: plan,

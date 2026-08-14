@@ -3,6 +3,7 @@ import { supabase } from '../services/supabase';
 import { navigateFromOutside } from '../navigation/navigationRef';
 import { getRoute, isRouteRegistered } from '../utils/notificationRouting';
 import NotificationBanner from './NotificationBanner';
+import { isSocialNotification } from '../utils/socialNotifications';
 
 const VISIBLE_FOR_MS = 2500;
 // Respiro entre um banner e o próximo, para a saída de um não colidir com a entrada do
@@ -33,7 +34,7 @@ export default function GlobalNotificationBanner({ userId, suppressed = false })
     let cancelled = false;
 
     const enqueue = async (row) => {
-      if (!row) return;
+      if (!row || !isSocialNotification(row)) return;
 
       // O payload de postgres_changes traz só a linha crua, sem join. O perfil do autor é
       // buscado à parte para o banner ter avatar e nome.
@@ -121,8 +122,6 @@ export default function GlobalNotificationBanner({ userId, suppressed = false })
     }
 
     const route = getRoute(notification);
-    // `message` e `passport` só navegam quando as telas existirem no navigator; até lá o
-    // toque apenas descarta e marca como lida, sem quebrar a navegação.
     if (route && isRouteRegistered(route.name)) {
       navigateFromOutside(route.name, route.params);
     }

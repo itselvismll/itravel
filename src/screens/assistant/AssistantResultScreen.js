@@ -15,6 +15,7 @@ import { adjustTravelPlan, regeneratePlanActivity } from '../../services/assista
 import { saveTripPlan } from '../../services/tripPlanService';
 import { notify } from '../../utils/dialogs';
 import { toBrazilianDate } from '../../utils/dateUtils';
+import ShareToJourniModal from '../../components/ShareToJourniModal';
 
 const TABS = [
   { id: 'itinerary', label: 'Roteiro', icon: 'map-outline' },
@@ -32,10 +33,11 @@ const periodIcon = (period = '') => {
 };
 
 const formatMoney = (value, currency = 'BRL') => {
+  if (Number(value) === 0) return '0';
   try {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(Number(value) || 0);
+    return `≈ ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(Number(value) || 0)}`;
   } catch {
-    return `${currency} ${Number(value || 0).toFixed(2)}`;
+    return `≈ ${currency} ${Number(value || 0).toFixed(2)}`;
   }
 };
 
@@ -51,12 +53,31 @@ export default function AssistantResultScreen({ route, navigation }) {
   const [chatText, setChatText] = useState('');
   const [adjusting, setAdjusting] = useState(false);
   const [adjustments, setAdjustments] = useState([]);
+  const [shareVisible, setShareVisible] = useState(false);
 
   const checklistProgress = useMemo(() => {
     const items = plan.checklist || [];
     const done = items.filter(item => item.done).length;
     return { done, total: items.length, percent: items.length ? Math.round((done / items.length) * 100) : 0 };
   }, [plan.checklist]);
+
+  const budgetExplanation = useMemo(() => {
+    const items = plan.budget?.items || [];
+    const shoppingItem = items.find(item => /compras/i.test(item.category || ''));
+    const shoppingIncluded = typeof plan.budget?.shoppingIncluded === 'boolean'
+      ? plan.budget.shoppingIncluded
+      : Number(shoppingItem?.amount) > 0;
+    const categories = items
+      .filter(item => Number(item.amount) > 0)
+      .map(item => item.category)
+      .join(', ');
+
+    return {
+      shoppingIncluded,
+      scope: plan.budget?.scopeNote
+        || (categories ? `O total considera: ${categories}.` : 'Abra a aba Orçamento para conferir as categorias consideradas.'),
+    };
+  }, [plan.budget]);
 
   const handleShare = async () => {
     const daySummary = (plan.days || []).map(day => (
@@ -94,12 +115,27 @@ export default function AssistantResultScreen({ route, navigation }) {
       await Linking.openURL(activity.mapsUrl);
       return;
     }
-    if (activity.latitude && activity.longitude) {
-      await Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${activity.latitude},${activity.longitude}`);
+    const exactQuery = [activity.title, activity.location].filter(Boolean).join(', ');
+    if (activity.placeId) {
+      await Linking.openURL(
+        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(exactQuery)}&query_place_id=${encodeURIComponent(activity.placeId)}`
+      );
       return;
     }
-    const query = activity.mapQuery || `${activity.location}, ${request.destination}`;
+    if (activity.latitude && activity.longitude) {
+      await Linking.openURL(
+        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${activity.latitude},${activity.longitude}`)}`
+      );
+      return;
+    }
+    const query = exactQuery || activity.mapQuery || `${activity.location}, ${request.destination}`;
     await Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`);
+  };
+
+  const openOfficialUrl = async activity => {
+    if (/^https?:\/\//i.test(activity?.officialUrl || '')) {
+      await Linking.openURL(activity.officialUrl);
+    }
   };
 
   const regenerateActivity = async (dayIndex, activityIndex) => {
@@ -173,9 +209,12 @@ export default function AssistantResultScreen({ route, navigation }) {
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle} numberOfLines={1}>{plan.title || request.destination}</Text>
-          <Text style={styles.headerSub}>{toBrazilianDate(request.startDate)} → {toBrazilianDate(request.endDate)} · {request.travelers} viajante(s)</Text>
+          <Text style={styles.headerSub}>
+            {request.startDate ? `${toBrazilianDate(request.startDate)} → ${toBrazilianDate(request.endDate)} · ` : ''}
+            {request.travelers} viajante(s)
+          </Text>
         </View>
-        <TouchableOpacity onPress={handleShare} style={styles.iconButton}>
+        <TouchableOpacity onPress={() => setShareVisible(true)} style={styles.iconButton}>
           <Ionicons name="share-outline" size={21} color="#AAB1CC" />
         </TouchableOpacity>
       </View>
@@ -200,6 +239,31 @@ export default function AssistantResultScreen({ route, navigation }) {
             <Fact icon="time-outline" text={`${(plan.days || []).length} dias`} />
             <Fact icon="cash-outline" text={formatMoney(plan.budget?.total, plan.budget?.currency || request.currency)} />
             <Fact icon="walk-outline" text={request.pace === 'calm' ? 'Tranquilo' : request.pace === 'intense' ? 'Intenso' : 'Equilibrado'} />
+          </View>
+          <View style={styles.budgetScopeBox}>
+            <View style={styles.budgetScopeHeader}>
+              <Ionicons name="receipt-outline" size={16} color="#C4B5FD" />
+              <Text style={styles.budgetScopeTitle}>O que esse valor inclui?</Text>
+            </View>
+            <Text style={styles.budgetScopeText}>{budgetExplanation.scope}</Text>
+            <Text style={styles.shoppingStatus}>
+              {budgetExplanation.shoppingIncluded
+                ? '✓ Compras pessoais possuem uma verba própria na estimativa.'
+                : 'Compras pessoais não estão incluídas nesta estimativa.'}
+            </Text>
+            <View style={styles.summaryBudgetList}>
+              {(plan.budget?.items || []).map(item => (
+                <View key={item.category} style={styles.summaryBudgetRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.summaryBudgetCategory}>{item.category}</Text>
+                    {!!item.note && <Text style={styles.summaryBudgetNote}>{item.note}</Text>}
+                  </View>
+                  <Text style={styles.summaryBudgetAmount}>
+                    {formatMoney(item.amount, plan.budget?.currency || request.currency)}
+                  </Text>
+                </View>
+              ))}
+            </View>
           </View>
           {!!plan.weatherNote && <View style={styles.weatherBox}><Ionicons name="partly-sunny-outline" size={18} color="#35D3C8" /><Text style={styles.weatherText}>{plan.weatherNote}</Text></View>}
         </View>
@@ -255,6 +319,9 @@ export default function AssistantResultScreen({ route, navigation }) {
                             )}
                             <View style={styles.actionRow}>
                               <SmallButton icon="map-outline" label="Mapa" onPress={() => openMap(activity)} />
+                              {!!activity.officialUrl && (
+                                <SmallButton icon="ticket-outline" label="Site oficial" onPress={() => openOfficialUrl(activity)} />
+                              )}
                               <SmallButton icon="pencil-outline" label="Editar" onPress={() => startEditing(dayIndex, activityIndex, activity)} />
                               <SmallButton
                                 icon="refresh-outline"
@@ -262,6 +329,15 @@ export default function AssistantResultScreen({ route, navigation }) {
                                 loading={regenerating === key}
                                 onPress={() => regenerateActivity(dayIndex, activityIndex)}
                               />
+                            </View>
+                            <View style={styles.purchaseNoteBox}>
+                              <Ionicons name={activity.officialUrl ? 'ticket-outline' : 'information-circle-outline'} size={14} color="#9DE8E1" />
+                              <Text style={styles.purchaseNoteText}>
+                                {activity.purchaseNote
+                                  || (activity.officialUrl
+                                    ? 'Confira valores e disponibilidade no site oficial.'
+                                    : 'Consulte ingressos e canais oficiais na ficha deste local no Maps.')}
+                              </Text>
                             </View>
                           </>
                         )}
@@ -278,7 +354,18 @@ export default function AssistantResultScreen({ route, navigation }) {
           <View style={styles.panel}>
             <Text style={styles.panelEyebrow}>ESTIMATIVA PARA TODA A VIAGEM</Text>
             <Text style={styles.totalBudget}>{formatMoney(plan.budget?.total, plan.budget?.currency || request.currency)}</Text>
+            {!!request.convertedBudget && request.displayCurrency !== (plan.budget?.currency || request.currency) && (
+              <View style={styles.convertedBudgetBox}>
+                <Text style={styles.convertedBudgetLabel}>ORÇAMENTO INFORMADO, CONVERTIDO</Text>
+                <Text style={styles.convertedBudgetValue}>{formatMoney(request.convertedBudget, request.displayCurrency)}</Text>
+                <Text style={styles.convertedBudgetDate}>Cotação diária de {request.exchangeDate || 'hoje'}</Text>
+              </View>
+            )}
             <Text style={styles.budgetStatus}>{plan.budgetStatus}</Text>
+            <Text style={styles.budgetScopeDetail}>{budgetExplanation.scope}</Text>
+            <Text style={styles.shoppingStatus}>
+              {budgetExplanation.shoppingIncluded ? 'Compras: incluídas no total.' : 'Compras: não incluídas no total.'}
+            </Text>
             <View style={styles.divider} />
             {(plan.budget?.items || []).map(item => (
               <View key={item.category} style={styles.budgetRow}>
@@ -388,8 +475,24 @@ export default function AssistantResultScreen({ route, navigation }) {
             <Text style={styles.saveText}>{planId ? 'Atualizar roteiro' : 'Salvar roteiro'}</Text>
           </TouchableOpacity>
         </View>
+        {!!planId && (
+          <TouchableOpacity
+            style={styles.savedTripsButton}
+            onPress={() => navigation.navigate('Main', { screen: 'Profile', params: { screen: 'SavedTrips' } })}
+          >
+            <Ionicons name="map-outline" size={18} color="#35D3C8" />
+            <Text style={styles.savedTripsText}>Abrir meus roteiros salvos</Text>
+            <Ionicons name="chevron-forward" size={17} color="#35D3C8" />
+          </TouchableOpacity>
+        )}
         <Text style={styles.disclaimer}>Valores são estimativas. Confirme preços, horários, documentos e alertas em fontes oficiais.</Text>
       </ScrollView>
+      <ShareToJourniModal
+        visible={shareVisible}
+        onClose={() => setShareVisible(false)}
+        resource={{ plan: { request, plan } }}
+        onExternalShare={handleShare}
+      />
     </View>
   );
 }
@@ -437,6 +540,16 @@ const styles = StyleSheet.create({
   quickFacts: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   fact: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#222946', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
   factText: { color: '#C8CCE0', fontSize: 11, fontWeight: '700' },
+  budgetScopeBox: { backgroundColor: 'rgba(139,92,246,0.08)', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: 'rgba(167,139,250,0.16)' },
+  budgetScopeHeader: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  budgetScopeTitle: { color: '#E8E9F3', fontSize: 12, fontWeight: '800' },
+  budgetScopeText: { color: '#9BA2BF', fontSize: 10, lineHeight: 16, marginTop: 7 },
+  shoppingStatus: { color: '#9DE8E1', fontSize: 10, lineHeight: 16, marginTop: 6, fontWeight: '700' },
+  summaryBudgetList: { gap: 7, marginTop: 11, paddingTop: 9, borderTopWidth: 1, borderTopColor: 'rgba(167,139,250,0.14)' },
+  summaryBudgetRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  summaryBudgetCategory: { color: '#E8E2FF', fontSize: 10, fontWeight: '800' },
+  summaryBudgetNote: { color: '#858DAD', fontSize: 8, lineHeight: 12, marginTop: 1 },
+  summaryBudgetAmount: { color: '#9DE8E1', fontSize: 10, fontWeight: '900', fontVariant: ['tabular-nums'] },
   weatherBox: { flexDirection: 'row', gap: 9, backgroundColor: 'rgba(0,209,193,0.08)', borderRadius: 11, padding: 11 },
   weatherText: { color: '#A8DCD8', flex: 1, fontSize: 11, lineHeight: 17 },
   listGap: { gap: 13 },
@@ -458,6 +571,8 @@ const styles = StyleSheet.create({
   verifiedText: { color: '#D5D8E8', fontSize: 9, fontWeight: '700' },
   verifiedSource: { color: '#6F7798', fontSize: 8, textTransform: 'uppercase' },
   actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10 },
+  purchaseNoteBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, backgroundColor: 'rgba(53,211,200,0.06)', borderRadius: 9, padding: 9, marginTop: 8 },
+  purchaseNoteText: { flex: 1, color: '#8FB8B6', fontSize: 9, lineHeight: 14 },
   smallButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 7, borderRadius: 9, borderWidth: 1, borderColor: 'rgba(167,139,250,0.25)', backgroundColor: 'rgba(139,92,246,0.07)' },
   smallButtonPrimary: { backgroundColor: '#6C2BD9', borderColor: '#6C2BD9' },
   smallButtonText: { color: '#BBA8FA', fontSize: 10, fontWeight: '700' },
@@ -469,6 +584,11 @@ const styles = StyleSheet.create({
   panelTitle: { color: '#F7F7F2', fontSize: 15, fontWeight: '800' },
   totalBudget: { color: '#35D3C8', fontSize: 30, fontWeight: '900', marginTop: 8 },
   budgetStatus: { color: '#9BA2BF', fontSize: 12, lineHeight: 18, marginTop: 5 },
+  budgetScopeDetail: { color: '#B9BED2', fontSize: 11, lineHeight: 17, marginTop: 9 },
+  convertedBudgetBox: { marginTop: 13, padding: 13, borderRadius: 13, backgroundColor: 'rgba(53,211,200,0.08)', borderWidth: 1, borderColor: 'rgba(53,211,200,0.2)' },
+  convertedBudgetLabel: { color: '#799C9E', fontSize: 8, fontWeight: '900', letterSpacing: 1 },
+  convertedBudgetValue: { color: '#9DE8E1', fontSize: 20, fontWeight: '900', marginTop: 4 },
+  convertedBudgetDate: { color: '#687F85', fontSize: 9, marginTop: 3 },
   divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 15 },
   budgetRow: { flexDirection: 'row', gap: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.045)' },
   budgetCategory: { color: '#E7E8F1', fontSize: 13, fontWeight: '800' },
@@ -505,5 +625,7 @@ const styles = StyleSheet.create({
   secondaryText: { color: '#BBA8FA', fontSize: 12, fontWeight: '800' },
   saveButton: { flex: 1, minWidth: 150, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 13, padding: 14, backgroundColor: '#6C2BD9' },
   saveText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  savedTripsButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 13, padding: 13, backgroundColor: 'rgba(53,211,200,0.08)', borderWidth: 1, borderColor: 'rgba(53,211,200,0.25)' },
+  savedTripsText: { color: '#9DE8E1', fontSize: 12, fontWeight: '800' },
   disclaimer: { color: '#636B89', fontSize: 9, lineHeight: 14, textAlign: 'center' },
 });

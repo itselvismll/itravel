@@ -32,6 +32,7 @@ import { getTopPlacesByCountry } from '../../services/photoService';
 import PhotoGallery from '../PhotoGallery';
 import PhotoUploader from '../PhotoUploader';
 import CountryFlag from '../CountryFlag';
+import CountryRequirementsCard from '../CountryRequirementsCard';
 
 const EMPTY_PHOTO_STATS = { photoCount: 0, cityCount: 0, favoriteCount: 0 };
 
@@ -373,6 +374,10 @@ export default function CountryDetailModal({
                     </View>
                   )}
 
+                  <View style={styles.requirementsSection}>
+                    <CountryRequirementsCard countryCode={country?.code} light />
+                  </View>
+
                   {/* Top Lugares por cidade */}
                   {Object.keys(topPlaces).length > 0 && (
                     <View style={{ marginHorizontal: 12, marginTop: 10 }}>
@@ -618,6 +623,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     marginBottom: 4,
+  },
+  requirementsSection: {
+    marginHorizontal: 12,
+    marginTop: 10,
   },
   infoGrid: {
     flexDirection: 'row',

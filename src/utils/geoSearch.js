@@ -6,6 +6,7 @@
 // cidades usada pelo PhotoUploader.
 
 import { getCountryNamePtByCode } from './countryUtils';
+import { fetch } from 'expo/fetch';
 
 const DIACRITICS_REGEX = new RegExp('[\\u0300-\\u036f]', 'g');
 

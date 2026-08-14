@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity, Image,
+  View, Text, FlatList, StyleSheet, TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -8,6 +8,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase, getCurrentUser } from '../services/supabase';
 import { COLORS } from '../utils/constants';
 import Avatar from '../components/Avatar';
+import { getNotificationDestination } from '../utils/notificationRouting';
+import { SOCIAL_NOTIFICATION_TYPES } from '../utils/socialNotifications';
 
 const TYPE_ICON = {
   follow:  { name: 'person-add',    color: '#6C2BD9' },
@@ -42,11 +44,15 @@ export default function NotificationsScreen({ navigation }) {
         message,
         read,
         created_at,
+        actor_id,
         photo_id,
-        actor:actor_id(id, username, display_name, avatar_url),
-        photo:photo_id(id, photo_url)
+        conversation_id,
+        passport_share_id,
+        preview,
+        actor:actor_id(id, username, display_name, avatar_url)
       `)
       .eq('user_id', user.id)
+      .in('type', SOCIAL_NOTIFICATION_TYPES)
       .order('created_at', { ascending: false })
       .limit(50);
 
@@ -57,13 +63,20 @@ export default function NotificationsScreen({ navigation }) {
       return;
     }
 
-    setNotifications(data || []);
+    const unique = new Map();
+    (data || []).forEach(item => {
+      const target = item.photo_id || '';
+      const key = `${item.type}:${item.actor_id || ''}:${target}:${item.message}`;
+      if (!unique.has(key)) unique.set(key, item);
+    });
+    setNotifications([...unique.values()]);
     setLoading(false);
 
     await supabase
       .from('notifications')
       .update({ read: true })
       .eq('user_id', user.id)
+      .in('type', SOCIAL_NOTIFICATION_TYPES)
       .eq('read', false);
   }, []);
 
@@ -77,25 +90,15 @@ export default function NotificationsScreen({ navigation }) {
   const renderItem = ({ item }) => {
     const icon = TYPE_ICON[item.type] || { name: 'notifications', color: '#6C2BD9' };
     const actor = Array.isArray(item.actor) ? item.actor[0] : item.actor;
-    const photo = Array.isArray(item.photo) ? item.photo[0] : item.photo;
+    const destination = getNotificationDestination(item, actor);
     const handlePress = () => {
-      if (item.type === 'comment' && item.photo_id) {
-        navigation.navigate('PhotoDetail', { photoId: item.photo_id });
-        return;
-      }
-
-      if (actor?.id) {
-        navigation.navigate('PublicProfile', {
-          userId: actor.id,
-          username: actor.username,
-        });
-      }
+      if (destination) navigation.navigate(destination.name, destination.params);
     };
 
     return (
       <TouchableOpacity
         style={[styles.row, !item.read && styles.unread]}
-        disabled={!actor?.id && !item.photo_id}
+        disabled={!destination}
         onPress={handlePress}
       >
         <View style={styles.avatarWrap}>
@@ -109,11 +112,9 @@ export default function NotificationsScreen({ navigation }) {
             <Text style={styles.bold}>{actor?.display_name || actor?.username || 'Alguém'}</Text>
             {' '}{item.message}
           </Text>
+          {!!item.preview && <Text style={styles.preview} numberOfLines={1}>{item.preview}</Text>}
           <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
         </View>
-        {photo?.photo_url ? (
-          <Image source={{ uri: photo.photo_url }} style={styles.photoThumb} resizeMode="cover" />
-        ) : null}
       </TouchableOpacity>
     );
   };
@@ -185,15 +186,9 @@ const styles = StyleSheet.create({
   },
   textWrap: { flex: 1 },
   message: { fontSize: 14, color: '#333', lineHeight: 20 },
+  preview: { fontSize: 12, color: '#777', marginTop: 2 },
   bold: { fontWeight: '700' },
   time: { fontSize: 12, color: '#999', marginTop: 2 },
-  photoThumb: {
-    width: 48,
-    height: 48,
-    borderRadius: 8,
-    marginLeft: 10,
-    backgroundColor: '#eee',
-  },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   emptyText: { fontSize: 15, color: '#999' },
   retryButton: {

@@ -8,79 +8,23 @@ import { supabase } from '../../services/supabase';
 import { getCurrentUser } from '../../services/supabase';
 import {
   ALPHA3_TO_ALPHA2,
+  getAlpha3,
   getCountryNamePtByCode,
 } from '../../utils/countryUtils';
 import {
   searchCountries,
   COUNTRY_SEARCH_DEBOUNCE_MS,
 } from '../../utils/geoSearch';
-import { followUser, unfollowUser, getFollowing, getRecentPublicPhotos, getUsersToDiscover } from '../../services/followService';
-import { searchTravelers, getSuggestedTravelers, getTravelersByCountry, addToWishlist, removeFromWishlist, isInWishlist } from '../../services/socialService';
+import { followUser, unfollowUser, getFollowing, getUsersToDiscover } from '../../services/followService';
+import { searchTravelers, getSuggestedTravelers, addToWishlist, removeFromWishlist, isInWishlist } from '../../services/socialService';
+import { deletePhoto } from '../../services/photoService';
 import StarRating from '../../components/StarRating';
 import Avatar from '../../components/Avatar';
 import CountryFlag from '../../components/CountryFlag';
 import { useUpload } from '../../context/UploadContext';
 import { COUNTRIES_STATIC } from '../../data/countriesStaticData';
-
-const MOCK_RECENT_PHOTOS = [
-  {
-    id: 'm1',
-    photo_url: 'https://images.unsplash.com/photo-1483729558449-99ef09a8c325?w=400',
-    city: 'Salvador',
-    country_name: 'Brasil',
-    country_code: 'BRA',
-    location_name: 'Restaurante Yemanjá',
-    rating: 5,
-    review: 'Melhor moqueca que já comi! Vista pro mar incrível.',
-    created_at: '2026-06-01T10:00:00Z',
-    profiles: { display_name: 'Maria', username: 'maria_viaja', avatar_url: null },
-  },
-  {
-    id: 'm2',
-    photo_url: 'https://images.unsplash.com/photo-1552465011-b4e21bf6e79a?w=400',
-    city: 'Lisboa',
-    country_name: 'Portugal',
-    country_code: 'PRT',
-    location_name: 'Pastéis de Belém',
-    rating: 4,
-    review: 'O pastel de nata original. Fila grande mas vale cada minuto.',
-    created_at: '2026-05-30T14:00:00Z',
-    profiles: { display_name: 'João', username: 'joao_mundo', avatar_url: null },
-  },
-  {
-    id: 'm3',
-    photo_url: 'https://images.unsplash.com/photo-1528360983277-13d401cdc186?w=400',
-    city: 'Tóquio',
-    country_name: 'Japan',
-    country_code: 'JPN',
-    location_name: 'Tsukiji Fish Market',
-    rating: 5,
-    review: 'Sushi fresquíssimo logo cedo pela manhã. Experiência única!',
-    created_at: '2026-05-28T08:00:00Z',
-    profiles: { display_name: 'Ana', username: 'ana_travel', avatar_url: null },
-  },
-  {
-    id: 'm4',
-    photo_url: 'https://images.unsplash.com/photo-1499856871958-5b9627545d1a?w=400',
-    city: 'Paris',
-    country_name: 'France',
-    country_code: 'FRA',
-    location_name: 'Tour Eiffel',
-    rating: 4,
-    review: 'Visão deslumbrante à noite com as luzes. Chegue cedo para evitar filas.',
-    created_at: '2026-05-25T20:00:00Z',
-    profiles: { display_name: 'Pedro', username: 'pedro_explora', avatar_url: null },
-  },
-];
-
-const MOCK_POPULAR = [
-  { country_code: 'BRA', country_name: 'Brazil', count: 48, avgRating: '4.7' },
-  { country_code: 'PRT', country_name: 'Portugal', count: 32, avgRating: '4.9' },
-  { country_code: 'JPN', country_name: 'Japan', count: 27, avgRating: '4.8' },
-  { country_code: 'FRA', country_name: 'France', count: 21, avgRating: '4.6' },
-  { country_code: 'ITA', country_name: 'Italy', count: 18, avgRating: '4.7' },
-  { country_code: 'ARG', country_name: 'Argentina', count: 14, avgRating: '4.5' },
-];
+import { confirm, notify } from '../../utils/dialogs';
+import { getTourismImage } from '../../services/tourismImageService';
 
 const MOCK_USERS = [
   { id: '1', username: 'maria_viaja', display_name: 'Maria', avatar_url: null, countries: 12 },
@@ -89,6 +33,29 @@ const MOCK_USERS = [
   { id: '4', username: 'pedro_explora', display_name: 'Pedro', avatar_url: null, countries: 15 },
   { id: '5', username: 'carla_aventura', display_name: 'Carla', avatar_url: null, countries: 3 },
 ];
+
+// Tendência sazonal combinada com sinais reais do app (buscas, fotos, wishlist e
+// pessoas seguidas). Assim a lista muda ao longo do ano sem fingir números externos.
+const SEASONAL_COUNTRIES_BY_MONTH = {
+  0: ['ARG', 'CHL', 'URY', 'AUS', 'NZL'],
+  1: ['BRA', 'ARG', 'CHL', 'THA', 'IDN'],
+  2: ['JPN', 'NLD', 'PRT', 'MAR', 'EGY'],
+  3: ['JPN', 'NLD', 'FRA', 'ITA', 'ESP'],
+  4: ['ITA', 'PRT', 'GRC', 'TUR', 'FRA'],
+  5: ['ITA', 'GRC', 'HRV', 'ESP', 'PRT'],
+  6: ['FRA', 'ITA', 'GRC', 'HRV', 'GBR'],
+  7: ['PRT', 'ESP', 'FRA', 'ITA', 'GBR'],
+  8: ['ITA', 'GRC', 'TUR', 'PRT', 'ZAF'],
+  9: ['USA', 'CAN', 'DEU', 'CZE', 'JPN'],
+  10: ['USA', 'MEX', 'ARG', 'CHL', 'EGY'],
+  11: ['BRA', 'ARG', 'CHL', 'AUT', 'CHE'],
+};
+
+const getSeasonalBoost = countryCode => {
+  const seasonal = SEASONAL_COUNTRIES_BY_MONTH[new Date().getMonth()] || [];
+  const position = seasonal.indexOf(countryCode);
+  return position < 0 ? 0 : (seasonal.length - position) * 3;
+};
 
 export default function ExploreScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -107,11 +74,7 @@ export default function ExploreScreen({ navigation }) {
   const [suggestedTravelers, setSuggestedTravelers] = useState([]);
   const [travelerSearchResults, setTravelerSearchResults] = useState([]);
   const [countryWishlisted, setCountryWishlisted] = useState(false);
-  const [topDestinations, setTopDestinations] = useState([]);
-  const [destCountry, setDestCountry] = useState(null);
-  const [destTravelers, setDestTravelers] = useState([]);
-  const [loadingDestTravelers, setLoadingDestTravelers] = useState(false);
-  const [destWishlisted, setDestWishlisted] = useState(false);
+  const [deletingPhotoId, setDeletingPhotoId] = useState(null);
 
   const { refreshTrigger } = useUpload();
 
@@ -126,7 +89,7 @@ export default function ExploreScreen({ navigation }) {
     const user = await getCurrentUser();
     setCurrentUser(user);
 
-    const parallelTasks = [loadPopularCountries(), loadAllCountries(), loadRecentPhotos(), loadTopDestinations()];
+    const parallelTasks = [loadPersonalizedExplore(user), loadAllCountries()];
     if (user) {
       parallelTasks.push(
         getFollowing(user.id).then(r => { if (r.success) setFollowing(r.data); }),
@@ -136,35 +99,6 @@ export default function ExploreScreen({ navigation }) {
     }
     await Promise.all(parallelTasks);
     setLoading(false);
-  };
-
-  const loadRecentPhotos = async () => {
-    const result = await getRecentPublicPhotos(8);
-    if (result.success && result.data.length > 0) {
-      setRecentPhotos(result.data);
-    } else {
-      setRecentPhotos(MOCK_RECENT_PHOTOS);
-    }
-  };
-
-  const loadTopDestinations = async () => {
-    const { data } = await supabase
-      .from('visited_countries')
-      .select('country_code, country_name, user_id')
-      .limit(500);
-    if (data && data.length > 0) {
-      const counts = {};
-      data.forEach(row => {
-        const key = row.country_code;
-        if (!counts[key]) counts[key] = { country_code: key, country_name: row.country_name, users: new Set() };
-        counts[key].users.add(row.user_id);
-      });
-      const sorted = Object.values(counts)
-        .map(c => ({ country_code: c.country_code, country_name: c.country_name, travelerCount: c.users.size }))
-        .sort((a, b) => b.travelerCount - a.travelerCount)
-        .slice(0, 10);
-      setTopDestinations(sorted);
-    }
   };
 
   const buildFallbackCountries = () =>
@@ -180,56 +114,91 @@ export default function ExploreScreen({ navigation }) {
     setAllCountries(buildFallbackCountries());
   };
 
-  const loadPopularCountries = async () => {
-    const { data } = await supabase
-      .from('country_photos')
-      .select('country_code, country_name, rating')
-      .eq('is_public', true);
+  const loadPersonalizedExplore = async (user) => {
+    const [photosResult, interactionsResult, wishlistResult, followsResult] = await Promise.all([
+      supabase.from('country_photos').select('id, photo_url, city, country_name, country_code, location_name, rating, review, created_at, user_id').eq('is_public', true).order('created_at', { ascending: false }).limit(300),
+      user ? supabase.from('explore_interactions').select('country_code, event_type').eq('user_id', user.id).order('created_at', { ascending: false }).limit(200) : Promise.resolve({ data: [] }),
+      user ? supabase.from('wishlist').select('country_code').eq('user_id', user.id) : Promise.resolve({ data: [] }),
+      user ? supabase.from('followers').select('following_id').eq('follower_id', user.id) : Promise.resolve({ data: [] }),
+    ]);
+    const photos = photosResult.data || [];
+    const followedIds = new Set((followsResult.data || []).map(item => item.following_id));
+    const wishlistCodes = new Set((wishlistResult.data || []).map(item => getAlpha3(item.country_code)?.toUpperCase()));
+    const interactionScores = {};
+    (interactionsResult.data || []).forEach(item => {
+      const code = getAlpha3(item.country_code)?.toUpperCase();
+      if (code) interactionScores[code] = (interactionScores[code] || 0) + (item.event_type === 'search' ? 5 : item.event_type === 'open' ? 3 : 1);
+    });
 
-    if (data) {
-      const counts = {};
-      data.forEach(photo => {
-        const key = photo.country_code;
-        if (!counts[key]) counts[key] = {
-          country_code: key,
-          country_name: photo.country_name,
-          count: 0,
-          totalRating: 0,
-          ratingCount: 0,
-        };
-        counts[key].count++;
-        if (photo.rating) {
-          counts[key].totalRating += photo.rating;
-          counts[key].ratingCount++;
-        }
-      });
-      const sorted = Object.values(counts)
-        .map(c => ({
-          ...c,
-          avgRating: c.ratingCount > 0
-            ? (c.totalRating / c.ratingCount).toFixed(1)
-            : null,
-        }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 6);
-      if (!sorted || sorted.length < 3) {
-        setPopularCountries(MOCK_POPULAR);
-      } else {
-        setPopularCountries(sorted);
-      }
-    } else {
-      setPopularCountries(MOCK_POPULAR);
-    }
+    const countries = {};
+    photos.forEach(photo => {
+      const code = getAlpha3(photo.country_code)?.toUpperCase();
+      if (!code) return;
+      if (!countries[code]) countries[code] = { country_code: code, country_name: photo.country_name, count: 0, totalRating: 0, ratingCount: 0, users: new Set(), score: interactionScores[code] || 0, coverUrl: photo.photo_url, imageSource: 'Comunidade Journi' };
+      const entry = countries[code];
+      entry.count += 1;
+      entry.users.add(photo.user_id);
+      entry.score += 1 + (followedIds.has(photo.user_id) ? 3 : 0) + (wishlistCodes.has(code) ? 4 : 0);
+      if (photo.rating) { entry.totalRating += photo.rating; entry.ratingCount += 1; }
+    });
+    const seasonalCodes = SEASONAL_COUNTRIES_BY_MONTH[new Date().getMonth()] || [];
+    seasonalCodes.forEach(code => {
+      if (countries[code]) return;
+      countries[code] = {
+        country_code: code,
+        country_name: getCountryNamePtByCode(code, COUNTRIES_STATIC[code]?.name || code),
+        count: 0,
+        totalRating: 0,
+        ratingCount: 0,
+        users: new Set(),
+        score: 0,
+        seasonal: true,
+      };
+    });
+    const ranked = Object.values(countries).map(country => ({
+      ...country,
+      avgRating: country.ratingCount ? (country.totalRating / country.ratingCount).toFixed(1) : null,
+      score: country.score + country.users.size * 2 + getSeasonalBoost(country.country_code),
+    })).sort((a, b) => b.score - a.score || b.count - a.count);
+    const topCountries = await Promise.all(ranked.slice(0, 8).map(async country => {
+      if (country.coverUrl) return country;
+      const image = await getTourismImage(
+        country.country_code,
+        COUNTRIES_STATIC[country.country_code]?.name || country.country_name
+      );
+      return image ? { ...country, coverUrl: image.url, imageSource: image.source } : country;
+    }));
+    setPopularCountries(topCountries);
+
+    const countryRank = new Map(ranked.map((country, index) => [country.country_code, ranked.length - index]));
+    const sortedPhotos = [...photos].sort((a, b) => {
+      const aCode = getAlpha3(a.country_code)?.toUpperCase();
+      const bCode = getAlpha3(b.country_code)?.toUpperCase();
+      const aScore = (countryRank.get(aCode) || 0) + (followedIds.has(a.user_id) ? 10 : 0);
+      const bScore = (countryRank.get(bCode) || 0) + (followedIds.has(b.user_id) ? 10 : 0);
+      return bScore - aScore || new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }).slice(0, 10);
+    const userIds = [...new Set(sortedPhotos.map(photo => photo.user_id))];
+    const { data: profiles } = userIds.length
+      ? await supabase.from('profiles').select('id, username, display_name, avatar_url').in('id', userIds)
+      : { data: [] };
+    setRecentPhotos(sortedPhotos.map(photo => ({ ...photo, country_code: getAlpha3(photo.country_code)?.toUpperCase(), profiles: (profiles || []).find(profile => profile.id === photo.user_id) || null })));
+  };
+
+  const recordExploreInteraction = async (countryCode, eventType) => {
+    if (!currentUser || !countryCode) return;
+    await supabase.from('explore_interactions').insert({ user_id: currentUser.id, country_code: getAlpha3(countryCode)?.toUpperCase(), event_type: eventType });
   };
 
   const handleCountryPress = async (country) => {
+    recordExploreInteraction(country.country_code, 'open');
     setSelectedCountry(country);
     setLoadingPhotos(true);
     try {
       const { data: photos } = await supabase
         .from('country_photos')
-        .select('id, photo_url, city, created_at, user_id, location_name, rating, review')
-        .eq('country_code', country.country_code)
+        .select('id, photo_url, photo_path, city, created_at, user_id, location_name, rating, review')
+        .in('country_code', [getAlpha3(country.country_code)?.toUpperCase(), ALPHA3_TO_ALPHA2[getAlpha3(country.country_code)?.toUpperCase()]].filter(Boolean))
         .eq('is_public', true)
         .order('created_at', { ascending: false })
         .limit(20);
@@ -275,6 +244,27 @@ export default function ExploreScreen({ navigation }) {
       : [...prev, userId]);
   };
 
+  const handleDeleteCountryPhoto = async photo => {
+    if (!photo || photo.user_id !== currentUser?.id || deletingPhotoId) return;
+    const accepted = await confirm(
+      'Excluir publicação',
+      'A foto, a legenda e os comentários serão excluídos permanentemente. Deseja continuar?'
+    );
+    if (!accepted) return;
+
+    setDeletingPhotoId(photo.id);
+    const result = await deletePhoto(photo.id, photo.photo_path);
+    setDeletingPhotoId(null);
+    if (!result.success) {
+      notify('Erro ao excluir', result.error || 'Não foi possível excluir esta publicação.');
+      return;
+    }
+    setCountryPhotos(current => current.filter(item => item.id !== photo.id));
+    setFullscreenPhoto(null);
+    notify('Publicação excluída', 'Sua foto foi removida.');
+    loadPersonalizedExplore(currentUser);
+  };
+
   useEffect(() => {
     if (selectedCountry) {
       isInWishlist(selectedCountry.country_code).then(r => setCountryWishlisted(r.data || false));
@@ -308,33 +298,6 @@ export default function ExploreScreen({ navigation }) {
     } else {
       await addToWishlist(selectedCountry.country_code, selectedCountry.country_name);
       setCountryWishlisted(true);
-    }
-  };
-
-  useEffect(() => {
-    if (destCountry) {
-      const rawCode = destCountry.country_code || '';
-      const alpha2Dest = rawCode.length === 3 ? (ALPHA3_TO_ALPHA2[rawCode.toUpperCase()] || rawCode) : rawCode;
-      isInWishlist(alpha2Dest).then(r => setDestWishlisted(r.data || false));
-      setLoadingDestTravelers(true);
-      getTravelersByCountry(alpha2Dest, currentUser?.id).then(r => {
-        setDestTravelers(r.success ? r.data : []);
-        setLoadingDestTravelers(false);
-      });
-    } else {
-      setDestTravelers([]);
-      setDestWishlisted(false);
-    }
-  }, [destCountry]);
-
-  const toggleDestWishlist = async () => {
-    if (!destCountry) return;
-    if (destWishlisted) {
-      await removeFromWishlist(destCountry.country_code);
-      setDestWishlisted(false);
-    } else {
-      await addToWishlist(destCountry.country_code, destCountry.country_name);
-      setDestWishlisted(true);
     }
   };
 
@@ -399,6 +362,7 @@ export default function ExploreScreen({ navigation }) {
                 key={`c-${i}`}
                 style={[styles.searchResultItem, i < searchResults.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.08)' }]}
                 onPress={() => {
+                  recordExploreInteraction(country.code, 'search');
                   handleCountryPress({ country_code: country.code, country_name: country.nameEn });
                   setSearchQuery('');
                 }}
@@ -456,20 +420,24 @@ export default function ExploreScreen({ navigation }) {
             {/* DESTINOS POPULARES */}
             {popularCountries.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>DESTINOS POPULARES</Text>
+                <Text style={styles.sectionTitle}>DESTINOS EM ALTA NESTA ÉPOCA</Text>
                 <View style={styles.destGrid}>
                   {popularCountries.map((country, i) => (
                     <TouchableOpacity
-                      key={i}
+                      key={country.country_code}
                       style={styles.destinationCard}
                       onPress={() => handleCountryPress(country)}
                       activeOpacity={0.85}
                     >
+                      {!!country.coverUrl && (
+                        <Image source={{ uri: country.coverUrl }} style={styles.destinationBackground} resizeMode="cover" />
+                      )}
+                      <View style={styles.destinationShade} />
                       <CountryFlag
                         countryCode={country.country_code}
-                        width={96}
-                        height={64}
-                        borderRadius={10}
+                        width={38}
+                        height={25}
+                        borderRadius={4}
                         style={styles.destinationFlag}
                       />
                       <Text style={styles.destName} numberOfLines={1}>
@@ -477,52 +445,24 @@ export default function ExploreScreen({ navigation }) {
                       </Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={styles.destCount}>
-                          {country.count} {country.count === 1 ? 'foto' : 'fotos'}
+                          {country.count
+                            ? `${country.count} ${country.count === 1 ? 'foto' : 'fotos'}`
+                            : 'Tendência sazonal'}
                         </Text>
                         {country.avgRating && (
                           <Text style={styles.destRating}>★ {country.avgRating}</Text>
                         )}
                       </View>
+                      {!!country.imageSource && <Text style={styles.imageSource}>{country.imageSource}</Text>}
                     </TouchableOpacity>
                   ))}
                 </View>
               </View>
             )}
 
-            {/* EXPLORAR POR DESTINO */}
-            {topDestinations.length > 0 && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>EXPLORAR POR DESTINO</Text>
-                <View style={styles.destGrid}>
-                  {topDestinations.map((country, i) => (
-                    <TouchableOpacity
-                      key={i}
-                      style={styles.destinationCard}
-                      onPress={() => setDestCountry(country)}
-                      activeOpacity={0.85}
-                    >
-                      <CountryFlag
-                        countryCode={country.country_code}
-                        width={96}
-                        height={64}
-                        borderRadius={10}
-                        style={styles.destinationFlag}
-                      />
-                      <Text style={styles.destName} numberOfLines={1}>
-                        {getCountryNamePtByCode(country.country_code, country.country_name)}
-                      </Text>
-                      <Text style={{ color: '#9aa0c6', fontSize: 11 }}>
-                        {country.travelerCount} {country.travelerCount === 1 ? 'viajante' : 'viajantes'}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            )}
-
-            {/* FOTOS RECENTES */}
+            {/* FOTOS PERSONALIZADAS */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>FOTOS RECENTES</Text>
+              <Text style={styles.sectionTitle}>FOTOS RECOMENDADAS PARA VOCÊ</Text>
               {recentPhotos.map((photo) => (
                 <TouchableOpacity
                   key={photo.id}
@@ -727,102 +667,6 @@ export default function ExploreScreen({ navigation }) {
         </View>
       </Modal>
 
-      {/* MODAL DESTINO — viajantes */}
-      <Modal
-        visible={destCountry !== null}
-        animationType="slide"
-        onRequestClose={() => setDestCountry(null)}
-      >
-        <View style={{ flex: 1, backgroundColor: '#f0f0f0' }}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setDestCountry(null)}>
-              <Ionicons name="arrow-back" size={22} color="white" />
-            </TouchableOpacity>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              {destCountry && (
-                <CountryFlag
-                  countryCode={destCountry.country_code}
-                  width={32}
-                  height={21}
-                  borderRadius={3}
-                />
-              )}
-              <Text style={styles.modalHeaderTitle}>
-                {destCountry
-                  ? getCountryNamePtByCode(destCountry.country_code, destCountry.country_name)
-                  : ''}
-              </Text>
-            </View>
-            <TouchableOpacity onPress={toggleDestWishlist} style={{ padding: 4 }}>
-              <Ionicons
-                name={destWishlisted ? 'heart' : 'heart-outline'}
-                size={22}
-                color={destWishlisted ? '#FF4D6D' : 'rgba(255,255,255,0.6)'}
-              />
-            </TouchableOpacity>
-          </View>
-
-          {/* Botão wishlist destacado */}
-          <TouchableOpacity
-            onPress={toggleDestWishlist}
-            style={{
-              flexDirection: 'row', alignItems: 'center', gap: 10,
-              margin: 16, padding: 14, borderRadius: 12,
-              backgroundColor: destWishlisted ? '#6C2BD9' : 'white',
-              borderWidth: 1.5, borderColor: '#6C2BD9',
-            }}
-          >
-            <Text style={{ fontSize: 18 }}>{destWishlisted ? '💜' : '🤍'}</Text>
-            <Text style={{ fontWeight: '700', fontSize: 14, color: destWishlisted ? 'white' : '#6C2BD9' }}>
-              {destWishlisted ? 'Na sua wishlist ✓' : 'Quero visitar'}
-            </Text>
-          </TouchableOpacity>
-
-          {loadingDestTravelers ? (
-            <ActivityIndicator color="#6C2BD9" style={{ marginTop: 20 }} />
-          ) : destTravelers.length === 0 ? (
-            <View style={{ alignItems: 'center', marginTop: 40, gap: 10 }}>
-              <Ionicons name="people-outline" size={40} color="#ddd" />
-              <Text style={{ color: '#aaa', fontSize: 14 }}>Nenhum viajante registrou este país ainda</Text>
-            </View>
-          ) : (
-            <ScrollView contentContainerStyle={{ padding: 16, gap: 0 }}>
-              <Text style={[styles.sectionTitle, { marginBottom: 12 }]}>
-                {destTravelers.length} {destTravelers.length === 1 ? 'VIAJANTE' : 'VIAJANTES'}
-              </Text>
-              {destTravelers.map((traveler, i) => (
-                <View
-                  key={traveler.id || i}
-                  style={[styles.userRow, { backgroundColor: 'white', paddingHorizontal: 12, borderRadius: 10, marginBottom: 8, borderBottomWidth: 0 }]}
-                >
-                  <TouchableOpacity
-                    style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}
-                    onPress={() => {
-                      setDestCountry(null);
-                      navigation.navigate('PublicProfile', { userId: traveler.id, username: traveler.username });
-                    }}
-                  >
-                    <Avatar profile={traveler} size={40} />
-                    <View style={styles.userInfo}>
-                      <Text style={styles.userName}>{traveler.display_name || traveler.username}</Text>
-                      <Text style={styles.userMeta}>@{traveler.username}</Text>
-                    </View>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.followBtn, following.includes(traveler.id) && styles.followBtnActive]}
-                    onPress={() => handleFollowToggle(traveler.id)}
-                  >
-                    <Text style={[styles.followBtnText, following.includes(traveler.id) && styles.followBtnTextActive]}>
-                      {following.includes(traveler.id) ? 'Seguindo' : 'Seguir'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </ScrollView>
-          )}
-        </View>
-      </Modal>
-
       {/* FULLSCREEN */}
       <Modal
         visible={fullscreenPhoto !== null}
@@ -834,6 +678,18 @@ export default function ExploreScreen({ navigation }) {
           <TouchableOpacity style={styles.fullscreenClose} onPress={() => setFullscreenPhoto(null)}>
             <Ionicons name="close" size={28} color="white" />
           </TouchableOpacity>
+          {!!fullscreenPhoto && fullscreenPhoto.user_id === currentUser?.id && (
+            <TouchableOpacity
+              style={styles.fullscreenDelete}
+              onPress={() => handleDeleteCountryPhoto(fullscreenPhoto)}
+              disabled={deletingPhotoId === fullscreenPhoto?.id}
+              accessibilityLabel="Excluir minha publicação"
+            >
+              {deletingPhotoId === fullscreenPhoto?.id
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Ionicons name="trash-outline" size={23} color="#fff" />}
+            </TouchableOpacity>
+          )}
           {fullscreenPhoto && (
             <>
               <Image
@@ -896,16 +752,19 @@ const styles = StyleSheet.create({
   destGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   destinationCard: {
     width: '47.5%',
-    minHeight: 164,
+    minHeight: 190,
     backgroundColor: '#1b1f3a',
     borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 14,
+    alignItems: 'flex-start',
+    justifyContent: 'flex-end',
     gap: 8,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
+    overflow: 'hidden',
   },
+  destinationBackground: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
+  destinationShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(7,11,25,0.48)' },
   destinationFlag: {
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
@@ -916,6 +775,7 @@ const styles = StyleSheet.create({
   destName: { color: 'white', fontSize: 13, fontWeight: '700' },
   destCount: { color: 'rgba(255,255,255,0.7)', fontSize: 10 },
   destRating: { color: '#6C2BD9', fontSize: 10, fontWeight: '600' },
+  imageSource: { color: 'rgba(255,255,255,0.58)', fontSize: 8 },
   card: { backgroundColor: 'white', borderRadius: 12, margin: 12, padding: 14 },
   userRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: '#f0f0f0' },
   userAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#6C2BD9', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
@@ -944,6 +804,7 @@ const styles = StyleSheet.create({
   photoReview: { fontSize: 12, color: '#666', fontStyle: 'italic', lineHeight: 18 },
   fullscreen: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', alignItems: 'center', justifyContent: 'center' },
   fullscreenClose: { position: 'absolute', top: 48, right: 20, zIndex: 10 },
+  fullscreenDelete: { position: 'absolute', top: 48, left: 20, zIndex: 10, width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(239,68,68,0.9)', alignItems: 'center', justifyContent: 'center' },
   fullscreenInfo: { position: 'absolute', bottom: 60, alignItems: 'center', paddingHorizontal: 20 },
   recentCard: { backgroundColor: 'white', borderRadius: 12, overflow: 'hidden', marginBottom: 10, borderWidth: 0.5, borderColor: '#f0f0f0' },
   recentImage: { width: '100%', height: 180 },

@@ -62,7 +62,7 @@ const getLiveContext = async (
   const countryData = countryUrl ? await fetchJson(countryUrl) : null
   const country = Array.isArray(countryData) ? countryData[0] : countryData
   const localCurrency = Object.keys(country?.currencies || {})[0] || currency
-  const exchangeUrl = `https://api.frankfurter.app/latest?from=${encodeURIComponent(currency)}${localCurrency !== currency ? `&to=${encodeURIComponent(localCurrency)}` : ''}`
+  const exchangeUrl = `https://api.frankfurter.dev/v2/rate/${encodeURIComponent(currency)}/${encodeURIComponent(localCurrency)}`
 
   let weather = null
   let weatherSourceUrl = ''
@@ -94,28 +94,38 @@ const getLiveContext = async (
   let placesProvider = ''
   if (googlePlacesKey && place?.latitude && place?.longitude) {
     placesSourceUrl = 'https://places.googleapis.com/v1/places:searchText'
-    const placesData = await fetchJson(placesSourceUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': googlePlacesKey,
-        'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.regularOpeningHours,places.googleMapsUri,places.websiteUri',
-      },
-      body: JSON.stringify({
-        textQuery: `atrações ${interests.join(' ')} em ${destination}`,
-        languageCode: 'pt-BR',
-        maxResultCount: 15,
-        locationBias: {
-          circle: {
-            center: { latitude: place.latitude, longitude: place.longitude },
-            radius: 18000,
-          },
+    const searchPlaces = async (textQuery: string, category: string) => {
+      const placesData = await fetchJson(placesSourceUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': googlePlacesKey,
+          'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.regularOpeningHours,places.googleMapsUri,places.websiteUri',
         },
-      }),
-    })
-    realPlaces = (placesData?.places || []).map((item: any) => ({
+        body: JSON.stringify({
+          textQuery,
+          languageCode: 'pt-BR',
+          maxResultCount: 6,
+          locationBias: {
+            circle: {
+              center: { latitude: place.latitude, longitude: place.longitude },
+              radius: 18000,
+            },
+          },
+        }),
+      })
+      return (placesData?.places || []).map((item: any) => ({ ...item, category }))
+    }
+    const placeGroups = await Promise.all([
+      searchPlaces(`principais atrações ${interests.join(' ')} em ${destination}`, 'passeio'),
+      searchPlaces(`restaurantes bem avaliados em ${destination}`, 'restaurante'),
+      searchPlaces(`hotéis bem avaliados em ${destination}`, 'hotel'),
+    ])
+    realPlaces = placeGroups.flat().map((item: any) => ({
+      placeId: item.id,
       name: item.displayName?.text,
       address: item.formattedAddress,
+      category: item.category,
       latitude: item.location?.latitude,
       longitude: item.location?.longitude,
       rating: item.rating || null,
@@ -129,11 +139,14 @@ const getLiveContext = async (
   }
 
   if (!realPlaces.length && place?.latitude && place?.longitude) {
-    const overpassQuery = `[out:json][timeout:12];(nwr(around:15000,${place.latitude},${place.longitude})[tourism~"attraction|museum|gallery|viewpoint|zoo|theme_park"][name];);out center tags 20;`
+    const overpassQuery = `[out:json][timeout:12];(nwr(around:15000,${place.latitude},${place.longitude})[tourism~"attraction|museum|gallery|viewpoint|zoo|theme_park|hotel"][name];nwr(around:15000,${place.latitude},${place.longitude})[amenity~"restaurant|cafe"][name];);out center tags 30;`
     placesSourceUrl = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery)}`
     const osmData = await fetchJson(placesSourceUrl, { headers: { 'Accept-Language': 'pt-BR' } })
     realPlaces = (osmData?.elements || []).slice(0, 20).map((item: any) => ({
       name: item.tags?.name,
+      category: item.tags?.amenity === 'restaurant' || item.tags?.amenity === 'cafe'
+        ? 'restaurante'
+        : item.tags?.tourism === 'hotel' ? 'hotel' : 'passeio',
       address: [item.tags?.['addr:street'], item.tags?.['addr:housenumber']].filter(Boolean).join(', '),
       latitude: item.lat || item.center?.lat,
       longitude: item.lon || item.center?.lon,
@@ -149,7 +162,9 @@ const getLiveContext = async (
     placesProvider = realPlaces.length ? 'OpenStreetMap' : ''
   }
 
-  const exchange = await fetchJson(exchangeUrl)
+  const exchange = currency === localCurrency
+    ? { base: currency, quote: localCurrency, rate: 1, date: new Date().toISOString().slice(0, 10) }
+    : await fetchJson(exchangeUrl)
 
   return {
     place: place ? {
@@ -164,7 +179,7 @@ const getLiveContext = async (
     exchange: exchange ? {
       base: exchange.base,
       date: exchange.date,
-      rates: exchange.rates,
+      rates: { [localCurrency]: Number(exchange.rate) },
       requestedCurrency: currency,
       localCurrency,
     } : null,
@@ -200,11 +215,13 @@ const planSchema = {
           day: { type: 'INTEGER' },
           date: { type: 'STRING' },
           theme: { type: 'STRING' },
-          activities: {
-            type: 'ARRAY',
-            items: {
+            activities: {
+              type: 'ARRAY',
+              minItems: 3,
+              maxItems: 3,
+              items: {
               type: 'OBJECT',
-              required: ['period', 'title', 'description', 'location', 'duration', 'estimatedCost', 'mapQuery', 'indoor'],
+              required: ['period', 'title', 'description', 'location', 'duration', 'estimatedCost', 'mapQuery', 'indoor', 'purchaseNote'],
               properties: {
                 period: { type: 'STRING' },
                 title: { type: 'STRING' },
@@ -220,7 +237,10 @@ const planSchema = {
                 reviewCount: { type: 'INTEGER' },
                 openingHours: { type: 'ARRAY', items: { type: 'STRING' } },
                 mapsUrl: { type: 'STRING' },
+                officialUrl: { type: 'STRING' },
+                placeId: { type: 'STRING' },
                 verificationSource: { type: 'STRING' },
+                purchaseNote: { type: 'STRING' },
               },
             },
           },
@@ -229,10 +249,12 @@ const planSchema = {
     },
     budget: {
       type: 'OBJECT',
-      required: ['total', 'currency', 'items'],
+      required: ['total', 'currency', 'items', 'shoppingIncluded', 'scopeNote'],
       properties: {
         total: { type: 'NUMBER' },
         currency: { type: 'STRING' },
+        shoppingIncluded: { type: 'BOOLEAN' },
+        scopeNote: { type: 'STRING' },
         items: {
           type: 'ARRAY',
           items: {
@@ -293,17 +315,41 @@ serve(async (req) => {
     const supportedActions = ['generate_plan', 'regenerate_activity', 'adjust_plan']
     const action = supportedActions.includes(body?.action) ? body.action : 'generate_plan'
     const request = body?.planRequest || {}
-    const destination = cleanText(request.destination, 120)
+    const destinations = Array.isArray(request.destinations)
+      ? request.destinations.slice(0, 12).map((item: any) => ({
+        name: cleanText(typeof item === 'string' ? item : item?.name, 100),
+        code: cleanText(typeof item === 'string' ? '' : item?.code, 3).toUpperCase(),
+      })).filter((item: { name: string }) => item.name)
+      : []
+    const destinationBudgets = Array.isArray(request.destinationBudgets)
+      ? request.destinationBudgets.slice(0, 12).map((item: any) => ({
+        countryCode: cleanText(item?.countryCode, 3).toUpperCase(),
+        countryName: cleanText(item?.countryName, 100),
+        currency: cleanText(item?.currency, 3).toUpperCase(),
+        amount: Math.max(0, Number(item?.localAmount) || Number(String(item?.amount || '').replace(/\D/g, '')) || 0),
+        amountInBRL: Math.max(0, Number(item?.amountInBRL) || 0),
+        rateDate: cleanText(item?.rateDate, 10),
+      })).filter((item: { countryName: string }) => item.countryName)
+      : []
+    const destination = cleanText(request.destination, 500)
+      || destinations.map((item: { name: string }) => item.name).join(', ')
+    const primaryDestination = destinations[0]?.name || destination
     const origin = cleanText(request.origin, 120)
     const currency = cleanText(request.currency, 3).toUpperCase() || 'BRL'
     const travelers = Math.max(1, Math.min(30, Number(request.travelers) || 1))
-    const duration = Math.max(1, Math.min(14, Number(request.duration) || 3))
+    const duration = Math.max(1, Math.floor(Number(request.duration) || 3))
     const budget = Math.max(0, Number(request.budget) || 0)
 
     if (!destination) return jsonResponse({ success: false, error: 'Informe um destino válido' }, 400)
+    const today = new Date().toISOString().slice(0, 10)
+    if (isIsoDate(request.startDate) && request.startDate < today) {
+      return jsonResponse({ success: false, error: 'A data de ida não pode estar no passado' }, 400)
+    }
 
     const safeRequest = {
       destination,
+      destinations,
+      destinationBudgets,
       origin,
       startDate: cleanText(request.startDate, 10),
       endDate: cleanText(request.endDate, 10),
@@ -312,6 +358,10 @@ serve(async (req) => {
       travelerType: cleanText(request.travelerType, 40),
       budget,
       currency,
+      budgetLevel: cleanText(request.budgetLevel, 20) || 'balanced',
+      budgetCurrency: cleanText(request.budgetCurrency, 3).toUpperCase() || currency,
+      displayCurrency: cleanText(request.displayCurrency, 3).toUpperCase(),
+      preferredPlaces: cleanText(request.preferredPlaces, 500),
       pace: cleanText(request.pace, 20),
       interests: cleanList(request.interests),
       foodPreferences: cleanText(request.foodPreferences, 240),
@@ -327,7 +377,7 @@ serve(async (req) => {
     }
 
     const liveContext = await getLiveContext(
-      destination,
+      primaryDestination,
       currency,
       safeRequest.startDate,
       safeRequest.endDate,
@@ -348,11 +398,21 @@ Dados externos disponíveis: ${JSON.stringify(liveContext)}
 Operação: ${operationInstruction}
 
 Regras:
-- Crie exatamente ${duration} dias, respeitando datas, ritmo, interesses, alimentação e acessibilidade.
+- Crie exatamente ${duration} dias, respeitando datas, ritmo, interesses, alimentação, acessibilidade e todos os países selecionados em destinations.
+- Crie exatamente 3 atividades objetivas por dia (manhã, tarde e noite). Mantenha title, description e purchaseNote concisos para que roteiros longos não sejam cortados.
+- O padrão de orçamento é ${safeRequest.budgetLevel}: economy significa econômico/barato, balanced significa médio e premium significa caro/confortável.
 - Distribua manhã, tarde e noite sem deslocamentos impossíveis; agrupe locais próximos.
 - Todos os custos devem ser numéricos em ${currency}, para ${travelers} viajante(s), e o total deve respeitar o orçamento quando ele for maior que zero.
+- budget.items deve detalhar Passagens, Hospedagem, Alimentação, Transporte local, Passeios e ingressos, Compras e Reserva. Os itens devem somar exatamente budget.total.
+- Quando destinationBudgets existir, respeite o teto informado para cada país e use amountInBRL como referência consolidada. Explique em budget.scopeNote como o total foi distribuído entre os destinos.
+- Não presuma passagens ou hospedagem: quando não houver dados suficientes, use valor 0 na categoria e explique em note que não está incluída. Não conte o custo de uma atividade duas vezes.
+- Inclua uma verba de Compras somente quando ela couber no orçamento ou estiver alinhada aos interesses. shoppingIncluded só pode ser true quando a categoria Compras tiver valor maior que 0. Explique todas as inclusões e exclusões em scopeNote.
+- Atividades realmente gratuitas devem ter estimatedCost igual a 0. Não use textos como "grátis" no campo numérico.
 - mapQuery deve ser uma busca precisa no formato "local, cidade, país".
-- Priorize os locais de realPlaces. Ao usar um deles, copie nome, latitude, longitude, avaliação, quantidade de avaliações, horários e mapsUrl sem alterar os dados; copie provider para verificationSource.
+- Priorize os locais de realPlaces. Ao usar um deles, copie nome, latitude, longitude, avaliação, quantidade de avaliações, horários e mapsUrl sem alterar os dados; copie website para officialUrl e provider para verificationSource.
+- Combine a categoria: refeições usam realPlaces.category restaurante, hospedagem usa hotel e passeios usam passeio. Copie também placeId sem alterar.
+- officialUrl só pode receber uma URL presente nos dados externos. Nunca invente links de ingresso, afiliados ou sites de compra.
+- Em purchaseNote, quando houver officialUrl, oriente a conferir/comprar no site oficial. Sem officialUrl, oriente a consultar ingressos e canais oficiais na ficha do local no Maps. Para atividade gratuita, informe que o valor é 0 e que as regras devem ser confirmadas.
 - Se uma fonte não trouxer avaliação ou horário, deixe o campo ausente; nunca fabrique reviews ou horários.
 - Use os dados meteorológicos apenas quando existirem; caso contrário diga que a previsão deve ser conferida perto da viagem.
 - Não invente horários de funcionamento, preços oficiais ou regras legais. Indique estimativas claramente.
@@ -360,25 +420,51 @@ Regras:
 - Checklist deve incluir documentos, saúde, dinheiro, conectividade e bagagem.
 - Inclua alertas de segurança objetivos, sem alarmismo.`
 
-    const geminiResponse = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            maxOutputTokens: 8192,
-            responseMimeType: 'application/json',
-            responseSchema: planSchema,
-          },
-        }),
+    const responseSchema = {
+      ...planSchema,
+      properties: {
+        ...planSchema.properties,
+        days: {
+          ...planSchema.properties.days,
+          minItems: duration,
+          maxItems: duration,
+        },
       },
-    )
+    }
 
-    const geminiData = await geminiResponse.json().catch(() => null)
-    if (!geminiResponse.ok || !geminiData) {
-      return jsonResponse({ success: false, error: 'A IA não conseguiu montar o roteiro agora' }, 502)
+    const configuredModel = Deno.env.get('GEMINI_MODEL') || 'gemini-3.6-flash'
+    const models = [...new Set([configuredModel, 'gemini-3.5-flash-lite'])]
+    let geminiResponse: Response | null = null
+    let geminiData: any = null
+
+    for (const model of models) {
+      geminiResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              maxOutputTokens: 65535,
+              responseMimeType: 'application/json',
+              responseSchema,
+            },
+          }),
+        },
+      )
+      geminiData = await geminiResponse.json().catch(() => null)
+      if (geminiResponse.ok && geminiData) break
+    }
+
+    if (!geminiResponse?.ok || !geminiData) {
+      const providerStatus = geminiData?.error?.status
+      const responseStatus = geminiResponse?.status || 502
+      const error = responseStatus === 429
+        ? 'O limite temporário da IA foi atingido. Aguarde um minuto e tente novamente.'
+        : 'A IA não conseguiu montar o roteiro agora. Tente novamente em instantes.'
+      console.error('travel-assistant provider failure', { status: responseStatus, providerStatus })
+      return jsonResponse({ success: false, error }, responseStatus === 429 ? 429 : 502)
     }
 
     const responseText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text
@@ -389,6 +475,13 @@ Regras:
       plan = JSON.parse(responseText)
     } catch {
       return jsonResponse({ success: false, error: 'A IA retornou um roteiro fora do formato esperado' }, 502)
+    }
+
+    if (!Array.isArray(plan.days) || plan.days.length !== duration) {
+      return jsonResponse({
+        success: false,
+        error: `A IA gerou ${plan.days?.length || 0} de ${duration} dias. Tente gerar novamente.`,
+      }, 502)
     }
 
     plan.sources = (liveContext.sources || []).map((source: { label: string; url: string }) => ({
