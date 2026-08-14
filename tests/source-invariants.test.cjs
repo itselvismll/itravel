@@ -403,6 +403,17 @@ test('globe reuses the map controls instead of reimplementing them', () => {
   assert.match(globe, /onSelect=\{openCountry\}/);
 });
 
+test('the bottom-right corner of the globe belongs to the visited pill alone', () => {
+  // Os botões + / − do MapLibre nasciam em bottom-right e ficavam escondidos
+  // atrás do pill de países visitados. Num app de toque eles são redundantes
+  // (scroll e pinça já dão zoom), então saíram; o GlobeControl foi para o canto
+  // do crédito. Se algum control voltar para bottom-right o pill volta a cobri-lo.
+  const map = stripComments(read('src/components/map/GlobeMap.web.js'));
+  assert.doesNotMatch(map, /NavigationControl/);
+  assert.doesNotMatch(map, /'bottom-right'/);
+  assert.match(map, /new GlobeControl\(\), 'bottom-left'/);
+});
+
 test('the globe does no layout work while the camera is moving', () => {
   // As travadas do arrasto vinham daqui: ler offsetWidth força o browser a
   // recalcular o layout na hora, e isso acontecia ~240 vezes por quadro, logo

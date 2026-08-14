@@ -8,7 +8,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Map as MapLibreMap,
   AttributionControl,
-  NavigationControl,
   GlobeControl,
   config as maplibreConfig,
 } from 'maplibre-gl';
@@ -187,9 +186,13 @@ export default function GlobeMap({
       }),
       'bottom-left'
     );
-    map.addControl(new NavigationControl({ visualizePitch: true }), 'bottom-right');
+    // Sem NavigationControl: os botões + / − são redundantes num app de toque
+    // (scroll e pinça já dão zoom) e ficavam embaixo do pill de países visitados,
+    // no canto inferior direito. Esse canto agora é só do pill.
+    // O GlobeControl (globo ↔ mercator) fica no canto do crédito, empilhado
+    // acima dele — é o único canto sem UI do app por cima.
     if (showGlobeControl) {
-      map.addControl(new GlobeControl(), 'bottom-right');
+      map.addControl(new GlobeControl(), 'bottom-left');
     }
 
     const handleStyleLoad = () => {
