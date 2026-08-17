@@ -31,6 +31,7 @@ import {
   preconnectToStadia,
 } from './globeConfig';
 import { localizeMapLabels } from './styleLocalization';
+import { TAB_BAR_CLEARANCE } from '../../utils/tabBarLayout';
 import { STARFIELD_BACKGROUND_STYLE } from './starfield';
 
 // O maplibre descobre o worker por import.meta.url, que não sobrevive ao bundle do
@@ -59,6 +60,20 @@ const LOADING_KEYFRAMES = `
 }
 @media (prefers-reduced-motion: reduce) {
   .journi-globe-halo, .journi-globe-sweep { animation: none !important; }
+}
+`;
+
+// Os controles do MapLibre no rodapé (o crédito compacto e o botão globo ↔
+// mercator) são DOM do próprio MapLibre, posicionados pelo CSS dele em
+// `bottom: 0`. A tab bar flutua por cima daquele canto e engolia os dois — o
+// botão do globo ficava clicável só pela metade.
+//
+// Precisa ser CSS, e não estilo inline: os elementos nascem dentro do MapLibre,
+// depois da montagem, e o React nunca chega a renderizá-los.
+const MAP_CONTROL_CLEARANCE_CSS = `
+.maplibregl-ctrl-bottom-left,
+.maplibregl-ctrl-bottom-right {
+  margin-bottom: ${TAB_BAR_CLEARANCE}px;
 }
 `;
 
@@ -243,6 +258,8 @@ export default function GlobeMap({
         ...style,
       }}
     >
+      <style>{MAP_CONTROL_CLEARANCE_CSS}</style>
+
       <div
         ref={containerRef}
         style={{

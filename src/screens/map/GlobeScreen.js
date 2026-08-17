@@ -24,6 +24,7 @@ import CountryBadgeMarkers from '../../components/map/CountryBadgeMarkers';
 import CountryFillLayer from '../../components/map/CountryFillLayer';
 import CountryDetailModal from '../../components/map/CountryDetailModal';
 import CountryFlag from '../../components/CountryFlag';
+import { TAB_BAR_CLEARANCE } from '../../utils/tabBarLayout';
 import useGlobeCountries from '../../components/map/useGlobeCountries';
 import {
   searchCountries,
@@ -253,12 +254,14 @@ export default function GlobeScreen({ navigation }) {
       </View>
 
       {/* Países visitados — pill no canto inferior direito.
-          Mora fora do fluxo do globo e acima da tab bar: `bottom` soma o inset
-          inferior para que em aparelho com barra de gestos ele não encoste nela.
+          Mora fora do fluxo do globo e ACIMA da tab bar. A barra é absoluta e
+          não reserva espaço nenhum no layout, então sem somar TAB_BAR_CLEARANCE
+          o pill nasce atrás dela. O inset entra por fora, para o aparelho com
+          barra de gestos.
           O contador é o número real de visitados sobre o total de países que o
           globo desenha. */}
       <View
-        style={[styles.visitedPill, { bottom: 16 + insets.bottom }]}
+        style={[styles.visitedPill, { bottom: TAB_BAR_CLEARANCE + insets.bottom }]}
         accessibilityRole="text"
         accessibilityLabel={`${visitedCount} de ${totalCountries} países visitados`}
       >

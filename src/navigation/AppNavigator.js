@@ -2,6 +2,7 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { PlatformPressable } from '@react-navigation/elements';
 import {
   TouchableOpacity, View, ActivityIndicator,
   Modal, ScrollView, Text, Platform, useWindowDimensions,
@@ -9,6 +10,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { COLORS } from '../utils/constants';
+import { TAB_BAR_HEIGHT, TAB_BAR_BOTTOM } from '../utils/tabBarLayout';
 import { completeWebOAuthSession, getCurrentUser, supabase } from '../services/supabase';
 import { useUpload } from '../context/UploadContext';
 import { navigationRef } from './navigationRef';
@@ -53,6 +55,50 @@ function ProfileStack() {
   );
 }
 
+// Raio da pílula do item ativo. Fecha a cápsula do item sem competir com o raio
+// da barra, que é maior.
+const TAB_ITEM_RADIUS = 27;
+
+/**
+ * Botão do item da tab bar.
+ *
+ * Existe por um detalhe do @react-navigation/bottom-tabs v7: o
+ * `tabBarActiveBackgroundColor` é pintado no pressable INTERNO, e o raio desse
+ * pressable é fixo em 0 na variante padrão —
+ * `borderRadius = variant === 'material' ? … : sidebar && horizontal ? 10 : 0`
+ * (BottomTabItem.js). O `tabBarItemStyle` estiliza só o View de FORA, então
+ * nenhum `borderRadius` passado por lá alcança o fundo colorido: o resultado era
+ * um retângulo roxo de canto vivo preenchendo o item inteiro, sem seguir o
+ * arredondado do menu.
+ *
+ * A correção é reaplicar o raio depois do estilo que a lib injeta — daí o
+ * `props.style` vir primeiro no array. `PlatformPressable` é o mesmo componente
+ * que a lib usaria, então ripple, hover e opacidade de toque continuam iguais.
+ */
+/**
+ * `children` é obrigatório no tipo do PlatformPressable e chega dentro de
+ * `props`, vindo do próprio React Navigation — daí ele aparecer na assinatura.
+ *
+ * @param {{ style?: any, clip?: boolean, children: React.ReactNode } & Record<string, any>} props
+ */
+function TabBarButton({ style = undefined, clip = true, ...props }) {
+  return (
+    <PlatformPressable
+      {...props}
+      style={[
+        style,
+        {
+          borderRadius: TAB_ITEM_RADIUS,
+          // Recorta o ripple do Android à pílula; sem isso ele voltaria a
+          // desenhar o quadrado que acabamos de tirar. O botão "+" passa
+          // `clip={false}`: ele sobe além do item e seria decepado de novo.
+          overflow: clip ? 'hidden' : 'visible',
+        },
+      ]}
+    />
+  );
+}
+
 function TabNavigator() {
   const { openUploader } = useUpload();
   const { width } = useWindowDimensions();
@@ -67,20 +113,21 @@ function TabNavigator() {
         tabBarInactiveTintColor: '#8F96B3',
         tabBarActiveBackgroundColor: 'rgba(108,43,217,0.34)',
         tabBarHideOnKeyboard: true,
+        tabBarButton: (props) => <TabBarButton {...props} />,
         tabBarStyle: {
           position: 'absolute',
-          alignSelf: 'center',
           left: (width - tabBarWidth) / 2,
-          bottom: Platform.OS === 'web' ? 14 : 18,
+          bottom: TAB_BAR_BOTTOM,
           width: tabBarWidth,
           backgroundColor: '#12182B',
-          borderTopWidth: 1,
+          // Só `borderWidth`: com `borderTopWidth` junto, o topo ficava com uma
+          // linha mais forte que o resto da borda e a cápsula perdia a simetria.
           borderWidth: 1,
           borderColor: 'rgba(167,139,250,0.28)',
-          paddingHorizontal: 6,
-          paddingVertical: 6,
-          height: 70,
-          borderRadius: 35,
+          paddingHorizontal: 8,
+          paddingVertical: 0,
+          height: TAB_BAR_HEIGHT,
+          borderRadius: TAB_BAR_HEIGHT / 2,
           ...Platform.select({
             web: { boxShadow: '0 12px 32px rgba(4,7,18,0.42)' },
             default: {
@@ -92,17 +139,25 @@ function TabNavigator() {
             },
           }),
         },
+        // A pílula do item ativo precisa caber DENTRO da cápsula: com margem 1
+        // ela encostava na borda e vazava pela curva do canto. Margem 8 no
+        // vertical deixa 54 de altura para a pílula.
+        //
+        // O raio vive no TabBarButton, não aqui: este estilo vai para o View de
+        // fora, e é o pressable de dentro que recebe a cor de fundo.
         tabBarItemStyle: {
-          borderRadius: 28,
-          marginHorizontal: 3,
-          marginVertical: 1,
-          overflow: 'hidden',
+          height: TAB_BAR_HEIGHT - 16,
+          marginVertical: 8,
+          marginHorizontal: 2,
+          paddingVertical: 0,
+          // Sem `overflow: hidden`: é ele que decepava o topo do botão "+", que
+          // sobe além do item de propósito.
         },
         tabBarLabelStyle: {
           fontSize: 10,
           fontWeight: '700',
-          marginTop: 1,
-          marginBottom: 4,
+          marginTop: 2,
+          marginBottom: 0,
         },
       }}
     >
@@ -122,8 +177,8 @@ function TabNavigator() {
         component={GlobeScreen}
         options={{
           tabBarLabel: 'Mapa',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="map-outline" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'map' : 'map-outline'} size={size} color={color} />
           ),
         }}
       />
@@ -133,6 +188,11 @@ function TabNavigator() {
         component={UploadPlaceholder}
         options={{
           tabBarLabel: () => null,
+          // O "+" não navega (o tabPress abre o uploader), então ele nunca fica
+          // "ativo" — pintar a pílula atrás dele só faria um borrão roxo em volta
+          // de um botão que já é roxo.
+          tabBarActiveBackgroundColor: 'transparent',
+          tabBarButton: (props) => <TabBarButton {...props} clip={false} />,
           tabBarIcon: () => (
             <View style={{
               width: 48,
@@ -141,7 +201,10 @@ function TabNavigator() {
               backgroundColor: '#6C2BD9',
               alignItems: 'center',
               justifyContent: 'center',
-              marginTop: -13,
+              // Sobe para a borda da cápsula, como um FAB. Os itens vizinhos têm
+              // ícone + rótulo; este só tem o círculo, então o deslocamento é o
+              // que alinha o centro dele com o centro dos ícones ao lado.
+              marginTop: -6,
               ...Platform.select({
                 web: { boxShadow: '0 4px 8px rgba(108,43,217,0.4)' },
                 default: {
@@ -171,8 +234,8 @@ function TabNavigator() {
         component={ExploreScreen}
         options={{
           tabBarLabel: 'Explorar',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="compass-outline" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'compass' : 'compass-outline'} size={size} color={color} />
           ),
         }}
       />
@@ -182,8 +245,8 @@ function TabNavigator() {
         component={ProfileStack}
         options={{
           tabBarLabel: 'Perfil',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'person' : 'person-outline'} size={size} color={color} />
           ),
         }}
       />

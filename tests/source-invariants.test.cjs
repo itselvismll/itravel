@@ -338,7 +338,21 @@ test('feed is the home tab with floating navigation and top-level social actions
   const navigator = read('src/navigation/AppNavigator.js');
   const feed = read('src/screens/feed/FeedScreen.js');
   assert.match(navigator, /initialRouteName="Feed"/);
-  assert.match(navigator, /borderRadius: 35/);
+  // Cápsula flutuante: raio = metade da altura, derivado e não escrito à mão,
+  // para mudar a altura não deixar a barra com cantos meio arredondados.
+  assert.match(navigator, /borderRadius: TAB_BAR_HEIGHT \/ 2/);
+  assert.match(navigator, /position: 'absolute'/);
+
+  // A pílula do item ativo precisa de um tabBarButton próprio. O
+  // `tabBarActiveBackgroundColor` do bottom-tabs v7 é pintado no pressable de
+  // dentro, cujo borderRadius é fixo em 0 na variante padrão, e o
+  // `tabBarItemStyle` só alcança o View de fora — sem este botão, o fundo do
+  // item ativo volta a ser um retângulo de canto vivo dentro de um menu redondo.
+  assert.match(navigator, /tabBarButton: \(props\) => <TabBarButton/);
+  assert.match(navigator, /borderRadius: TAB_ITEM_RADIUS/);
+  // E o "+" não pode recortar: ele sobe além do item de propósito.
+  assert.match(navigator, /<TabBarButton \{\.\.\.props\} clip=\{false\} \/>/);
+  assert.match(navigator, /overflow: clip \? 'hidden' : 'visible'/);
   assert.match(navigator, /name="Messages" component=\{MessagesScreen\}/);
   assert.doesNotMatch(navigator, /tabBarLabel: 'Conversas'/);
   assert.match(feed, /accessibilityLabel="Abrir conversas"/);
@@ -592,10 +606,13 @@ test('globe reuses the map controls instead of reimplementing them', () => {
   assert.match(globe, /TOTAL_COUNTRIES = 199/);
   assert.match(globe, /countries\.length \|\| TOTAL_COUNTRIES/);
 
-  // O pill fica no canto inferior direito, acima da tab bar: sem o inset ele
-  // encostaria na barra de gestos dos aparelhos que a têm.
+  // O pill fica no canto inferior direito, acima da tab bar. Os dois termos são
+  // necessários e por motivos diferentes: TAB_BAR_CLEARANCE tira o pill de
+  // debaixo da barra flutuante (que é absoluta e não reserva espaço nenhum), e o
+  // inset o afasta da barra de gestos nos aparelhos que a têm. Com só 16 de
+  // `bottom`, como já esteve, o pill nascia atrás da tab bar.
   assert.match(globe, /useSafeAreaInsets/);
-  assert.match(globe, /bottom: 16 \+ insets\.bottom/);
+  assert.match(globe, /bottom: TAB_BAR_CLEARANCE \+ insets\.bottom/);
 
   // Clique no território e no badge levam ao mesmo lugar.
   assert.match(globe, /onSelectCountry=\{handleSelectByCode\}/);
