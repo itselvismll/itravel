@@ -1,4 +1,4 @@
-// Mapa principal do app: globo 3D (MapLibre GL + OpenFreeMap).
+// Mapa principal do app: globo 3D (MapLibre GL + Stadia Alidade Satellite).
 //
 // Substituiu o mapa Leaflet ao fim da migração. Tem projeção globe, satélite,
 // rótulos em português, atmosfera, fundo estrelado, badges progressivos por

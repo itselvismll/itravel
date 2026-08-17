@@ -1,18 +1,29 @@
-// Configuração compartilhada do globo 3D (MapLibre GL + OpenFreeMap).
+// Configuração compartilhada do globo 3D (MapLibre GL + Stadia Maps).
 // Isolado do componente para poder ser importado tanto no web quanto no native
 // (o native usa só as constantes de texto/atribuição, sem tocar no MapLibre).
+import { API_CONFIG } from '../../utils/constants';
 
-// Style vetorial pública, sem chave exposta no cliente e sem autorização por
-// domínio. Evita que uma implantação nova deixe os tiles em 401.
-export const GLOBE_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
+// Alidade Satellite: imagem de satélite/aérea (layer raster `imagery`) com
+// labels e contornos vetoriais por cima. É o visual do globo do Journi — o
+// terreno real é o que faz o país pintado de roxo ler como território visitado.
+// https://docs.stadiamaps.com/map-styles/alidade-satellite/
+const STADIA_STYLE_ID = 'alidade_satellite';
+
+// A key vem de EXPO_PUBLIC_STADIA_API_KEY. Em localhost e nos domínios
+// autorizados no painel da Stadia ela é opcional; fora deles a style e os tiles
+// respondem 401 e o globo fica sem imagem. Toda implantação nova precisa do
+// domínio cadastrado na Stadia OU da key presente no build.
+export const GLOBE_STYLE_URL = `https://tiles.stadiamaps.com/styles/${STADIA_STYLE_ID}.json${
+  API_CONFIG.STADIA_API_KEY ? `?api_key=${API_CONFIG.STADIA_API_KEY}` : ''
+}`;
 
 export const GLOBE_MAX_ZOOM = 20;
 
 // Host dos tiles e da style. Separado da URL para o preconnect poder usá-lo.
-export const MAP_TILE_ORIGIN = 'https://tiles.openfreemap.org';
+export const STADIA_ORIGIN = 'https://tiles.stadiamaps.com';
 
 /**
- * Abre a conexão com o provedor de tiles antes de o mapa existir.
+ * Abre a conexão com a Stadia antes de o mapa existir.
  *
  * DNS + TCP + TLS com um host novo custa uma ida e volta de rede cada, e nada
  * disso começa antes do primeiro request. Como o primeiro request é a style — e
@@ -20,24 +31,28 @@ export const MAP_TILE_ORIGIN = 'https://tiles.openfreemap.org';
  * globo pintar. O preconnect adianta o aperto de mão para o momento em que o
  * módulo é importado, que é o boot do app.
  *
- * A style e os tiles são cacheáveis pelo navegador, então as visitas seguintes
- * aproveitam os recursos já baixados.
+ * A style em si já é cacheada pelo browser: a Stadia responde com
+ * `cache-control: public, max-age=86400`, então da segunda visita em diante ela
+ * nem sai da máquina.
  */
-export const preconnectToMapTiles = () => {
+export const preconnectToStadia = () => {
   if (typeof document === 'undefined') return;
-  if (document.querySelector(`link[rel="preconnect"][href="${MAP_TILE_ORIGIN}"]`)) return;
+  if (document.querySelector(`link[rel="preconnect"][href="${STADIA_ORIGIN}"]`)) return;
 
   const link = document.createElement('link');
   link.rel = 'preconnect';
-  link.href = MAP_TILE_ORIGIN;
+  link.href = STADIA_ORIGIN;
   // Os tiles são buscados como recurso anônimo (sem cookie); sem o crossOrigin o
   // browser abriria uma segunda conexão e o preconnect não teria servido.
   link.crossOrigin = 'anonymous';
   document.head.appendChild(link);
 };
 
-export const MAP_DATA_ATTRIBUTION =
-  '<a href="https://openfreemap.org">OpenFreeMap</a> © OpenMapTiles Data from OpenStreetMap';
+// Crédito extra obrigatório da imagem de satélite do Alidade Satellite. Os créditos
+// de Stadia/OpenMapTiles/OpenStreetMap já vêm dentro da style JSON e são renderizados
+// automaticamente pelo AttributionControl.
+export const SATELLITE_IMAGERY_ATTRIBUTION =
+  '© CNES, Distribution Airbus DS, © Airbus DS, © PlanetObserver (Contains Copernicus Data)';
 
 // Vista inicial: globo inteiro, levemente inclinado para o norte.
 export const GLOBE_INITIAL_VIEW = {

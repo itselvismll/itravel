@@ -27,8 +27,8 @@ import {
   GLOBE_INITIAL_VIEW,
   GLOBE_SPACE_BACKGROUND,
   GLOBE_SKY,
-  MAP_DATA_ATTRIBUTION,
-  preconnectToMapTiles,
+  SATELLITE_IMAGERY_ATTRIBUTION,
+  preconnectToStadia,
 } from './globeConfig';
 import { localizeMapLabels } from './styleLocalization';
 import { STARFIELD_BACKGROUND_STYLE } from './starfield';
@@ -40,7 +40,7 @@ maplibreConfig.WORKER_URL = '/maplibre/maplibre-gl-worker.mjs';
 
 // No import, não na montagem: quando o componente monta, o React já gastou o
 // tempo de render que a conexão poderia ter usado.
-preconnectToMapTiles();
+preconnectToStadia();
 
 // Duração do fade do globo entrando em cena. Curto o bastante para não parecer
 // lentidão, longo o bastante para não ler como "piscada".
@@ -181,7 +181,7 @@ export default function GlobeMap({
     map.addControl(
       new AttributionControl({
         compact: true,
-        customAttribution: MAP_DATA_ATTRIBUTION,
+        customAttribution: SATELLITE_IMAGERY_ATTRIBUTION,
       }),
       'bottom-left'
     );

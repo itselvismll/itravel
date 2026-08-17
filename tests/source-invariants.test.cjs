@@ -516,8 +516,14 @@ test('map, currencies, and social notifications do not depend on partial provide
   const socialTypes = read('src/utils/socialNotifications.js');
   const migration = read('supabase/migrations/20260812130000_social_notifications_only.sql');
 
-  assert.match(globeConfig, /tiles\.openfreemap\.org\/styles\/liberty/);
-  assert.doesNotMatch(globeConfig, /stadiamaps/i);
+  // O globo é satélite (Alidade Satellite): o terreno real é o que faz a pintura
+  // roxa/branca ler como território. Uma style vetorial deixa o globo chapado —
+  // já aconteceu uma vez, ao trocar por OpenFreeMap Liberty para fugir do 401.
+  // O caminho para o 401 é cadastrar o domínio na Stadia / publicar a key, não
+  // trocar a style.
+  assert.match(globeConfig, /tiles\.stadiamaps\.com\/styles\/\$\{STADIA_STYLE_ID\}\.json/);
+  assert.match(globeConfig, /alidade_satellite/);
+  assert.doesNotMatch(globeConfig, /openfreemap/i);
   assert.match(currency, /@fawazahmed0\/currency-api@latest/);
   assert.match(currency, /world-countries@latest\/dist\/countries\.json/);
   assert.match(currency, /open\.er-api\.com\/v6\/latest/);
@@ -649,8 +655,8 @@ test('the globe fades in from a branded overlay instead of flashing', () => {
 
   // Handshake com o provedor de tiles adiantado para o import do módulo.
   assert.match(config, /rel = 'preconnect'/);
-  assert.match(config, /tiles\.openfreemap\.org\/styles\/liberty/);
-  assert.match(globeMap, /preconnectToMapTiles\(\)/);
+  assert.match(config, /tiles\.stadiamaps\.com/);
+  assert.match(globeMap, /preconnectToStadia\(\)/);
 });
 
 test('client source sticks to APIs that exist on react-native-web', () => {
