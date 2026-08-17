@@ -6,6 +6,7 @@ import * as Sharing from 'expo-sharing';
 import { Platform } from 'react-native';
 import ShareCard from '../../components/ShareCard';
 import ShareToJourniModal from '../../components/ShareToJourniModal';
+import SettingsDrawer from '../../components/SettingsDrawer';
 import {
   View,
   Text,
@@ -46,6 +47,7 @@ export default function ProfileScreen({ navigation }) {
   const [deletingPhotoId, setDeletingPhotoId] = useState(null);
   const [postMenuPhoto, setPostMenuPhoto] = useState(null);
   const [passportShareVisible, setPassportShareVisible] = useState(false);
+  const [settingsVisible, setSettingsVisible] = useState(false);
 
   const { refreshTrigger } = useUpload();
   const shareCardRef = useRef(null);
@@ -115,6 +117,7 @@ export default function ProfileScreen({ navigation }) {
   );
 
   const handleLogout = async () => {
+    setSettingsVisible(false);
     const confirmacao = await confirm('Sair da conta', 'Tem certeza que deseja sair da sua conta?');
     if (!confirmacao) return;
 
@@ -217,9 +220,12 @@ export default function ProfileScreen({ navigation }) {
         />
         <TouchableOpacity
           style={styles.editBtn}
-          onPress={() => navigation.navigate('EditProfile', { profile })}
+          onPress={() => setSettingsVisible(true)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel="Configurações"
         >
-          <Ionicons name="pencil" size={16} color="rgba(255,255,255,0.6)" />
+          <Ionicons name="settings-outline" size={24} color="#F7F7F2" />
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => navigation.navigate('Notificações')}
@@ -499,22 +505,8 @@ export default function ProfileScreen({ navigation }) {
         </View>
       )}
 
-      {/* Ajuda e suporte */}
-      <TouchableOpacity
-        style={styles.menuItem}
-        onPress={() => navigation.navigate('Support')}
-      >
-        <View style={styles.menuItemLeft}>
-          <Ionicons name="help-buoy-outline" size={18} color="#6C2BD9" />
-          <Text style={styles.menuItemText}>Ajuda e suporte</Text>
-        </View>
-        <Ionicons name="chevron-forward" size={18} color="#bbb" />
-      </TouchableOpacity>
-
-      {/* Logout */}
-      <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-        <Text style={styles.logoutText}>Sair da conta</Text>
-      </TouchableOpacity>
+      {/* Editar perfil, ajuda e sair agora vivem no SettingsDrawer (ícone de engrenagem no topo) */}
+      <View style={{ height: 32 }} />
 
     </ScrollView>
 
@@ -531,6 +523,23 @@ export default function ProfileScreen({ navigation }) {
         wishlistCodes={wishlist.map(w => w.country_code)}
       />
     </View>
+
+    <SettingsDrawer
+      visible={settingsVisible}
+      onClose={() => setSettingsVisible(false)}
+      profile={profile}
+      avatarUrl={avatarUrl}
+      levelInfo={levelInfo}
+      onEditProfile={() => {
+        setSettingsVisible(false);
+        navigation.navigate('EditProfile', { profile });
+      }}
+      onSupport={() => {
+        setSettingsVisible(false);
+        navigation.navigate('Support');
+      }}
+      onLogout={handleLogout}
+    />
 
     <Modal visible={!!postMenuPhoto} transparent animationType="fade" onRequestClose={() => setPostMenuPhoto(null)}>
       <TouchableOpacity style={styles.postMenuOverlay} activeOpacity={1} onPress={() => setPostMenuPhoto(null)}>
@@ -662,7 +671,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 16,
     right: 16,
-    padding: 8,
   },
   avatar: {
     width: 72,
@@ -885,26 +893,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    margin: 12,
-    marginBottom: 0,
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 14,
-  },
-  menuItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  menuItemText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#0D1326',
-  },
   deletePhotoButton: {
     minWidth: 190,
     minHeight: 42,
@@ -921,18 +909,5 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 13,
     fontWeight: '700',
-  },
-  logoutBtn: {
-    margin: 12,
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 14,
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  logoutText: {
-    color: '#ef4444',
-    fontSize: 14,
-    fontWeight: '500',
   },
 });
