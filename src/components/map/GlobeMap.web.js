@@ -38,7 +38,12 @@ import { STARFIELD_BACKGROUND_STYLE } from './starfield';
 // O maplibre descobre o worker por import.meta.url, que não sobrevive ao bundle do
 // Metro. Apontamos explicitamente para a cópia servida a partir de public/maplibre
 // (gerada pelo postinstall em scripts/copy-maplibre-worker.cjs).
-maplibreConfig.WORKER_URL = '/maplibre/maplibre-gl-worker.mjs';
+// Em um DOM Component nativo, o documento é servido por uma URL interna do
+// Expo. EXPO_BASE_URL aponta para os assets públicos copiados para o app; no web
+// continua sendo a raiz normal. Sem esse prefixo, o worker seria procurado em
+// `file:///maplibre/...` no release Android e o globo não iniciaria.
+const publicBaseUrl = process.env.EXPO_BASE_URL || '/';
+maplibreConfig.WORKER_URL = `${publicBaseUrl.replace(/\/?$/, '/')}maplibre/maplibre-gl-worker.mjs`;
 
 // No import, não na montagem: quando o componente monta, o React já gastou o
 // tempo de render que a conexão poderia ter usado.

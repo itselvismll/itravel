@@ -5,9 +5,9 @@
 // zoom, território pintado por status, clique em país abrindo o modal, barra de
 // IA, busca de país e a estatística de países visitados.
 //
-// O MapLibre GL desenha em WebGL sobre canvas do browser, então no iOS/Android
-// esta tela cai numa lista de países — a mesma que o mapa Leaflet usava no
-// nativo, pelo mesmo motivo.
+// No navegador o MapLibre GL desenha diretamente no canvas. No iOS/Android o
+// mesmo componente WebGL roda dentro de um DOM Component do Expo, preservando a
+// projeção esférica e mantendo busca/modal/tab bar como controles nativos.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
@@ -15,11 +15,11 @@ import {
   StyleSheet,
   TouchableOpacity,
   TextInput,
-  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import GlobeMap from '../../components/map/GlobeMap';
+import NativeGlobe from '../../components/map/NativeGlobe.dom';
 import CountryBadgeMarkers from '../../components/map/CountryBadgeMarkers';
 import CountryFillLayer from '../../components/map/CountryFillLayer';
 import CountryDetailModal from '../../components/map/CountryDetailModal';
@@ -69,6 +69,8 @@ export default function GlobeScreen({ navigation }) {
   const [countrySearch, setCountrySearch] = useState('');
   const [debouncedCountrySearch, setDebouncedCountrySearch] = useState('');
   const [showCountrySearch, setShowCountrySearch] = useState(false);
+  const [nativeFocusCountry, setNativeFocusCountry] = useState(null);
+  const [nativeMapError, setNativeMapError] = useState(null);
 
   const handleMapReady = useCallback((instance) => setMap(instance), []);
 
@@ -175,6 +177,10 @@ export default function GlobeScreen({ navigation }) {
     (country) => {
       closeCountrySearch();
       map?.flyTo({ center: [country.lng, country.lat], zoom: SEARCH_FLY_ZOOM, duration: 1800 });
+      setNativeFocusCountry((previous) => ({
+        center: [country.lng, country.lat],
+        requestId: (previous?.requestId ?? 0) + 1,
+      }));
       openCountry(country);
     },
     [closeCountrySearch, map, openCountry]
@@ -182,9 +188,20 @@ export default function GlobeScreen({ navigation }) {
 
   const isSelectedVisited = selectedCountry ? visited.has(selectedCountry.code) : false;
 
-  // O globo é WebGL sobre canvas: no nativo não há o que renderizar. A lista
-  // ordenada é o mesmo fallback que o mapa anterior usava — mesma navegação para
-  // o modal, mesmo destaque de visitado.
+  const handleNativeCountrySelect = useCallback(
+    async (country) => {
+      openCountry(country);
+    },
+    [openCountry]
+  );
+
+  const handleNativeMapFailure = useCallback(async (message) => {
+    setNativeMapError(message || 'Não foi possível carregar o globo');
+  }, []);
+
+  // No web o mapa entrega a instância diretamente para as camadas React. No
+  // nativo, NativeGlobe reconstrói essas camadas em sua WebView e conversa com
+  // esta tela por props serializáveis e ações assíncronas.
   const isWeb = process.env.EXPO_OS === 'web';
 
   return (
@@ -202,43 +219,20 @@ export default function GlobeScreen({ navigation }) {
           <CountryBadgeMarkers map={map} countries={countries} onSelect={openCountry} />
         </View>
       ) : (
-        <View style={styles.nativeList}>
-          <View style={styles.nativeHeader}>
-            <Text style={styles.nativeTitle}>Explore os países</Text>
-            <Text style={styles.nativeSubtitle}>
-              Selecione um destino para ver detalhes e registrar sua viagem.
-            </Text>
-          </View>
-          <ScrollView
-            contentInsetAdjustmentBehavior="automatic"
-            contentContainerStyle={styles.nativeListContent}
-          >
-            {[...countries]
-              .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
-              .map((country) => {
-                const countryVisited = visited.has(country.code);
-                return (
-                  <TouchableOpacity
-                    key={country.code}
-                    onPress={() => openCountry(country)}
-                    activeOpacity={0.75}
-                    style={[styles.nativeRow, countryVisited && styles.nativeRowVisited]}
-                  >
-                    <CountryFlag
-                      countryCode={country.code}
-                      width={28}
-                      height={19}
-                      borderRadius={3}
-                    />
-                    <Text style={styles.nativeRowText}>{country.name}</Text>
-                    {countryVisited && (
-                      <Ionicons name="checkmark-circle" size={20} color="#00D1C1" />
-                    )}
-                    <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.45)" />
-                  </TouchableOpacity>
-                );
-              })}
-          </ScrollView>
+        <View style={styles.mapWrapper}>
+          <NativeGlobe
+            countries={countries}
+            visitedCodes={[...visited]}
+            wishlistCodes={[...wishlist]}
+            focusCountry={nativeFocusCountry}
+            onSelectCountry={handleNativeCountrySelect}
+            onMapFailure={handleNativeMapFailure}
+            dom={{
+              scrollEnabled: false,
+              contentInsetAdjustmentBehavior: 'never',
+              style: styles.nativeGlobe,
+            }}
+          />
         </View>
       )}
 
@@ -325,10 +319,10 @@ export default function GlobeScreen({ navigation }) {
         <Text style={styles.visitedTotal}>de {totalCountries} países</Text>
       </View>
 
-      {(loading || error) && (
+      {(loading || error || nativeMapError) && (
         <View style={styles.notice}>
-          <Text style={error ? styles.error : styles.statText}>
-            {error || 'Carregando países…'}
+          <Text style={error || nativeMapError ? styles.error : styles.statText}>
+            {error || nativeMapError || 'Carregando países…'}
           </Text>
         </View>
       )}
@@ -381,6 +375,7 @@ const glass = {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#05070F' },
   mapWrapper: { flex: 1 },
+  nativeGlobe: { flex: 1, backgroundColor: '#05070F' },
   topBarRow: {
     position: 'absolute',
     top: 16,
@@ -483,28 +478,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_400Regular',
     fontSize: 11,
   },
-  nativeList: { flex: 1, backgroundColor: '#0D1326', paddingTop: 76 },
-  nativeHeader: { paddingHorizontal: 16, paddingBottom: 10, gap: 4 },
-  nativeTitle: { color: '#FFFFFF', fontSize: 18, fontWeight: '700' },
-  nativeSubtitle: { color: 'rgba(255,255,255,0.6)', fontSize: 13 },
-  nativeListContent: { paddingHorizontal: 16, paddingBottom: 120, gap: 8 },
-  nativeRow: {
-    minHeight: 52,
-    borderRadius: 14,
-    borderCurve: 'continuous',
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  nativeRowVisited: {
-    backgroundColor: 'rgba(108,43,217,0.28)',
-    borderColor: '#6C2BD9',
-  },
-  nativeRowText: { flex: 1, color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
   notice: {
     position: 'absolute',
     top: 76,

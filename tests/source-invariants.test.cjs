@@ -176,6 +176,19 @@ test('the globe keeps the whole planet in frame instead of a bounded flat world'
   assert.match(globeMap, /minZoom: GLOBE_INITIAL_VIEW\.minZoom/);
 });
 
+test('Android renders the interactive globe instead of the country-list fallback', () => {
+  const screen = stripComments(read('src/screens/map/GlobeScreen.js'));
+  const nativeGlobe = stripComments(read('src/components/map/NativeGlobe.dom.js'));
+
+  assert.match(nativeGlobe, /^\s*['"]use dom['"]/);
+  assert.match(nativeGlobe, /<GlobeMap/);
+  assert.match(nativeGlobe, /<CountryFillLayer/);
+  assert.match(nativeGlobe, /<CountryBadgeMarkers/);
+  assert.match(nativeGlobe, /onSelectCountry/);
+  assert.match(screen, /<NativeGlobe/);
+  assert.doesNotMatch(screen, /styles\.nativeList/);
+});
+
 test('map resolves sovereign countries that arrive without ISO codes', () => {
   const geoCountryUtils = read('src/utils/geo-country-utils.js');
   const fill = read('src/components/map/countryFill.js');
