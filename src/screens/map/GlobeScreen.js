@@ -24,6 +24,9 @@ import CountryBadgeMarkers from '../../components/map/CountryBadgeMarkers';
 import CountryFillLayer from '../../components/map/CountryFillLayer';
 import CountryDetailModal from '../../components/map/CountryDetailModal';
 import CountryFlag from '../../components/CountryFlag';
+import GuidedFirstCountryCard from '../../components/onboarding/GuidedFirstCountryCard';
+import FirstCountryCelebration from '../../components/onboarding/FirstCountryCelebration';
+import { useOnboarding } from '../../context/OnboardingContext';
 import { TAB_BAR_CLEARANCE } from '../../utils/tabBarLayout';
 import useGlobeCountries from '../../components/map/useGlobeCountries';
 import {
@@ -106,6 +109,58 @@ export default function GlobeScreen({ navigation }) {
       if (country) openCountry(country);
     },
     [byCode, openCountry]
+  );
+
+  // ── Ação guiada do onboarding ────────────────────────────────────────────
+  // Só conta nova que acabou de passar pelos slides chega aqui com
+  // `guidedActive`; para todo mundo o hook devolve o estado inerte.
+  const { guidedActive, finishOnboarding } = useOnboarding();
+  const [celebration, setCelebration] = useState(null);
+
+  // Fechamento LOCAL do card, separado do `guidedActive`.
+  //
+  // O `finishOnboarding` é assíncrono e o `guidedActive` só cai quando o estado
+  // do fluxo dá a volta pelo contexto. Prender o sumiço do card a essa volta
+  // deixaria ele na tela durante a celebração se qualquer coisa nesse caminho
+  // falhasse ou atrasasse. Aqui o card sai no mesmo tique em que o país é
+  // marcado — que é o que o usuário vê como "funcionou".
+  const [guidedDismissed, setGuidedDismissed] = useState(false);
+  const showGuidedCard = guidedActive && !guidedDismissed;
+
+  const dismissGuided = useCallback(() => {
+    setGuidedDismissed(true);
+    finishOnboarding();
+  }, [finishOnboarding]);
+
+  // A marcação em si é a que já existe (CountryDetailModal → applyVisitedChange).
+  // Este wrapper só escuta o resultado: quando o primeiro país entra durante a
+  // etapa guiada, ele celebra e encerra o onboarding.
+  const handleVisitedChange = useCallback(
+    (code, isVisited) => {
+      applyVisitedChange(code, isVisited);
+      if (!guidedActive || !isVisited) return;
+
+      const marked = selectedCountry ? byCode.get(selectedCountry.code) : null;
+
+      // O card guiado sai de cena aqui: marcar o país É o objetivo dele, então
+      // ele não pode continuar pedindo o que acabou de ser feito.
+      setGuidedDismissed(true);
+
+      // O modal cobre a tela: sem fechá-lo, a celebração e o território acendendo
+      // em roxo aconteceriam atrás dele, sem ninguém ver.
+      setModalVisible(false);
+      setCelebration({ name: marked?.name || selectedCountry?.name || null });
+
+      // O globo leva a câmera até o país recém-marcado: a celebração perde a
+      // graça se o território que acabou de acender estiver fora da tela.
+      if (marked?.lat != null && marked?.lng != null) {
+        map?.flyTo({ center: [marked.lng, marked.lat], zoom: 2.6, duration: 1400 });
+      }
+
+      // Este é o ponto que encerra o onboarding no Supabase.
+      finishOnboarding();
+    },
+    [applyVisitedChange, guidedActive, selectedCountry, byCode, map, finishOnboarding]
   );
 
   const closeCountrySearch = useCallback(() => {
@@ -285,9 +340,27 @@ export default function GlobeScreen({ navigation }) {
         isVisited={isSelectedVisited}
         coverPhotoId={null}
         onClose={() => setModalVisible(false)}
-        onVisitedChange={applyVisitedChange}
+        onVisitedChange={handleVisitedChange}
         onWishlistChange={applyWishlistChange}
+        suppressVisitedAlert={guidedActive}
       />
+
+      {/* Ação guiada do onboarding. O card fica ACIMA do pill de países
+          visitados, e é sobreposição — o globo continua girando, dando zoom e
+          respondendo ao clique por trás dele. */}
+      {showGuidedCard && (
+        <GuidedFirstCountryCard
+          bottom={TAB_BAR_CLEARANCE + insets.bottom + 52}
+          onSkip={dismissGuided}
+        />
+      )}
+
+      {celebration && (
+        <FirstCountryCelebration
+          countryName={celebration.name}
+          onDone={() => setCelebration(null)}
+        />
+      )}
     </View>
   );
 }

@@ -686,3 +686,52 @@ test('client source sticks to APIs that exist on react-native-web', () => {
     assert.doesNotMatch(stripComments(read(file)), /resolveAssetSource/, `${file} usa API nativa`);
   }
 });
+
+test('map attribution stays present but starts collapsed', () => {
+  const config = stripComments(read('src/components/map/globeConfig.js'));
+  const globeMap = stripComments(read('src/components/map/GlobeMap.web.js'));
+  const onboardingGlobe = stripComments(read('src/components/onboarding/OnboardingGlobe.web.js'));
+
+  // O crédito da Stadia/OSM é exigência de licença: ele não pode sumir, só
+  // começar fechado.
+  assert.match(config, /SATELLITE_IMAGERY_ATTRIBUTION/);
+  for (const source of [globeMap, onboardingGlobe]) {
+    assert.match(source, /new AttributionControl\(\{\s*compact: true/);
+    assert.match(source, /customAttribution: SATELLITE_IMAGERY_ATTRIBUTION/);
+    // `compact: true` dá o formato; o estado inicial recolhido é esta chamada.
+    assert.match(source, /collapseAttributionOnce\(map\)/);
+    assert.match(source, /releaseAttribution\(\)/);
+  }
+
+  // A remoção da classe de expandido é de uma vez só. Um listener permanente
+  // fecharia o painel na cara de quem acabou de clicar no ⓘ.
+  assert.match(config, /maplibregl-compact-show/);
+  assert.match(config, /done = true;\s*detach\(\);/);
+});
+
+test('the guided onboarding card closes on the first marked country', () => {
+  const globe = stripComments(read('src/screens/map/GlobeScreen.js'));
+
+  // A marcação continua sendo a do CountryDetailModal: o que a tela faz é
+  // ESCUTAR o resultado dela. Passar o `applyVisitedChange` cru para o modal
+  // seria a regressão — o passo guiado ficaria sem gatilho nenhum.
+  assert.match(globe, /onVisitedChange=\{handleVisitedChange\}/);
+  assert.doesNotMatch(globe, /onVisitedChange=\{applyVisitedChange\}/);
+
+  // Marcar o país precisa fechar o card, fechar o modal, celebrar e encerrar o
+  // onboarding — os quatro.
+  const handler = globe.slice(globe.indexOf('const handleVisitedChange'));
+  assert.match(handler, /setGuidedDismissed\(true\)/);
+  assert.match(handler, /setModalVisible\(false\)/);
+  assert.match(handler, /setCelebration\(/);
+  assert.match(handler, /finishOnboarding\(\)/);
+
+  // O card sai pelo estado local, não esperando o `guidedActive` dar a volta
+  // pelo contexto depois de uma gravação assíncrona.
+  assert.match(globe, /showGuidedCard = guidedActive && !guidedDismissed/);
+  assert.match(globe, /\{showGuidedCard && \(/);
+
+  // O alerta bloqueante do navegador fica suprimido no passo guiado: ele
+  // engoliria a celebração inteira.
+  assert.match(globe, /suppressVisitedAlert=\{guidedActive\}/);
+});

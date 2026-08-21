@@ -81,3 +81,61 @@ export const GLOBE_SKY = {
   'fog-ground-blend': 0.4,
   'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 7, 0],
 };
+
+// Classes do controle de atribuição do MapLibre. Elas fazem parte do CSS público
+// da lib (maplibre-gl.css), então mexer nelas é mais estável do que tocar nos
+// campos privados do controle.
+const ATTRIB_CONTROL_SELECTOR = '.maplibregl-ctrl-attrib';
+const ATTRIB_EXPANDED_CLASS = 'maplibregl-compact-show';
+
+/**
+ * Faz a atribuição nascer RECOLHIDA, como só o ícone ⓘ.
+ *
+ * O `compact: true` sozinho não resolve: ele deixa o controle no modo compacto,
+ * mas o `_updateCompact` do MapLibre adiciona `maplibregl-compact-show` JUNTO com
+ * `maplibregl-compact` — ou seja, o modo compacto começa aberto, e a única coisa
+ * que fecha ele sozinho é um `drag` do mapa. Não existe opção de estado inicial
+ * na API. Então tiramos a classe de expandido assim que ela aparece.
+ *
+ * A remoção é de UMA vez só, e é isso que faz o ⓘ continuar funcionando: depois
+ * do primeiro recolhimento paramos de escutar, então o clique do usuário abre a
+ * atribuição e ela FICA aberta. Um listener permanente fecharia o painel na cara
+ * de quem acabou de abri-lo.
+ *
+ * A atribuição em si não sai do mapa — continua completa atrás do ícone, como
+ * exigem a Stadia e o OpenStreetMap.
+ *
+ * @param {import('maplibre-gl').Map} map
+ * @returns {() => void} desinscrição, para o cleanup do componente
+ */
+export const collapseAttributionOnce = (map) => {
+  let done = false;
+
+  const collapse = () => {
+    if (done) return;
+    const controls = map
+      .getContainer()
+      ?.querySelectorAll(`${ATTRIB_CONTROL_SELECTOR}.${ATTRIB_EXPANDED_CLASS}`);
+    if (!controls?.length) return;
+
+    controls.forEach((control) => control.classList.remove(ATTRIB_EXPANDED_CLASS));
+    done = true;
+    detach();
+  };
+
+  // O controle só ganha as classes de compacto quando JÁ tem texto de atribuição,
+  // e o texto vem da style e das sources — que chegam depois da montagem. Por
+  // isso escutamos os eventos de dados, e não só o momento do addControl.
+  const detach = () => {
+    map.off('styledata', collapse);
+    map.off('sourcedata', collapse);
+    map.off('resize', collapse);
+  };
+
+  collapse();
+  map.on('styledata', collapse);
+  map.on('sourcedata', collapse);
+  map.on('resize', collapse);
+
+  return detach;
+};

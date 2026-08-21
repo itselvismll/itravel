@@ -4,7 +4,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { PlatformPressable } from '@react-navigation/elements';
 import {
-  TouchableOpacity, View, ActivityIndicator,
+  TouchableOpacity, View, ActivityIndicator, StyleSheet,
   Modal, ScrollView, Text, Platform, useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +15,8 @@ import { completeWebOAuthSession, getCurrentUser, supabase } from '../services/s
 import { useUpload } from '../context/UploadContext';
 import { navigationRef } from './navigationRef';
 import GlobalNotificationBanner from '../components/GlobalNotificationBanner';
+import { OnboardingProvider, useOnboardingFlow } from '../context/OnboardingContext';
+import OnboardingScreen from '../screens/onboarding/OnboardingScreen';
 
 // Screens
 import ExploreScreen from '../screens/explore/ExploreScreen';
@@ -264,6 +266,13 @@ export default function AppNavigator() {
   ));
 
   const { visible, openUploader, closeUploader, notifyUploadComplete } = useUpload();
+  // Gatilho do onboarding de boas-vindas: só conta nova
+  // (`profiles.onboarding_completed = false`) chega a ver a tela.
+  // O fluxo é chamado aqui e SÓ aqui: este componente precisa do resultado
+  // direto (overlay dos slides, boot segurado) e o provider abaixo entrega o
+  // mesmo objeto para a tela do globo, que renderiza a etapa guiada.
+  const onboarding = useOnboardingFlow(user);
+  const checkingOnboarding = onboarding.checking;
   const [detectedLocation, setDetectedLocation] = useState(null);
   const [locationLoading, setLocationLoading] = useState(false);
 
@@ -376,7 +385,10 @@ export default function AppNavigator() {
     }
   };
 
-  if (loading) {
+  // `checkingOnboarding` entra aqui para a conta nova não ver o feed por um
+  // instante antes do onboarding cair por cima. Quem já concluiu resolve pelo
+  // cache local, sem passar por este estado.
+  if (loading || (user && checkingOnboarding)) {
     return (
       <ActivityIndicator
         size="large"
@@ -388,52 +400,72 @@ export default function AppNavigator() {
 
   return (
     <View style={{ flex: 1 }}>
-      <NavigationContainer ref={navigationRef}>
-        {passwordRecovery ? (
-          <Stack.Navigator id="PasswordRecoveryStack" screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="ResetPassword">
-              {props => <ResetPasswordScreen {...props} onComplete={finishPasswordRecovery} />}
-            </Stack.Screen>
-          </Stack.Navigator>
-        ) : !user ? (
-          <Stack.Navigator id="AuthStack" screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="Login" component={LoginScreen} />
-            <Stack.Screen name="Register" component={RegisterScreen} />
-            <Stack.Screen name="ConfirmEmail" component={ConfirmEmailScreen} />
-            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-            <Stack.Screen name="Support" component={SupportScreen} />
-          </Stack.Navigator>
-        ) : (
-          <Stack.Navigator id="RootStack" screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="Main" component={TabNavigator} />
-            <Stack.Screen name="PublicProfile" component={PublicProfileScreen} />
-            <Stack.Screen name="PhotoDetail" component={PhotoDetailScreen} />
-            <Stack.Screen name="Messages" component={MessagesScreen} />
-            <Stack.Screen name="Conversation" component={ConversationScreen} />
-            <Stack.Screen name="PassportDetail" component={PassportDetailScreen} />
-            <Stack.Screen
-              name="TripPlanner"
-              component={TripPlannerScreen}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="AssistantResult"
-              component={AssistantResultScreen}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="Notificações"
-              component={NotificationsScreen}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="Connections"
-              component={ConnectionsScreen}
-              options={{ headerShown: false }}
-            />
-          </Stack.Navigator>
-        )}
-      </NavigationContainer>
+      {/* O provider embrulha o NavigationContainer porque quem renderiza a etapa
+          guiada é a GlobeScreen, lá dentro. */}
+      <OnboardingProvider value={onboarding}>
+        <NavigationContainer ref={navigationRef}>
+          {passwordRecovery ? (
+            <Stack.Navigator id="PasswordRecoveryStack" screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="ResetPassword">
+                {props => <ResetPasswordScreen {...props} onComplete={finishPasswordRecovery} />}
+              </Stack.Screen>
+            </Stack.Navigator>
+          ) : !user ? (
+            <Stack.Navigator id="AuthStack" screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="Login" component={LoginScreen} />
+              <Stack.Screen name="Register" component={RegisterScreen} />
+              <Stack.Screen name="ConfirmEmail" component={ConfirmEmailScreen} />
+              <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+              <Stack.Screen name="Support" component={SupportScreen} />
+            </Stack.Navigator>
+          ) : (
+            <Stack.Navigator id="RootStack" screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="Main" component={TabNavigator} />
+              <Stack.Screen name="PublicProfile" component={PublicProfileScreen} />
+              <Stack.Screen name="PhotoDetail" component={PhotoDetailScreen} />
+              <Stack.Screen name="Messages" component={MessagesScreen} />
+              <Stack.Screen name="Conversation" component={ConversationScreen} />
+              <Stack.Screen name="PassportDetail" component={PassportDetailScreen} />
+              <Stack.Screen
+                name="TripPlanner"
+                component={TripPlannerScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="AssistantResult"
+                component={AssistantResultScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="Notificações"
+                component={NotificationsScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="Connections"
+                component={ConnectionsScreen}
+                options={{ headerShown: false }}
+              />
+            </Stack.Navigator>
+          )}
+        </NavigationContainer>
+      </OnboardingProvider>
+
+      {/* Slides de boas-vindas. Ficam FORA do NavigationContainer, cobrindo o
+          app inteiro: não são destino de navegação (não têm voltar, não entram
+          no histórico).
+          "Começar" NÃO encerra o onboarding — ele leva ao globo e passa a bola
+          para a etapa guiada, que é quem grava `onboarding_completed`.
+          "Pular" encerra tudo de uma vez. */}
+      {onboarding.showSlides && (
+        <View style={StyleSheet.absoluteFill}>
+          <OnboardingScreen
+            onFinish={onboarding.finishSlides}
+            onSkip={onboarding.finishOnboarding}
+            saving={onboarding.saving}
+          />
+        </View>
+      )}
 
       {/* Banner global de notificações — irmão do NavigationContainer para cobrir
           qualquer tela. `suppressed` porque, no nativo, o Modal de upload abre numa

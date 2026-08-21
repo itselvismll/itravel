@@ -29,6 +29,7 @@ import {
   GLOBE_SKY,
   SATELLITE_IMAGERY_ATTRIBUTION,
   preconnectToStadia,
+  collapseAttributionOnce,
 } from './globeConfig';
 import { localizeMapLabels } from './styleLocalization';
 import { TAB_BAR_CLEARANCE } from '../../utils/tabBarLayout';
@@ -200,6 +201,11 @@ export default function GlobeMap({
       }),
       'bottom-left'
     );
+    // O `compact: true` acima define o FORMATO (ícone ⓘ com o painel atrás);
+    // quem define o ESTADO INICIAL recolhido é esta chamada — o MapLibre não tem
+    // opção para isso e abre o painel sozinho. Ver collapseAttributionOnce.
+    const releaseAttribution = collapseAttributionOnce(map);
+
     // Sem NavigationControl: os botões + / − são redundantes num app de toque
     // (scroll e pinça já dão zoom) e ficavam embaixo do pill de países visitados,
     // no canto inferior direito. Esse canto agora é só do pill.
@@ -239,6 +245,7 @@ export default function GlobeMap({
       map.off('style.load', handleStyleLoad);
       map.off('load', handleLoad);
       map.off('error', handleError);
+      releaseAttribution();
       map.remove();
       mapRef.current = null;
       setReady(false);

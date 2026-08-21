@@ -48,6 +48,7 @@ const EMPTY_PHOTO_STATS = { photoCount: 0, cityCount: 0, favoriteCount: 0 };
  *   onClose: () => void,
  *   onVisitedChange: (alpha2: string, isVisited: boolean) => void,
  *   onWishlistChange: (alpha3: string, inWishlist: boolean) => void,
+ *   suppressVisitedAlert?: boolean,
  *   onCoverPhotoSet?: (photoId: string, photoUrl: string) => void,
  *   onPhotoUploaded?: () => void,
  * }} props
@@ -63,6 +64,11 @@ export default function CountryDetailModal({
   onClose,
   onVisitedChange,
   onWishlistChange,
+  // Durante a ação guiada do onboarding quem confirma a marcação é a celebração
+  // do globo. No web o Alert.alert vira um `window.alert` que BLOQUEIA a página
+  // — ele engoliria a animação inteira e deixaria a primeira vitória do usuário
+  // com cara de erro de sistema.
+  suppressVisitedAlert = false,
   onCoverPhotoSet,
   onPhotoUploaded,
 }) {
@@ -147,7 +153,9 @@ export default function CountryDetailModal({
         const result = await markCountryAsVisited(user.id, country.code, country.name);
         if (result.success) {
           onVisitedChange?.(countryCodeAlpha2, true);
-          Alert.alert('🎉 Marcado!', `${country.name} foi adicionado aos países visitados!`);
+          if (!suppressVisitedAlert) {
+            Alert.alert('🎉 Marcado!', `${country.name} foi adicionado aos países visitados!`);
+          }
         }
       }
     } catch {
