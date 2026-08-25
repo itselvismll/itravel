@@ -1,6 +1,8 @@
 import { supabase } from './supabase';
-
-const normalizeUsername = (username) => username?.trim().toLowerCase();
+// Normalização compartilhada com as telas e espelhada em SQL pelo trigger de
+// cadastro. Antes daqui saía um `trim().toLowerCase()` próprio, que não tirava
+// acento nem caractere inválido e deixava passar username que o banco recusava.
+import { normalizeUsername } from '../utils/username';
 
 const sanitizeProfileUpdates = (updates = {}) => {
   const allowedFields = ['username', 'display_name', 'avatar_url'];

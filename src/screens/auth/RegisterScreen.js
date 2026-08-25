@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES } from '../../utils/constants';
 import { signUp } from '../../services/supabase';
 import { checkUsernameAvailable } from '../../services/profileService';
+import { USERNAME_MAX_LENGTH, normalizeUsername, validateUsername } from '../../utils/username';
 import Logo from '../../components/Logo';
 import { notify } from '../../utils/dialogs';
 
@@ -66,12 +67,11 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
       newErrors.fullName = 'Nome completo é obrigatório';
     }
 
-    if (!username.trim()) {
-      newErrors.username = 'Nome de usuário é obrigatório';
-    } else if (username.length < 3) {
-      newErrors.username = 'Nome de usuário deve ter no mínimo 3 caracteres';
-    } else if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-      newErrors.username = 'Use apenas letras, números e underscore';
+    // Mesma regra do trigger de cadastro e da edição de perfil — ver
+    // src/utils/username.js.
+    const usernameCheck = validateUsername(username);
+    if (!usernameCheck.valid) {
+      newErrors.username = usernameCheck.error;
     }
 
     if (!email) {
@@ -178,7 +178,9 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
                 placeholderTextColor={COLORS.textSecondary}
                 value={username}
                 onChangeText={async (text) => {
-                  const clean = text.toLowerCase().replace(/[^a-z0-9_]/g, '');
+                  // Normaliza a cada tecla: o campo mostra exatamente o que
+                  // será salvo (sem acento, sem maiúscula, sem espaço).
+                  const clean = normalizeUsername(text);
                   setUsername(clean);
                   if (errors.username) setErrors({...errors, username: null});
                   if (clean.length >= 3) {
@@ -193,6 +195,7 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
                 autoCapitalize="none"
                 autoCorrect={false}
                 autoComplete="off"
+                maxLength={USERNAME_MAX_LENGTH}
               />
             </View>
             {checkingUsername && (

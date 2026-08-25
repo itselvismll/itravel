@@ -74,28 +74,112 @@ export const writeSlidesSeen = (userId, seen) => {
 /**
  * Estado do onboarding para um usuário, direto do perfil.
  *
- * Em caso de erro devolvemos `completed: true`: falha de rede não pode empurrar
- * o onboarding na cara de quem já usa o app.
+ * Traz `username_confirmed` na mesma consulta: as duas flags decidem a mesma
+ * coisa (qual etapa de boas-vindas mostrar) e não vale um segundo round-trip
+ * para ler outra coluna da mesma linha.
+ *
+ * Em caso de erro devolvemos tudo como concluído: falha de rede não pode
+ * empurrar o onboarding — nem um pedido de username — na cara de quem já usa o
+ * app.
  *
  * @param {string} userId
- * @returns {Promise<{ completed: boolean, error: string | null }>}
+ * @returns {Promise<{
+ *   completed: boolean,
+ *   usernameConfirmed: boolean,
+ *   username: string | null,
+ *   error: string | null,
+ * }>}
  */
 export const getOnboardingStatus = async (userId) => {
-  if (!userId) return { completed: true, error: null };
+  if (!userId) {
+    return { completed: true, usernameConfirmed: true, username: null, error: null };
+  }
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('onboarding_completed')
+    .select('onboarding_completed, username_confirmed, username')
     .eq('id', userId)
     .maybeSingle();
 
-  if (error) return { completed: true, error: error.message };
+  if (error) {
+    return { completed: true, usernameConfirmed: true, username: null, error: error.message };
+  }
 
   // Perfil ainda não criado (trigger de cadastro em voo) não é conta antiga:
   // tratamos como onboarding pendente e a próxima leitura confirma.
   const completed = data ? data.onboarding_completed === true : false;
   writeCache(userId, completed);
-  return { completed, error: null };
+
+  return {
+    completed,
+    // Sem perfil ainda não dá para pedir username — não há o auto-gerado para
+    // pré-preencher o campo. A próxima leitura resolve.
+    usernameConfirmed: data ? data.username_confirmed === true : true,
+    username: data?.username ?? null,
+    error: null,
+  };
+};
+
+/**
+ * Grava o username escolhido e encerra a etapa de confirmação.
+ *
+ * Um único update: username e flag andam juntos, e uma falha no meio deixaria a
+ * conta com username novo e a tela reaparecendo no próximo login.
+ *
+ * @param {string} userId
+ * @param {string} username já normalizado por src/utils/username.js
+ * @returns {Promise<{ success: boolean, error: string | null }>}
+ */
+export const confirmUsername = async (userId, username) => {
+  if (!userId) return { success: false, error: 'Usuário não autenticado.' };
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ username, username_confirmed: true })
+    .eq('id', userId);
+
+  if (error) {
+    // Corrida com outro cadastro que levou o mesmo username entre a checagem de
+    // disponibilidade e o update.
+    const duplicate = /duplicate key|unique/i.test(error.message);
+    return {
+      success: false,
+      error: duplicate ? 'Este username acabou de ser usado. Escolha outro.' : error.message,
+    };
+  }
+
+  return { success: true, error: null };
+};
+
+/**
+ * Cadastro por formulário já escolheu username — não faz sentido pedir de novo.
+ *
+ * O ideal seria marcar isso ao fim do cadastro, mas ali ainda não há sessão (o
+ * fluxo passa pela confirmação de e-mail), e sem sessão o RLS barra o update.
+ * Então marcamos no primeiro login: se o username do perfil é exatamente o que
+ * a pessoa digitou no cadastro (guardado em `user_metadata.username` pelo
+ * `signUp`), foi escolha dela.
+ *
+ * O trigger continua sem citar `username_confirmed` de propósito — foi o
+ * acoplamento a uma coluna nova que derrubou todo o cadastro em 21/08.
+ *
+ * @param {string} userId
+ * @param {string | null} profileUsername
+ * @param {string | null} requestedUsername vindo de user_metadata.username
+ * @returns {Promise<boolean>} true se a conta pode pular a tela de username
+ */
+export const adoptFormSignupUsername = async (userId, profileUsername, requestedUsername) => {
+  if (!userId || !profileUsername || !requestedUsername) return false;
+  if (profileUsername !== requestedUsername) return false;
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ username_confirmed: true })
+    .eq('id', userId);
+
+  // Falhou? A tela aparece uma vez com o username certo pré-preenchido; é só
+  // confirmar. Preferível a engolir o erro e pedir de novo a cada login.
+  return !error;
 };
 
 /**

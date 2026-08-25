@@ -4,6 +4,7 @@ import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { API_CONFIG } from '../utils/constants';
 import { getAlpha2, getAlpha3 } from '../utils/countryUtils';
+import { normalizeUsername } from '../utils/username';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -83,7 +84,7 @@ export async function signUp(email, password, username, fullName) {
       password,
       options: {
         data: {
-          username: username.trim().toLowerCase(),
+          username: normalizeUsername(username),
           full_name: fullName,
           display_name: fullName,
         },

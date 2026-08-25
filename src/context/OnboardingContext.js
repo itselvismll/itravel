@@ -1,11 +1,16 @@
 // Estado do onboarding de boas-vindas, compartilhado entre o overlay dos slides
 // (que vive FORA do NavigationContainer) e a tela do globo (que vive dentro).
 //
-// O fluxo tem dois passos e um único ponto de encerramento:
+// O fluxo tem três passos e um único ponto de encerramento:
 //
-//   slides ──"Começar"──▶ guiado (globo) ──marcou o 1º país──▶ concluído
-//      │                      │
-//      └──────"Pular"─────────┴──────────"Pular"─────────────▶ concluído
+//   username ──▶ slides ──"Começar"──▶ guiado (globo) ──marcou o 1º país──▶ concluído
+//                   │                      │
+//                   └──────"Pular"─────────┴──────────"Pular"─────────────▶ concluído
+//
+// O passo `username` só existe para quem entrou pelo Google: o trigger derivou
+// um username do nome da conta e a pessoa precisa aceitar ou trocar. Quem se
+// cadastrou pelo formulário já escolheu o dele e cai direto nos slides. Esse
+// passo NÃO tem "pular" — o username é público e não pode ficar indefinido.
 //
 // "Concluído" é sempre a mesma coisa: `profiles.onboarding_completed = true` no
 // Supabase (ver onboardingService). Enquanto o usuário está no passo guiado o
@@ -16,7 +21,7 @@ import useOnboardingGate from '../hooks/useOnboardingGate';
 import { readSlidesSeen, writeSlidesSeen } from '../services/onboardingService';
 import { navigateFromOutside } from '../navigation/navigationRef';
 
-/** @typedef {'done' | 'slides' | 'guided'} OnboardingPhase */
+/** @typedef {'done' | 'username' | 'slides' | 'guided'} OnboardingPhase */
 
 const OnboardingContext = createContext(/** @type {any} */ (null));
 
@@ -29,7 +34,15 @@ const OnboardingContext = createContext(/** @type {any} */ (null));
  */
 export function useOnboardingFlow(user) {
   const userId = user?.id || null;
-  const { showOnboarding, checking, saving, dismissOnboarding } = useOnboardingGate(user);
+  const {
+    showOnboarding,
+    usernamePending,
+    suggestedUsername,
+    checking,
+    saving,
+    dismissOnboarding,
+    saveUsername,
+  } = useOnboardingGate(user);
   const [slidesDone, setSlidesDone] = useState(false);
 
   // Retoma o passo em que o usuário estava. Quem recarregou a página no meio da
@@ -38,8 +51,12 @@ export function useOnboardingFlow(user) {
     setSlidesDone(readSlidesSeen(userId));
   }, [userId]);
 
+  // O username vem primeiro mesmo quando o onboarding já foi concluído: uma
+  // conta do Google que pulou os slides ainda precisa confirmar o username.
   /** @type {OnboardingPhase} */
-  const phase = !showOnboarding ? 'done' : (slidesDone ? 'guided' : 'slides');
+  const phase = usernamePending
+    ? 'username'
+    : (!showOnboarding ? 'done' : (slidesDone ? 'guided' : 'slides'));
 
   // Fim dos slides: o usuário vai para o globo, não para o feed. A primeira ação
   // do app é marcar um país, e é lá que ela acontece.
@@ -69,11 +86,14 @@ export function useOnboardingFlow(user) {
     phase,
     checking,
     saving,
+    showUsername: phase === 'username',
+    suggestedUsername,
+    saveUsername,
     showSlides: phase === 'slides',
     guidedActive: phase === 'guided',
     finishSlides,
     finishOnboarding,
-  }), [phase, checking, saving, finishSlides, finishOnboarding]);
+  }), [phase, checking, saving, suggestedUsername, saveUsername, finishSlides, finishOnboarding]);
 }
 
 /**

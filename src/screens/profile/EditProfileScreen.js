@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { updateProfile, checkUsernameAvailable, uploadAvatar } from '../../services/profileService';
 import { getCurrentUser } from '../../services/supabase';
+import { USERNAME_MAX_LENGTH, normalizeUsername, validateUsername } from '../../utils/username';
 
 const PALAVRAS_PROIBIDAS = [
   'puta', 'puto', 'viado', 'buceta', 'cu', 'merda', 'caralho', 'porra',
@@ -81,22 +82,17 @@ export default function EditProfileScreen({ navigation, route }) {
       setErrorMessage('O nome não pode estar vazio.');
       return;
     }
-    const normalizedUsername = username.trim().toLowerCase();
+    // Mesma regra do cadastro, da escolha via Google e do trigger — ver
+    // src/utils/username.js.
+    const usernameCheck = validateUsername(username);
+    if (!usernameCheck.valid) {
+      setErrorMessage(`${usernameCheck.error}.`);
+      return;
+    }
+    const normalizedUsername = usernameCheck.value;
 
-    if (normalizedUsername.length < 3) {
-      setErrorMessage('O username deve ter pelo menos 3 caracteres.');
-      return;
-    }
-    if (!/^[a-z0-9_]+$/.test(normalizedUsername)) {
-      setErrorMessage('Use apenas letras, números e underscore no username.');
-      return;
-    }
     if (displayName.length > 12) {
       setErrorMessage('O nome deve ter no máximo 12 caracteres.');
-      return;
-    }
-    if (normalizedUsername.length > 10) {
-      setErrorMessage('O username deve ter no máximo 10 caracteres.');
       return;
     }
     if (contemPalavraProibida(displayName) || contemPalavraProibida(username)) {
@@ -224,7 +220,9 @@ export default function EditProfileScreen({ navigation, route }) {
               style={{ flex: 1, fontSize: 15, color: '#0D1326', paddingVertical: 8 }}
               value={username}
               onChangeText={(text) => {
-                const sliced = text.slice(0, 10);
+                // Normaliza a cada tecla: o campo mostra exatamente o que será
+                // salvo, e o corte em 10 chars vem da regra compartilhada.
+                const sliced = normalizeUsername(text);
                 setUsername(sliced);
                 setUsernameAvailable(null);
                 setErrorMessage('');
@@ -245,10 +243,10 @@ export default function EditProfileScreen({ navigation, route }) {
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
             {usernameAvailable === true && <Text style={{ fontSize: 10, color: '#22c55e' }}>✓ Disponível</Text>}
             {usernameAvailable === false && <Text style={{ fontSize: 10, color: '#ef4444' }}>✗ Já em uso</Text>}
-            {!usernameAvailable && username.length >= 10 && <Text style={{ fontSize: 10, color: '#6C2BD9' }}>Limite máximo atingido</Text>}
-            {!usernameAvailable && username.length < 10 && <Text style={{ fontSize: 10, color: '#bbb' }}>Máximo 10 caracteres</Text>}
-            <Text style={{ fontSize: 10, color: username.length >= 9 ? '#6C2BD9' : '#bbb' }}>
-              {username.length}/10
+            {!usernameAvailable && username.length >= USERNAME_MAX_LENGTH && <Text style={{ fontSize: 10, color: '#6C2BD9' }}>Limite máximo atingido</Text>}
+            {!usernameAvailable && username.length < USERNAME_MAX_LENGTH && <Text style={{ fontSize: 10, color: '#bbb' }}>{`Máximo ${USERNAME_MAX_LENGTH} caracteres`}</Text>}
+            <Text style={{ fontSize: 10, color: username.length >= USERNAME_MAX_LENGTH - 1 ? '#6C2BD9' : '#bbb' }}>
+              {username.length}/{USERNAME_MAX_LENGTH}
             </Text>
           </View>
         </View>

@@ -17,6 +17,7 @@ import { navigationRef } from './navigationRef';
 import GlobalNotificationBanner from '../components/GlobalNotificationBanner';
 import { OnboardingProvider, useOnboardingFlow } from '../context/OnboardingContext';
 import OnboardingScreen from '../screens/onboarding/OnboardingScreen';
+import ChooseUsernameScreen from '../screens/onboarding/ChooseUsernameScreen';
 
 // Screens
 import ExploreScreen from '../screens/explore/ExploreScreen';
@@ -463,6 +464,21 @@ export default function AppNavigator() {
             onFinish={onboarding.finishSlides}
             onSkip={onboarding.finishOnboarding}
             saving={onboarding.saving}
+          />
+        </View>
+      )}
+
+      {/* Escolha do username — só quem entrou pelo Google chega aqui, e vem
+          ANTES dos slides. Fica por último no JSX para cobrir o overlay do
+          onboarding: as duas fases são mutuamente exclusivas, mas a ordem de
+          pintura não pode depender disso. */}
+      {onboarding.showUsername && user && (
+        <View style={StyleSheet.absoluteFill}>
+          <ChooseUsernameScreen
+            userId={user.id}
+            suggestion={onboarding.suggestedUsername}
+            saving={onboarding.saving}
+            onConfirm={onboarding.saveUsername}
           />
         </View>
       )}
