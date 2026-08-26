@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 
-const BASE_ASSISTANT_TIMEOUT_MS = 60000;
+const BASE_ASSISTANT_TIMEOUT_MS = 150000;
 
 export const TRAVEL_INTERESTS = [
   'Cultura', 'Gastronomia', 'Natureza', 'Praia', 'História',
@@ -101,7 +101,7 @@ const createLocalPreviewPlan = (request) => {
 const invokeAssistant = async (payload) => {
   const controller = new AbortController();
   const requestedDuration = Number(payload?.planRequest?.duration) || 3;
-  const timeoutMs = Math.min(180000, Math.max(BASE_ASSISTANT_TIMEOUT_MS, requestedDuration * 6000));
+  const timeoutMs = Math.min(300000, Math.max(BASE_ASSISTANT_TIMEOUT_MS, requestedDuration * 10000));
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
