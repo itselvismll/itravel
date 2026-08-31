@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { ensurePlanCoordinates } from '../utils/planGeography';
 
 const BASE_ASSISTANT_TIMEOUT_MS = 60000;
 
@@ -153,9 +154,11 @@ const invokeAssistant = async (payload) => {
 export const generateTravelPlan = async ({ planRequest, userContext }) => {
   const result = await invokeAssistant({ action: 'generate_plan', planRequest, userContext });
   if (!result.success && process.env.NODE_ENV !== 'production') {
+    // A prévia local é montada offline e nasce sem coordenada: aqui ela passa pela mesma
+    // garantia que a Edge Function aplica, para o roteiro salvo nunca ficar sem pontos.
     return {
       success: true,
-      plan: createLocalPreviewPlan(planRequest),
+      plan: await ensurePlanCoordinates(createLocalPreviewPlan(planRequest), { geocode: true }),
       localPreview: true,
     };
   }

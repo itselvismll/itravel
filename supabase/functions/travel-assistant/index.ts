@@ -35,6 +35,218 @@ const fetchJson = async (url: string, init: RequestInit = {}) => {
 
 const isIsoDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value)
 
+// ─── Geografia do roteiro ────────────────────────────────────────────────────
+//
+// Cada atividade precisa sair daqui com latitude/longitude válidas, categoria dentro do
+// enum e ordem sequencial no dia. O globo 3D vai ler exatamente esses campos, então o
+// dado nasce completo no servidor e vale para generate_plan, regenerate_activity e
+// adjust_plan — o client não precisa reconstruir nada.
+
+const PLACE_CATEGORIES = [
+  'restaurante', 'atracao', 'compras', 'hotel',
+  'transporte', 'natureza', 'vida_noturna', 'outro',
+] as const
+
+// A IA recebe as categorias de realPlaces ('passeio'/'restaurante'/'hotel'); mapeamos
+// para o enum fechado para que o ícone do globo nunca receba um valor inesperado.
+const CATEGORY_ALIASES: Record<string, string> = {
+  passeio: 'atracao', atracao: 'atracao', atração: 'atracao', turismo: 'atracao',
+  museu: 'atracao', restaurante: 'restaurante', cafe: 'restaurante', café: 'restaurante',
+  gastronomia: 'restaurante', bar: 'vida_noturna', balada: 'vida_noturna',
+  vida_noturna: 'vida_noturna', hotel: 'hotel', hospedagem: 'hotel',
+  compras: 'compras', shopping: 'compras', mercado: 'compras',
+  transporte: 'transporte', natureza: 'natureza', praia: 'natureza', parque: 'natureza',
+}
+
+export const normalizeCategory = (value: unknown, fallback = 'outro') => {
+  const raw = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if ((PLACE_CATEGORIES as readonly string[]).includes(raw)) return raw
+  return CATEGORY_ALIASES[raw] || fallback
+}
+
+const isValidLatitude = (value: unknown): value is number =>
+  Number.isFinite(value) && Math.abs(value as number) <= 90
+
+const isValidLongitude = (value: unknown): value is number =>
+  Number.isFinite(value) && Math.abs(value as number) <= 180
+
+// A coordenada (0, 0) é o "Null Island" — quase sempre um campo não preenchido, não um
+// lugar real. Descartar aqui evita um pino no meio do Atlântico.
+export const isValidCoordinate = (lat: unknown, lng: unknown) =>
+  isValidLatitude(lat) && isValidLongitude(lng) && !(lat === 0 && lng === 0)
+
+const EARTH_RADIUS_KM = 6371
+
+const haversineKm = (aLat: number, aLng: number, bLat: number, bLng: number) => {
+  const toRad = (value: number) => (value * Math.PI) / 180
+  const dLat = toRad(bLat - aLat)
+  const dLng = toRad(bLng - aLng)
+  const h = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(h)))
+}
+
+// Raio de sanidade em torno do destino geocodificado: pega a coordenada que a IA
+// "alucinou" em outro continente. Só se aplica a viagens de destino único — um roteiro
+// multi-país legitimamente espalha pontos por milhares de quilômetros.
+const SANITY_RADIUS_KM = 300
+
+const DIACRITICS_REGEX = new RegExp('[\\u0300-\\u036f]', 'g')
+
+const normalizePlaceName = (value: unknown) => String(value || '')
+  .normalize('NFD')
+  .replace(DIACRITICS_REGEX, '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, ' ')
+  .trim()
+
+const PHOTON_ENDPOINT = 'https://photon.komoot.io/api/'
+// Um único batch paralelo, limitado: a função já opera dentro do AbortSignal de 60s do
+// client, então o fallback de rede não pode crescer com o tamanho do roteiro.
+const MAX_GEOCODE_LOOKUPS = 12
+const GEOCODE_TIMEOUT_MS = 5000
+
+const geocodeQuery = async (query: string, bias: { lat: number; lng: number } | null) => {
+  if (!query) return null
+  const url = new URL(PHOTON_ENDPOINT)
+  url.searchParams.set('q', query)
+  url.searchParams.set('limit', '1')
+  url.searchParams.set('lang', 'en')
+  if (bias) {
+    url.searchParams.set('lat', String(bias.lat))
+    url.searchParams.set('lon', String(bias.lng))
+  }
+  try {
+    const response = await fetch(url.toString(), { signal: AbortSignal.timeout(GEOCODE_TIMEOUT_MS) })
+    if (!response.ok) return null
+    const data = await response.json()
+    const coords = data?.features?.[0]?.geometry?.coordinates
+    const [lng, lat] = Array.isArray(coords) ? coords : []
+    return isValidCoordinate(lat, lng) ? { latitude: lat, longitude: lng } : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Garante coordenada, categoria e ordem em toda atividade do roteiro.
+ *
+ * Nível 0: a coordenada que a própria IA devolveu, se passar na validação.
+ * Nível 1: casamento por nome com os realPlaces já buscados (custo zero, sem rede).
+ * Nível 2: geocoding do mapQuery via Photon, em um único batch paralelo limitado.
+ *
+ * Devolve o plano mutado e um resumo para diagnóstico.
+ */
+// Exportado apenas para os testes: o entrypoint continua sendo o serve() abaixo.
+export const normalizePlanGeography = async (
+  plan: any,
+  liveContext: any,
+  { allowRadiusCheck }: { allowRadiusCheck: boolean },
+) => {
+  const origin = liveContext?.place
+  const bias = isValidCoordinate(origin?.latitude, origin?.longitude)
+    ? { lat: origin.latitude, lng: origin.longitude }
+    : null
+
+  const placesByName = new Map<string, any>()
+  for (const item of liveContext?.realPlaces || []) {
+    const key = normalizePlaceName(item?.name)
+    if (key && isValidCoordinate(item?.latitude, item?.longitude) && !placesByName.has(key)) {
+      placesByName.set(key, item)
+    }
+  }
+
+  const matchRealPlace = (activity: any) => {
+    for (const field of [activity?.title, activity?.location]) {
+      const key = normalizePlaceName(field)
+      if (!key) continue
+      const exact = placesByName.get(key)
+      if (exact) return exact
+      // Casamento parcial: a IA costuma escrever "Jantar no Café X" para o lugar "Café X".
+      for (const [placeKey, place] of placesByName) {
+        if (placeKey.length >= 5 && key.includes(placeKey)) return place
+      }
+    }
+    return null
+  }
+
+  const pending: any[] = []
+  const summary = { total: 0, fromModel: 0, fromRealPlaces: 0, fromGeocoding: 0, missing: 0 }
+
+  for (const day of plan?.days || []) {
+    const activities = Array.isArray(day?.activities) ? day.activities : []
+    activities.forEach((activity: any, index: number) => {
+      summary.total += 1
+      // A ordem é sempre reescrita pela posição real no dia: é isso que o globo vai
+      // usar para desenhar a sequência de visita, e a IA erra a numeração com frequência.
+      activity.order = index + 1
+      activity.day = Number(day?.day) || 0
+
+      const latitude = Number(activity?.latitude)
+      const longitude = Number(activity?.longitude)
+      let hasCoordinate = isValidCoordinate(latitude, longitude)
+
+      if (hasCoordinate && allowRadiusCheck && bias
+        && haversineKm(bias.lat, bias.lng, latitude, longitude) > SANITY_RADIUS_KM) {
+        hasCoordinate = false
+      }
+
+      const matched = matchRealPlace(activity)
+      activity.category = normalizeCategory(activity?.category, normalizeCategory(matched?.category))
+
+      if (hasCoordinate) {
+        activity.latitude = latitude
+        activity.longitude = longitude
+        activity.coordinateSource = activity.coordinateSource || 'ai'
+        summary.fromModel += 1
+        return
+      }
+
+      if (matched) {
+        activity.latitude = matched.latitude
+        activity.longitude = matched.longitude
+        activity.coordinateSource = matched.provider || 'realPlaces'
+        summary.fromRealPlaces += 1
+        return
+      }
+
+      delete activity.latitude
+      delete activity.longitude
+      pending.push(activity)
+    })
+  }
+
+  const lookups = pending.slice(0, MAX_GEOCODE_LOOKUPS)
+  const resolved = await Promise.all(lookups.map((activity) => geocodeQuery(
+    cleanText(activity?.mapQuery, 200) || cleanText(activity?.location, 200) || cleanText(activity?.title, 200),
+    bias,
+  )))
+
+  lookups.forEach((activity, index) => {
+    const coordinate = resolved[index]
+    if (!coordinate) return
+    activity.latitude = coordinate.latitude
+    activity.longitude = coordinate.longitude
+    activity.coordinateSource = 'Photon'
+    summary.fromGeocoding += 1
+  })
+
+  // Último recurso: sem nenhuma coordenada própria, o ponto herda a do destino para não
+  // sumir do globo. Fica marcado para que a plotagem possa exibi-lo como aproximado.
+  for (const activity of pending) {
+    if (isValidCoordinate(activity?.latitude, activity?.longitude)) continue
+    summary.missing += 1
+    if (bias) {
+      activity.latitude = bias.lat
+      activity.longitude = bias.lng
+      activity.coordinateSource = 'destino (aproximado)'
+      activity.approximateCoordinate = true
+    }
+  }
+
+  return summary
+}
+
 const addDays = (date: Date, days: number) => {
   const result = new Date(date)
   result.setUTCDate(result.getUTCDate() + days)
@@ -221,7 +433,7 @@ const planSchema = {
               maxItems: 3,
               items: {
               type: 'OBJECT',
-              required: ['period', 'title', 'description', 'location', 'duration', 'estimatedCost', 'mapQuery', 'indoor', 'purchaseNote'],
+              required: ['period', 'title', 'description', 'location', 'duration', 'estimatedCost', 'mapQuery', 'indoor', 'purchaseNote', 'latitude', 'longitude', 'category', 'order'],
               properties: {
                 period: { type: 'STRING' },
                 title: { type: 'STRING' },
@@ -233,6 +445,8 @@ const planSchema = {
                 indoor: { type: 'BOOLEAN' },
                 latitude: { type: 'NUMBER' },
                 longitude: { type: 'NUMBER' },
+                category: { type: 'STRING', enum: [...PLACE_CATEGORIES] },
+                order: { type: 'INTEGER' },
                 rating: { type: 'NUMBER' },
                 reviewCount: { type: 'INTEGER' },
                 openingHours: { type: 'ARRAY', items: { type: 'STRING' } },
@@ -409,6 +623,9 @@ Regras:
 - Inclua uma verba de Compras somente quando ela couber no orçamento ou estiver alinhada aos interesses. shoppingIncluded só pode ser true quando a categoria Compras tiver valor maior que 0. Explique todas as inclusões e exclusões em scopeNote.
 - Atividades realmente gratuitas devem ter estimatedCost igual a 0. Não use textos como "grátis" no campo numérico.
 - mapQuery deve ser uma busca precisa no formato "local, cidade, país".
+- Toda atividade é obrigada a trazer latitude e longitude reais do lugar, em graus decimais (ex.: -22.9519, -43.2105). Use as coordenadas verdadeiras do ponto citado no title/location, nunca o centro genérico da cidade e nunca 0. Se não souber a coordenada exata do estabelecimento, use a do endereço/quarteirão dele.
+- category deve ser exatamente um destes valores: ${PLACE_CATEGORIES.join(', ')}. Refeições são restaurante, bares e baladas são vida_noturna, hospedagem é hotel, museus e pontos turísticos são atracao, parques e trilhas são natureza, lojas e feiras são compras, deslocamentos são transporte. Use outro apenas quando nenhum dos anteriores se aplicar.
+- order é a sequência de visita dentro do dia, começando em 1 e seguindo a ordem cronológica (manhã, tarde, noite).
 - Priorize os locais de realPlaces. Ao usar um deles, copie nome, latitude, longitude, avaliação, quantidade de avaliações, horários e mapsUrl sem alterar os dados; copie website para officialUrl e provider para verificationSource.
 - Combine a categoria: refeições usam realPlaces.category restaurante, hospedagem usa hotel e passeios usam passeio. Copie também placeId sem alterar.
 - officialUrl só pode receber uma URL presente nos dados externos. Nunca invente links de ingresso, afiliados ou sites de compra.
@@ -488,6 +705,16 @@ Regras:
       ...source,
       updatedAt: liveContext.retrievedAt,
     }))
+
+    // Um roteiro multi-país espalha pontos legitimamente por milhares de km, então o raio
+    // de sanidade só vale quando há um destino único para servir de âncora.
+    const geoSummary = await normalizePlanGeography(plan, liveContext, {
+      allowRadiusCheck: destinations.length <= 1,
+    })
+    plan.geoCoverage = geoSummary
+    if (geoSummary.missing) {
+      console.warn('travel-assistant coordenadas aproximadas', geoSummary)
+    }
 
     return jsonResponse({ success: true, plan, liveContext })
   } catch {
