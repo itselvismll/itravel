@@ -532,6 +532,7 @@ serve(async (req) => {
     const destinations = Array.isArray(request.destinations)
       ? request.destinations.slice(0, 12).map((item: any) => ({
         name: cleanText(typeof item === 'string' ? item : item?.name, 100),
+        nameEn: cleanText(typeof item === 'string' ? '' : item?.nameEn, 100),
         code: cleanText(typeof item === 'string' ? '' : item?.code, 3).toUpperCase(),
       })).filter((item: { name: string }) => item.name)
       : []
@@ -547,7 +548,7 @@ serve(async (req) => {
       : []
     const destination = cleanText(request.destination, 500)
       || destinations.map((item: { name: string }) => item.name).join(', ')
-    const primaryDestination = destinations[0]?.name || destination
+    const primaryDestination = destinations[0]?.nameEn || destinations[0]?.name || destination
     const origin = cleanText(request.origin, 120)
     const currency = cleanText(request.currency, 3).toUpperCase() || 'BRL'
     const travelers = Math.max(1, Math.min(30, Number(request.travelers) || 1))
@@ -604,101 +605,203 @@ serve(async (req) => {
         ? `Atualize o roteiro atual conforme este pedido do usuário: "${cleanText(body?.adjustment, 600)}". Preserve tudo o que não precisar mudar. Roteiro atual: ${existingPlan}`
         : 'Crie um roteiro novo e coerente.'
 
-    const prompt = `Você é o planejador de viagens do Journi. Responda em português brasileiro e apenas no JSON solicitado.
+    const configuredModel = Deno.env.get('GEMINI_MODEL') || 'gemini-3.5-flash-lite'
+    const models = [...new Set([configuredModel, 'gemini-3.5-flash-lite', 'gemini-3.6-flash'])]
+    const strictDaySchemaLimit = 3
+    const chunkSpecs = [{ startDay: 1, days: duration }]
 
-Pedido: ${JSON.stringify(safeRequest)}
+    const generateChunk = async (spec: { startDay: number; days: number }) => {
+      const ratio = spec.days / duration
+      const chunkStartDate = isIsoDate(safeRequest.startDate)
+        ? addDays(new Date(`${safeRequest.startDate}T00:00:00Z`), spec.startDay - 1)
+        : ''
+      const chunkEndDate = chunkStartDate
+        ? addDays(new Date(`${chunkStartDate}T00:00:00Z`), spec.days - 1)
+        : ''
+      const chunkRequest = {
+        ...safeRequest,
+        startDate: chunkStartDate || safeRequest.startDate,
+        endDate: chunkEndDate || safeRequest.endDate,
+        duration: spec.days,
+        budget: budget > 0 ? Math.round(budget * ratio * 100) / 100 : 0,
+        destinationBudgets: safeRequest.destinationBudgets.map((item: any) => ({
+          ...item,
+          amount: Math.round(item.amount * ratio * 100) / 100,
+          amountInBRL: Math.round(item.amountInBRL * ratio * 100) / 100,
+        })),
+      }
+      const chunkEndDay = spec.startDay + spec.days - 1
+      const includePlanDetails = spec.startDay === 1
+      const prompt = `Você é o planejador de viagens do Journi. Responda em português brasileiro e apenas no JSON solicitado.
+
+Pedido deste bloco: ${JSON.stringify(chunkRequest)}
+Contexto do roteiro completo: ${duration} dias; este bloco cobre os dias ${spec.startDay} a ${chunkEndDay}.
 Perfil do viajante: ${JSON.stringify(safeUserContext)}
 Dados externos disponíveis: ${JSON.stringify(liveContext)}
 Operação: ${operationInstruction}
 
 Regras:
-- Crie exatamente ${duration} dias, respeitando datas, ritmo, interesses, alimentação, acessibilidade e todos os países selecionados em destinations.
-- Crie exatamente 3 atividades objetivas por dia (manhã, tarde e noite). Mantenha title, description e purchaseNote concisos para que roteiros longos não sejam cortados.
+- Crie exatamente ${spec.days} dias neste bloco, numerados de ${spec.startDay} a ${chunkEndDay}, respeitando datas, ritmo, interesses, alimentação, acessibilidade e todos os países selecionados em destinations.
+- Crie exatamente 3 atividades objetivas por dia (manhã, tarde e noite). Mantenha title, description e purchaseNote concisos.
 - O padrão de orçamento é ${safeRequest.budgetLevel}: economy significa econômico/barato, balanced significa médio e premium significa caro/confortável.
 - Distribua manhã, tarde e noite sem deslocamentos impossíveis; agrupe locais próximos.
-- Todos os custos devem ser numéricos em ${currency}, para ${travelers} viajante(s), e o total deve respeitar o orçamento quando ele for maior que zero.
+- Todos os custos devem ser numéricos em ${currency}, para ${travelers} viajante(s), e o total deste bloco deve respeitar o orçamento proporcional quando ele for maior que zero.
 - budget.items deve detalhar Passagens, Hospedagem, Alimentação, Transporte local, Passeios e ingressos, Compras e Reserva. Os itens devem somar exatamente budget.total.
-- Quando destinationBudgets existir, respeite o teto informado para cada país e use amountInBRL como referência consolidada. Explique em budget.scopeNote como o total foi distribuído entre os destinos.
-- Não presuma passagens ou hospedagem: quando não houver dados suficientes, use valor 0 na categoria e explique em note que não está incluída. Não conte o custo de uma atividade duas vezes.
-- Inclua uma verba de Compras somente quando ela couber no orçamento ou estiver alinhada aos interesses. shoppingIncluded só pode ser true quando a categoria Compras tiver valor maior que 0. Explique todas as inclusões e exclusões em scopeNote.
-- Atividades realmente gratuitas devem ter estimatedCost igual a 0. Não use textos como "grátis" no campo numérico.
+- Quando destinationBudgets existir, respeite o teto proporcional de cada país e use amountInBRL como referência consolidada.
+- Não presuma passagens ou hospedagem: quando não houver dados suficientes, use valor 0 na categoria e explique em note que não está incluída. Não conte custos duas vezes.
+- Inclua Compras somente quando couber no orçamento. shoppingIncluded só pode ser true quando a categoria Compras tiver valor maior que 0.
+- Atividades realmente gratuitas devem ter estimatedCost igual a 0.
 - mapQuery deve ser uma busca precisa no formato "local, cidade, país".
 - Toda atividade é obrigada a trazer latitude e longitude reais do lugar, em graus decimais (ex.: -22.9519, -43.2105). Use as coordenadas verdadeiras do ponto citado no title/location, nunca o centro genérico da cidade e nunca 0. Se não souber a coordenada exata do estabelecimento, use a do endereço/quarteirão dele.
 - category deve ser exatamente um destes valores: ${PLACE_CATEGORIES.join(', ')}. Refeições são restaurante, bares e baladas são vida_noturna, hospedagem é hotel, museus e pontos turísticos são atracao, parques e trilhas são natureza, lojas e feiras são compras, deslocamentos são transporte. Use outro apenas quando nenhum dos anteriores se aplicar.
 - order é a sequência de visita dentro do dia, começando em 1 e seguindo a ordem cronológica (manhã, tarde, noite).
-- Priorize os locais de realPlaces. Ao usar um deles, copie nome, latitude, longitude, avaliação, quantidade de avaliações, horários e mapsUrl sem alterar os dados; copie website para officialUrl e provider para verificationSource.
-- Combine a categoria: refeições usam realPlaces.category restaurante, hospedagem usa hotel e passeios usam passeio. Copie também placeId sem alterar.
+
+- Priorize realPlaces e copie seus dados verificados sem alterá-los. Combine restaurante, hotel e passeio com a categoria correta.
+
 - officialUrl só pode receber uma URL presente nos dados externos. Nunca invente links de ingresso, afiliados ou sites de compra.
-- Em purchaseNote, quando houver officialUrl, oriente a conferir/comprar no site oficial. Sem officialUrl, oriente a consultar ingressos e canais oficiais na ficha do local no Maps. Para atividade gratuita, informe que o valor é 0 e que as regras devem ser confirmadas.
-- Se uma fonte não trouxer avaliação ou horário, deixe o campo ausente; nunca fabrique reviews ou horários.
-- Use os dados meteorológicos apenas quando existirem; caso contrário diga que a previsão deve ser conferida perto da viagem.
-- Não invente horários de funcionamento, preços oficiais ou regras legais. Indique estimativas claramente.
-- As fontes devem incluir as URLs reais dos dados externos usados e a data de consulta.
+- Sem officialUrl, oriente em purchaseNote a consultar ingressos e canais oficiais na ficha do local no Maps.
+- Não invente avaliações, horários, preços oficiais ou regras legais. Indique estimativas claramente.
+- Use dados meteorológicos apenas quando existirem e inclua as fontes reais consultadas.
 - Checklist deve incluir documentos, saúde, dinheiro, conectividade e bagagem.
-- Inclua alertas de segurança objetivos, sem alarmismo.`
+- Inclua alertas de segurança objetivos, sem alarmismo.
+- ${includePlanDetails ? 'Inclua todos os campos gerais do roteiro.' : 'Este é um bloco complementar: retorne somente o campo days.'}`
+      const chunkDaysSchema = spec.days <= strictDaySchemaLimit
+        ? { ...planSchema.properties.days, minItems: spec.days, maxItems: spec.days }
+        : planSchema.properties.days
+      const responseSchema = includePlanDetails
+        ? {
+          ...planSchema,
+          properties: { ...planSchema.properties, days: chunkDaysSchema },
+        }
+        : {
+          type: 'OBJECT',
+          required: ['days'],
+          properties: { days: chunkDaysSchema },
+        }
+      const maxOutputTokens = includePlanDetails
+        ? Math.min(65535, Math.max(8192, spec.days * 1000))
+        : 4096
+      let lastStatus = 502
+      let lastProviderStatus = ''
+      let failureCode = 'AI_PROVIDER_ERROR'
 
-    const responseSchema = {
-      ...planSchema,
-      properties: {
-        ...planSchema.properties,
-        days: {
-          ...planSchema.properties.days,
-          minItems: duration,
-          maxItems: duration,
-        },
-      },
-    }
-
-    const configuredModel = Deno.env.get('GEMINI_MODEL') || 'gemini-3.6-flash'
-    const models = [...new Set([configuredModel, 'gemini-3.5-flash-lite'])]
-    let geminiResponse: Response | null = null
-    let geminiData: any = null
-
-    for (const model of models) {
-      geminiResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              maxOutputTokens: 65535,
-              responseMimeType: 'application/json',
-              responseSchema,
+      for (const model of models) {
+        try {
+          const geminiResponse = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+              signal: AbortSignal.timeout(80000),
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                  maxOutputTokens,
+                  responseMimeType: 'application/json',
+                  responseSchema,
+                },
+              }),
             },
-          }),
-        },
+          )
+          lastStatus = geminiResponse.status
+          const geminiData = await geminiResponse.json().catch(() => null)
+          lastProviderStatus = geminiData?.error?.status || ''
+          if (!geminiResponse.ok || !geminiData) {
+            failureCode = lastProviderStatus || `HTTP_${geminiResponse.status}`
+            console.error('travel-assistant provider attempt failed', {
+              model, chunkStartDay: spec.startDay, status: lastStatus,
+              providerStatus: lastProviderStatus,
+              providerMessage: cleanText(geminiData?.error?.message, 240),
+            })
+            continue
+          }
+          const responseText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text
+          if (!responseText) {
+            failureCode = 'AI_EMPTY_RESPONSE'
+            continue
+          }
+          try {
+            const candidatePlan = JSON.parse(responseText)
+            if (Array.isArray(candidatePlan.days) && candidatePlan.days.length === spec.days) {
+              return { success: true, plan: candidatePlan, spec }
+            }
+            failureCode = 'AI_INCOMPLETE_PLAN'
+          } catch {
+            failureCode = 'AI_INVALID_JSON'
+          }
+        } catch (error) {
+          failureCode = error instanceof DOMException && error.name === 'TimeoutError'
+            ? 'AI_PROVIDER_TIMEOUT'
+            : 'AI_PROVIDER_NETWORK_ERROR'
+          console.error('travel-assistant provider request error', {
+            model, chunkStartDay: spec.startDay, code: failureCode,
+            message: cleanText(error instanceof Error ? error.message : '', 240),
+          })
+        }
+      }
+      return { success: false, failureCode, status: lastStatus, providerStatus: lastProviderStatus, spec }
+    }
+
+    const chunkResults: any[] = []
+    const chunkConcurrency = 4
+    for (let index = 0; index < chunkSpecs.length; index += chunkConcurrency) {
+      const batch = await Promise.all(
+        chunkSpecs.slice(index, index + chunkConcurrency).map(generateChunk),
       )
-      geminiData = await geminiResponse.json().catch(() => null)
-      if (geminiResponse.ok && geminiData) break
+      chunkResults.push(...batch)
+      if (batch.some(result => !result.success)) break
     }
-
-    if (!geminiResponse?.ok || !geminiData) {
-      const providerStatus = geminiData?.error?.status
-      const responseStatus = geminiResponse?.status || 502
-      const error = responseStatus === 429
+    const failedChunk = chunkResults.find(result => !result.success)
+    if (failedChunk) {
+      const error = failedChunk.status === 429
         ? 'O limite temporário da IA foi atingido. Aguarde um minuto e tente novamente.'
-        : 'A IA não conseguiu montar o roteiro agora. Tente novamente em instantes.'
-      console.error('travel-assistant provider failure', { status: responseStatus, providerStatus })
-      return jsonResponse({ success: false, error }, responseStatus === 429 ? 429 : 502)
+        : failedChunk.failureCode === 'AI_INCOMPLETE_PLAN'
+          ? 'A IA não concluiu todos os dias do roteiro. Tente novamente em instantes.'
+          : 'O planejador está temporariamente indisponível. Tente novamente em instantes.'
+      console.error('travel-assistant generation failed', failedChunk)
+      return jsonResponse(
+        { success: false, error, code: failedChunk.failureCode },
+        failedChunk.status === 429 ? 429 : 503,
+      )
     }
 
-    const responseText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text
-    if (!responseText) return jsonResponse({ success: false, error: 'A IA retornou uma resposta vazia' }, 502)
-
-    let plan
-    try {
-      plan = JSON.parse(responseText)
-    } catch {
-      return jsonResponse({ success: false, error: 'A IA retornou um roteiro fora do formato esperado' }, 502)
-    }
-
-    if (!Array.isArray(plan.days) || plan.days.length !== duration) {
-      return jsonResponse({
-        success: false,
-        error: `A IA gerou ${plan.days?.length || 0} de ${duration} dias. Tente gerar novamente.`,
-      }, 502)
+    const chunkPlans = chunkResults.map(result => result.plan)
+    const plan = chunkPlans[0]
+    if (chunkPlans.length > 1) {
+      plan.title = `${duration} dias em ${destination}`
+      plan.summary = `Roteiro completo de ${duration} dias, organizado em etapas para manter cada atividade detalhada e coerente.`
+      plan.days = chunkResults.flatMap(result => result.plan.days.map((day: any, index: number) => ({
+        ...day,
+        day: result.spec.startDay + index,
+        date: isIsoDate(safeRequest.startDate)
+          ? addDays(new Date(`${safeRequest.startDate}T00:00:00Z`), result.spec.startDay + index - 1)
+          : day.date,
+      })))
+      const budgetItems = new Map<string, { category: string; amount: number; note: string }>()
+      for (const chunkPlan of chunkPlans) {
+        for (const item of chunkPlan.budget?.items || []) {
+          const current = budgetItems.get(item.category) || { category: item.category, amount: 0, note: item.note || '' }
+          current.amount += Number(item.amount) || 0
+          if (!current.note && item.note) current.note = item.note
+          budgetItems.set(item.category, current)
+        }
+      }
+      const items = [...budgetItems.values()].map(item => ({ ...item, amount: Math.round(item.amount * 100) / 100 }))
+      const budgetScale = duration / chunkResults[0].spec.days
+      const scaledItems = items.map(item => ({
+        ...item,
+        amount: Math.round(item.amount * budgetScale * 100) / 100,
+      }))
+      plan.budget = {
+        ...plan.budget,
+        items: scaledItems,
+        total: Math.round(scaledItems.reduce((sum, item) => sum + item.amount, 0) * 100) / 100,
+        shoppingIncluded: scaledItems.some(item => item.category === 'Compras' && item.amount > 0),
+        scopeNote: `Estimativa consolidada dos ${chunkPlans.length} blocos que compõem os ${duration} dias da viagem.`,
+      }
+      plan.checklist = [...new Map(chunkPlans.flatMap(item => item.checklist || []).map((item: any) => [`${item.category}:${item.item}`, item])).values()]
+      plan.safetyTips = [...new Set(chunkPlans.flatMap(item => item.safetyTips || []))]
+      plan.practicalTips = [...new Set(chunkPlans.flatMap(item => item.practicalTips || []))]
     }
 
     plan.sources = (liveContext.sources || []).map((source: { label: string; url: string }) => ({
@@ -717,7 +820,14 @@ Regras:
     }
 
     return jsonResponse({ success: true, plan, liveContext })
-  } catch {
-    return jsonResponse({ success: false, error: 'Não foi possível processar o planejamento' }, 500)
+  } catch (error) {
+    console.error('travel-assistant unhandled error', {
+      message: cleanText(error instanceof Error ? error.message : '', 240),
+    })
+    return jsonResponse({
+      success: false,
+      error: 'Não foi possível processar o planejamento',
+      code: 'ASSISTANT_INTERNAL_ERROR',
+    }, 500)
   }
 })
