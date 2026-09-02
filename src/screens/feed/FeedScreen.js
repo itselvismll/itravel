@@ -1,8 +1,9 @@
 ﻿import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, ScrollView, FlatList, TouchableOpacity, Image,
+  View, Text, FlatList, TouchableOpacity, Image as NativeImage,
   StyleSheet, ActivityIndicator, Modal, TextInput, Share, Platform,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { getCurrentUser, supabase } from '../../services/supabase';
@@ -28,6 +29,8 @@ const timeAgo = (dateStr) => {
   if (hours < 24) return `${hours}h atrás`;
   return `${days}d atrás`;
 };
+
+const FEED_PAGE_SIZE = 12;
 
 function CountBadge({ count }) {
   if (!count) return null;
@@ -78,6 +81,8 @@ export default function FeedScreen({ navigation }) {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [likedIds, setLikedIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
 
   const [commentModal, setCommentModal] = useState(false);
   const [commentPhoto, setCommentPhoto] = useState(null);
@@ -112,7 +117,7 @@ export default function FeedScreen({ navigation }) {
       if (!user) return;
 
       const [feedResult, messagesResult, notificationsResult] = await Promise.all([
-        getFeedPhotos(user.id),
+        getFeedPhotos(user.id, { from: 0, pageSize: FEED_PAGE_SIZE }),
         getUnreadMessageCount(),
         supabase
           .from('notifications')
@@ -122,7 +127,10 @@ export default function FeedScreen({ navigation }) {
           .in('type', SOCIAL_NOTIFICATION_TYPES),
       ]);
 
-      if (feedResult.success) setFeed(feedResult.data);
+      if (feedResult.success) {
+        setFeed(feedResult.data);
+        setHasMore(feedResult.hasMore);
+      }
       if (messagesResult.success) setUnreadMessages(messagesResult.data);
       setUnreadNotifications(notificationsResult.count || 0);
 
@@ -137,6 +145,26 @@ export default function FeedScreen({ navigation }) {
       setLoading(false);
     }
   }, []);
+
+  const loadMore = useCallback(async () => {
+    if (!currentUser?.id || loading || loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const result = await getFeedPhotos(currentUser.id, {
+        from: feed.length,
+        pageSize: FEED_PAGE_SIZE,
+      });
+      if (result.success) {
+        setFeed(current => {
+          const knownIds = new Set(current.map(item => item.id));
+          return [...current, ...result.data.filter(item => !knownIds.has(item.id))];
+        });
+        setHasMore(result.hasMore);
+      }
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [currentUser?.id, feed.length, hasMore, loading, loadingMore]);
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
@@ -290,13 +318,22 @@ export default function FeedScreen({ navigation }) {
           </TouchableOpacity>
         </View>
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false}>
-
-          <View style={styles.body}>
-            {feed.map((post) => {
+        <FlatList
+          data={feed}
+          keyExtractor={post => post.id}
+          contentContainerStyle={styles.body}
+          showsVerticalScrollIndicator={false}
+          initialNumToRender={4}
+          maxToRenderPerBatch={4}
+          updateCellsBatchingPeriod={50}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.6}
+          renderItem={({ item: post }) => {
               const liked = likedIds.has(post.id);
               return (
-                <View key={post.id} style={styles.feedCard}>
+                <View style={styles.feedCard}>
 
                   <View style={styles.postHeader}>
                     <TouchableOpacity
@@ -357,9 +394,12 @@ export default function FeedScreen({ navigation }) {
                   </View>
 
                   <Image
-                    source={{ uri: post.photo_url }}
+                    source={post.photo_url}
                     style={styles.postImage}
-                    resizeMode="cover"
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    transition={120}
+                    recyclingKey={post.id}
                   />
 
                   <View style={styles.postBody}>
@@ -412,10 +452,11 @@ export default function FeedScreen({ navigation }) {
 
                 </View>
               );
-            })}
-            <View style={{ height: 96 }} />
-          </View>
-        </ScrollView>
+            }}
+          ListFooterComponent={loadingMore ? (
+            <ActivityIndicator color="#6C2BD9" style={styles.feedFooterLoader} />
+          ) : <View style={{ height: 96 }} />}
+        />
       )}
 
       {/* MODAL DE COMENTÁRIOS */}
@@ -459,7 +500,7 @@ export default function FeedScreen({ navigation }) {
                 >
                   <View style={styles.commentAvatar}>
                     {item.profiles?.avatar_url ? (
-                      <Image
+                      <NativeImage
                         source={{ uri: item.profiles.avatar_url }}
                         style={{ width: 32, height: 32, borderRadius: 16 }}
                       />
@@ -534,6 +575,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     paddingHorizontal: 12,
   },
+  feedFooterLoader: { marginVertical: 24 },
   feedCard: {
     backgroundColor: 'white',
     borderRadius: 12,

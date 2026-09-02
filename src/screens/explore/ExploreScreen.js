@@ -3,6 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, Image, TextInput,
   StyleSheet, ActivityIndicator, Modal, FlatList, Alert, Platform
 } from 'react-native';
+import { Image as CachedImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../services/supabase';
 import { getCurrentUser } from '../../services/supabase';
@@ -116,7 +117,7 @@ export default function ExploreScreen({ navigation }) {
 
   const loadPersonalizedExplore = async (user) => {
     const [photosResult, interactionsResult, wishlistResult, followsResult] = await Promise.all([
-      supabase.from('country_photos').select('id, photo_url, city, country_name, country_code, location_name, rating, review, created_at, user_id').eq('is_public', true).order('created_at', { ascending: false }).limit(300),
+      supabase.from('country_photos').select('id, photo_url, city, country_name, country_code, location_name, rating, review, created_at, user_id').eq('is_public', true).order('created_at', { ascending: false }).limit(80),
       user ? supabase.from('explore_interactions').select('country_code, event_type').eq('user_id', user.id).order('created_at', { ascending: false }).limit(200) : Promise.resolve({ data: [] }),
       user ? supabase.from('wishlist').select('country_code').eq('user_id', user.id) : Promise.resolve({ data: [] }),
       user ? supabase.from('followers').select('following_id').eq('follower_id', user.id) : Promise.resolve({ data: [] }),
@@ -430,7 +431,7 @@ export default function ExploreScreen({ navigation }) {
                       activeOpacity={0.85}
                     >
                       {!!country.coverUrl && (
-                        <Image source={{ uri: country.coverUrl }} style={styles.destinationBackground} resizeMode="cover" />
+                        <CachedImage source={country.coverUrl} style={styles.destinationBackground} contentFit="cover" cachePolicy="memory-disk" transition={120} />
                       )}
                       <View style={styles.destinationShade} />
                       <CountryFlag
@@ -470,10 +471,13 @@ export default function ExploreScreen({ navigation }) {
                   onPress={() => setFullscreenPhoto(photo)}
                   activeOpacity={0.95}
                 >
-                  <Image
-                    source={{ uri: photo.photo_url }}
+                  <CachedImage
+                    source={photo.photo_url}
                     style={styles.recentImage}
-                    resizeMode="cover"
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    transition={120}
+                    recyclingKey={photo.id}
                   />
                   <View style={styles.recentInfo}>
                     <View style={styles.recentAuthor}>
@@ -603,18 +607,27 @@ export default function ExploreScreen({ navigation }) {
               </Text>
             </View>
           ) : (
-            <ScrollView contentContainerStyle={{ padding: 12, gap: 10 }}>
-              {countryPhotos.map((photo, i) => (
+            <FlatList
+              data={countryPhotos}
+              keyExtractor={photo => photo.id}
+              contentContainerStyle={{ padding: 12, gap: 10 }}
+              initialNumToRender={4}
+              maxToRenderPerBatch={4}
+              windowSize={5}
+              removeClippedSubviews={Platform.OS === 'android'}
+              renderItem={({ item: photo }) => (
                 <TouchableOpacity
-                  key={i}
                   style={styles.photoCard}
                   onPress={() => setFullscreenPhoto(photo)}
                   activeOpacity={0.95}
                 >
-                  <Image
-                    source={{ uri: photo.photo_url }}
+                  <CachedImage
+                    source={photo.photo_url}
                     style={styles.photoCardImage}
-                    resizeMode="cover"
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    transition={120}
+                    recyclingKey={photo.id}
                   />
                   <View style={styles.photoCardInfo}>
                     <View style={styles.photoCardAuthor}>
@@ -661,8 +674,8 @@ export default function ExploreScreen({ navigation }) {
                     )}
                   </View>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
+              )}
+            />
           )}
         </View>
       </Modal>
@@ -692,10 +705,11 @@ export default function ExploreScreen({ navigation }) {
           )}
           {fullscreenPhoto && (
             <>
-              <Image
-                source={{ uri: fullscreenPhoto.photo_url }}
+              <CachedImage
+                source={fullscreenPhoto.photo_url}
                 style={{ width: '100%', height: '70%' }}
-                resizeMode="contain"
+                contentFit="contain"
+                cachePolicy="memory-disk"
               />
               <View style={styles.fullscreenInfo}>
                 {fullscreenPhoto.location_name && (

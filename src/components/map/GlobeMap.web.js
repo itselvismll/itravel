@@ -165,6 +165,7 @@ export default function GlobeMap({
   onMapReady,
   onError,
   showGlobeControl = true,
+  performanceMode = false,
   style,
 }) {
   const containerRef = useRef(null);
@@ -194,6 +195,12 @@ export default function GlobeMap({
       zoom: GLOBE_INITIAL_VIEW.zoom,
       minZoom: GLOBE_INITIAL_VIEW.minZoom,
       maxZoom: GLOBE_MAX_ZOOM,
+      // O globo nativo roda em WebView. Renderizar o canvas no DPR físico de
+      // aparelhos Android (frequentemente 2x ou 3x) multiplica a quantidade de
+      // pixels sem trazer diferença perceptível nessa tela. O navegador normal
+      // mantém a densidade original.
+      pixelRatio: performanceMode ? 1 : undefined,
+      maxTileCacheSize: performanceMode ? 48 : null,
       // Desligado aqui para adicionar o controle com a atribuição do provedor.
       attributionControl: false,
     });
@@ -255,7 +262,7 @@ export default function GlobeMap({
       mapRef.current = null;
       setReady(false);
     };
-  }, [showGlobeControl]);
+  }, [performanceMode, showGlobeControl]);
 
   return (
     <div

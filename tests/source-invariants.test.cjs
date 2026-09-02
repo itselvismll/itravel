@@ -754,3 +754,28 @@ test('the guided onboarding card closes on the first marked country', () => {
   // engoliria a celebração inteira.
   assert.match(globe, /suppressVisitedAlert=\{guidedActive\}/);
 });
+
+test('mobile performance safeguards keep heavy content bounded', () => {
+  const feed = stripComments(read('src/screens/feed/FeedScreen.js'));
+  const followService = stripComments(read('src/services/followService.js'));
+  const explore = stripComments(read('src/screens/explore/ExploreScreen.js'));
+  const globe = stripComments(read('src/screens/map/GlobeScreen.js'));
+  const nativeGlobe = stripComments(read('src/components/map/NativeGlobe.dom.js'));
+  const globeMap = stripComments(read('src/components/map/GlobeMap.web.js'));
+
+  assert.match(feed, /<FlatList/);
+  assert.doesNotMatch(feed, /feed\.map\(/);
+  assert.match(feed, /FEED_PAGE_SIZE = 12/);
+  assert.match(feed, /cachePolicy="memory-disk"/);
+  assert.match(followService, /\.range\(from, from \+ pageSize - 1\)/);
+
+  assert.match(explore, /\.limit\(80\)/);
+  assert.match(explore, /<CachedImage/);
+  assert.match(explore, /data=\{countryPhotos\}/);
+
+  assert.match(globe, /useIsFocused/);
+  assert.match(globe, /isFocused \? \(/);
+  assert.match(nativeGlobe, /performanceMode/);
+  assert.match(globeMap, /pixelRatio: performanceMode \? 1 : undefined/);
+  assert.match(globeMap, /maxTileCacheSize: performanceMode \? 48 : null/);
+});

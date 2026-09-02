@@ -75,7 +75,7 @@ export const getFollowerProfiles = async (userId) => {
   };
 };
 
-export const getFeedPhotos = async (userId) => {
+export const getFeedPhotos = async (userId, { from = 0, pageSize = 12 } = {}) => {
   const { data: follows } = await supabase
     .from('followers')
     .select('following_id')
@@ -89,9 +89,10 @@ export const getFeedPhotos = async (userId) => {
     .in('user_id', allIds)
     .eq('is_public', true)
     .order('created_at', { ascending: false })
-    .limit(50);
+    .range(from, from + pageSize - 1);
 
-  if (error || !data?.length) return { success: true, data: [] };
+  if (error) return { success: false, data: [], hasMore: false, error: error.message };
+  if (!data?.length) return { success: true, data: [], hasMore: false };
 
   const userIds = [...new Set(data.map(p => p.user_id))];
   const { data: profiles } = await supabase
@@ -101,6 +102,7 @@ export const getFeedPhotos = async (userId) => {
 
   return {
     success: true,
+    hasMore: data.length === pageSize,
     data: data.map(p => ({
       ...p,
       profiles: getProfileOrFallback(profiles, p.user_id),

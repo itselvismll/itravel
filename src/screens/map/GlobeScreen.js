@@ -17,6 +17,7 @@ import {
   TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import GlobeMap from '../../components/map/GlobeMap';
 import NativeGlobe from '../../components/map/NativeGlobe.dom';
@@ -47,6 +48,7 @@ const TOTAL_COUNTRIES = 199;
 const SEARCH_FLY_ZOOM = 4;
 
 export default function GlobeScreen({ navigation }) {
+  const isFocused = useIsFocused();
   const [map, setMap] = useState(null);
   // Dentro das bottom tabs o inset de baixo já é consumido pela própria tab bar
   // (o react-navigation zera o bottom no contexto da tela), então isto some
@@ -218,7 +220,7 @@ export default function GlobeScreen({ navigation }) {
           />
           <CountryBadgeMarkers map={map} countries={countries} onSelect={openCountry} />
         </View>
-      ) : (
+      ) : isFocused ? (
         <View style={styles.mapWrapper}>
           <NativeGlobe
             countries={countries}
@@ -234,6 +236,8 @@ export default function GlobeScreen({ navigation }) {
             }}
           />
         </View>
+      ) : (
+        <View style={styles.mapWrapper} />
       )}
 
       {/* Barra do assistente de viagem + busca de país */}

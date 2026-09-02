@@ -80,6 +80,8 @@ export default function NativeGlobe({
           await onMapFailure?.(error?.message || 'Não foi possível carregar o globo');
         }}
         showGlobeControl={false}
+        performanceMode
+        style={undefined}
       />
       <CountryFillLayer
         map={map}
@@ -105,12 +107,12 @@ const GLOBAL_CSS = `
 `;
 
 const styles = {
-  root: {
+  root: /** @type {import('react').CSSProperties} */ ({
     position: 'fixed',
     inset: 0,
     width: '100%',
     height: '100%',
     overflow: 'hidden',
     backgroundColor: '#05070F',
-  },
+  }),
 };
