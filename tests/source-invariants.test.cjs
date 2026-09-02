@@ -40,6 +40,8 @@ test('travel planner is personalized, structured, cancellable, and editable', ()
   assert.match(assistant, /AbortController/);
   assert.match(assistant, /regeneratePlanActivity/);
   assert.match(assistant, /adjustTravelPlan/);
+  assert.doesNotMatch(assistant, /createLocalPreviewPlan/);
+  assert.doesNotMatch(assistant, /Prévia local do novo planejador/);
   for (const field of ['origin', 'destination', 'startDate', 'endDate', 'travelers', 'budget', 'pace', 'interests', 'foodPreferences', 'accessibility']) {
     assert.match(planner, new RegExp(field));
   }
@@ -61,6 +63,13 @@ test('AI planner enriches plans with dated weather, verified places, currency, a
   assert.match(handler, /restcountries\.com/);
   assert.match(handler, /api\.frankfurter\.dev\/v2\/rate/);
   assert.match(handler, /adjust_plan/);
+  assert.match(handler, /getJourneyLiveContext/);
+  assert.match(handler, /destinations\.map/);
+  assert.match(handler, /principais pontos turísticos/);
+  assert.match(handler, /capitalInfo/);
+  assert.match(handler, /overpass\.kumi\.systems/);
+  assert.match(handler, /addExactMapLinks/);
+  assert.match(handler, /google\.com\/maps\/search/);
   assert.match(result, /activity\.rating/);
   assert.match(result, /activity\.openingHours/);
 });
@@ -409,15 +418,27 @@ test('long AI plans must contain exactly the requested duration and explain ever
   const service = read('src/services/assistantService.js');
   const result = read('src/screens/assistant/AssistantResultScreen.js');
   assert.match(assistant, /const strictDaySchemaLimit = 3/);
+  assert.match(assistant, /Math\.ceil\(duration \/ strictDaySchemaLimit\)/);
+  assert.match(assistant, /Math\.min\(strictDaySchemaLimit, duration - index \* strictDaySchemaLimit\)/);
   assert.match(assistant, /spec\.days <= strictDaySchemaLimit/);
   assert.match(assistant, /minItems: spec\.days, maxItems: spec\.days/);
   assert.match(assistant, /Math\.min\(65535, Math\.max\(8192, spec\.days \* 1000\)\)/);
   assert.match(assistant, /candidatePlan\.days\.length === spec\.days/);
   assert.match(assistant, /retorne somente o campo days/);
-  assert.match(assistant, /const chunkConcurrency = 4/);
+  assert.match(assistant, /const chunkConcurrency = 1/);
   assert.match(assistant, /Promise\.all\(/);
   assert.match(assistant, /gemini-3\.5-flash-lite/);
-  assert.match(assistant, /AbortSignal\.timeout\(80000\)/);
+  assert.match(assistant, /AbortSignal\.timeout\(28000\)/);
+  assert.match(assistant, /const aiContext =/);
+  assert.match(assistant, /placeNames:/);
+  assert.match(assistant, /dayDestinations:/);
+  assert.match(assistant, /Siga dayDestinations exatamente/);
+  assert.match(assistant, /const maxProviderAttempts = 2/);
+  assert.match(assistant, /retryableProviderStatus/);
+  assert.match(assistant, /const usedActivityTitles = new Set/);
+  assert.match(assistant, /Locais já usados em blocos anteriores/);
+  assert.match(assistant, /Cada atividade deve citar pelo nome um lugar real e identificável/);
+  assert.match(assistant, /Não use títulos genéricos/);
   assert.match(service, /requestedDuration \* 10000/);
   assert.match(assistant, /shoppingIncluded/);
   assert.match(assistant, /Passagens, Hospedagem, Alimentação, Transporte local, Passeios e ingressos, Compras e Reserva/);
@@ -533,7 +554,7 @@ test('result details, exact maps, realtime chat, passport share, and follow-back
   assert.doesNotMatch(result, /Ver detalhamento completo/);
   assert.match(result, /query_place_id/);
   assert.match(assistant, /placeId/);
-  assert.match(assistant, /'hotel'\),/);
+  assert.match(assistant, /'hotel', 5\),/);
   assert.match(conversation, /postgres_changes/);
   assert.match(realtime, /supabase_realtime add table public\.messages/);
   assert.match(passport, /<ShareCard/);

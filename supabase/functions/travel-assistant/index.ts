@@ -23,9 +23,9 @@ const cleanList = (value: unknown, maxItems = 12) => (
     : []
 )
 
-const fetchJson = async (url: string, init: RequestInit = {}) => {
+const fetchJson = async (url: string, init: RequestInit = {}, timeoutMs = 7000) => {
   try {
-    const response = await fetch(url, { ...init, signal: AbortSignal.timeout(7000) })
+    const response = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) })
     if (!response.ok) return null
     return await response.json()
   } catch {
@@ -57,17 +57,21 @@ const getLiveContext = async (
   const geocoding = await fetchJson(geocodingUrl.toString())
   const place = geocoding?.results?.[0]
   const countryUrl = place?.country_code
-    ? `https://restcountries.com/v3.1/alpha/${encodeURIComponent(place.country_code)}?fields=currencies`
+    ? `https://restcountries.com/v3.1/alpha/${encodeURIComponent(place.country_code)}?fields=currencies,capital,capitalInfo`
     : ''
   const countryData = countryUrl ? await fetchJson(countryUrl) : null
   const country = Array.isArray(countryData) ? countryData[0] : countryData
   const localCurrency = Object.keys(country?.currencies || {})[0] || currency
   const exchangeUrl = `https://api.frankfurter.dev/v2/rate/${encodeURIComponent(currency)}/${encodeURIComponent(localCurrency)}`
+  const capitalCoordinates = country?.capitalInfo?.latlng
+  const anchorLatitude = Number(capitalCoordinates?.[0]) || place?.latitude
+  const anchorLongitude = Number(capitalCoordinates?.[1]) || place?.longitude
+  const planningHub = country?.capital?.[0] || place?.name || destination
 
   let weather = null
   let weatherSourceUrl = ''
   let weatherCoverage = null
-  if (place?.latitude && place?.longitude) {
+  if (anchorLatitude && anchorLongitude) {
     const today = new Date().toISOString().slice(0, 10)
     const forecastLimit = addDays(new Date(), 15)
     const requestedStart = isIsoDate(startDate) ? startDate : today
@@ -76,8 +80,8 @@ const getLiveContext = async (
     const forecastEnd = requestedEnd > forecastLimit ? forecastLimit : requestedEnd
     if (forecastStart <= forecastEnd && requestedEnd >= today && requestedStart <= forecastLimit) {
       const weatherUrl = new URL('https://api.open-meteo.com/v1/forecast')
-      weatherUrl.searchParams.set('latitude', String(place.latitude))
-      weatherUrl.searchParams.set('longitude', String(place.longitude))
+      weatherUrl.searchParams.set('latitude', String(anchorLatitude))
+      weatherUrl.searchParams.set('longitude', String(anchorLongitude))
       weatherUrl.searchParams.set('daily', 'temperature_2m_max,temperature_2m_min,precipitation_probability_max')
       weatherUrl.searchParams.set('timezone', 'auto')
       weatherUrl.searchParams.set('start_date', forecastStart)
@@ -92,9 +96,9 @@ const getLiveContext = async (
   let realPlaces: any[] = []
   let placesSourceUrl = ''
   let placesProvider = ''
-  if (googlePlacesKey && place?.latitude && place?.longitude) {
+  if (googlePlacesKey && anchorLatitude && anchorLongitude) {
     placesSourceUrl = 'https://places.googleapis.com/v1/places:searchText'
-    const searchPlaces = async (textQuery: string, category: string) => {
+    const searchPlaces = async (textQuery: string, category: string, maxResultCount: number) => {
       const placesData = await fetchJson(placesSourceUrl, {
         method: 'POST',
         headers: {
@@ -105,10 +109,10 @@ const getLiveContext = async (
         body: JSON.stringify({
           textQuery,
           languageCode: 'pt-BR',
-          maxResultCount: 6,
+          maxResultCount,
           locationBias: {
             circle: {
-              center: { latitude: place.latitude, longitude: place.longitude },
+              center: { latitude: anchorLatitude, longitude: anchorLongitude },
               radius: 18000,
             },
           },
@@ -117,9 +121,9 @@ const getLiveContext = async (
       return (placesData?.places || []).map((item: any) => ({ ...item, category }))
     }
     const placeGroups = await Promise.all([
-      searchPlaces(`principais atrações ${interests.join(' ')} em ${destination}`, 'passeio'),
-      searchPlaces(`restaurantes bem avaliados em ${destination}`, 'restaurante'),
-      searchPlaces(`hotéis bem avaliados em ${destination}`, 'hotel'),
+      searchPlaces(`principais pontos turísticos ${interests.join(' ')} em ${destination}`, 'passeio', 12),
+      searchPlaces(`restaurantes de culinária local bem avaliados em ${destination}`, 'restaurante', 8),
+      searchPlaces(`hotéis bem avaliados em ${destination}`, 'hotel', 5),
     ])
     realPlaces = placeGroups.flat().map((item: any) => ({
       placeId: item.id,
@@ -138,10 +142,24 @@ const getLiveContext = async (
     placesProvider = realPlaces.length ? 'Google Places' : ''
   }
 
-  if (!realPlaces.length && place?.latitude && place?.longitude) {
-    const overpassQuery = `[out:json][timeout:12];(nwr(around:15000,${place.latitude},${place.longitude})[tourism~"attraction|museum|gallery|viewpoint|zoo|theme_park|hotel"][name];nwr(around:15000,${place.latitude},${place.longitude})[amenity~"restaurant|cafe"][name];);out center tags 30;`
-    placesSourceUrl = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery)}`
-    const osmData = await fetchJson(placesSourceUrl, { headers: { 'Accept-Language': 'pt-BR' } })
+  if (!realPlaces.length && anchorLatitude && anchorLongitude) {
+    const overpassQuery = `[out:json][timeout:15];(nwr(around:18000,${anchorLatitude},${anchorLongitude})[tourism~"attraction|museum|gallery|viewpoint|zoo|theme_park|hotel"][name];nwr(around:18000,${anchorLatitude},${anchorLongitude})[amenity~"restaurant|cafe"][name];);out center tags 40;`
+    const overpassEndpoints = [
+      'https://overpass-api.de/api/interpreter',
+      'https://overpass.kumi.systems/api/interpreter',
+    ]
+    const overpassResults = await Promise.all(overpassEndpoints.map(async endpoint => {
+      const url = `${endpoint}?data=${encodeURIComponent(overpassQuery)}`
+      const data = await fetchJson(
+        url,
+        { headers: { 'Accept-Language': 'pt-BR' } },
+        4000,
+      )
+      return { data, url }
+    }))
+    const successfulOverpass = overpassResults.find(item => item.data?.elements?.length)
+    const osmData = successfulOverpass?.data
+    placesSourceUrl = successfulOverpass?.url || overpassResults[0]?.url || ''
     realPlaces = (osmData?.elements || []).slice(0, 20).map((item: any) => ({
       name: item.tags?.name,
       category: item.tags?.amenity === 'restaurant' || item.tags?.amenity === 'cafe'
@@ -174,6 +192,7 @@ const getLiveContext = async (
       latitude: place.latitude,
       longitude: place.longitude,
       timezone: place.timezone,
+      planningHub,
     } : null,
     weather: weather ? { daily: weather.daily, coverage: weatherCoverage } : null,
     exchange: exchange ? {
@@ -192,6 +211,61 @@ const getLiveContext = async (
       countryData ? { label: 'Moeda local — Rest Countries', url: countryUrl } : null,
       realPlaces.length ? { label: `Locais verificados — ${placesProvider}`, url: placesSourceUrl } : null,
     ].filter(Boolean),
+    retrievedAt: new Date().toISOString(),
+  }
+}
+
+const addExactMapLinks = (plan: any, fallbackDestination: string) => {
+  for (const day of plan?.days || []) {
+    for (const activity of day?.activities || []) {
+      const exactQuery = cleanText(
+        activity?.mapQuery || [activity?.location, fallbackDestination].filter(Boolean).join(', '),
+        300,
+      )
+      if (exactQuery && !activity.mapsUrl) {
+        activity.mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(exactQuery)}`
+      }
+    }
+  }
+  return plan
+}
+
+const getJourneyLiveContext = async (
+  destinationNames: string[],
+  fallbackDestination: string,
+  currency: string,
+  startDate: string,
+  endDate: string,
+  interests: string[],
+) => {
+  const uniqueDestinations = [...new Set(
+    (destinationNames.length ? destinationNames : [fallbackDestination])
+      .map(item => cleanText(item, 100))
+      .filter(Boolean),
+  )].slice(0, 6)
+  const destinationContexts = await Promise.all(
+    uniqueDestinations.map(item => getLiveContext(item, currency, startDate, endDate, interests)),
+  )
+  const primary = destinationContexts[0] || await getLiveContext(
+    fallbackDestination,
+    currency,
+    startDate,
+    endDate,
+    interests,
+  )
+
+  return {
+    ...primary,
+    destinations: destinationContexts.map((context, index) => ({
+      requestedDestination: uniqueDestinations[index],
+      place: context.place,
+      weather: context.weather,
+      exchange: context.exchange,
+      placeNames: (context.realPlaces || []).slice(0, 12).map((item: any) => item.name),
+      placesProvider: context.placesProvider,
+    })),
+    realPlaces: destinationContexts.flatMap(context => context.realPlaces || []),
+    sources: destinationContexts.flatMap(context => context.sources || []),
     retrievedAt: new Date().toISOString(),
   }
 }
@@ -303,6 +377,7 @@ serve(async (req) => {
   if (req.method !== 'POST') return jsonResponse({ success: false, error: 'Método não permitido' }, 405)
 
   try {
+    const debugRequested = req.headers.get('x-journi-debug') === '1'
     const authorization = req.headers.get('Authorization')
     if (!authorization?.startsWith('Bearer ')) {
       return jsonResponse({ success: false, error: 'Não autenticado' }, 401)
@@ -377,13 +452,34 @@ serve(async (req) => {
       level: cleanText(context.level, 40) || 'Iniciante',
     }
 
-    const liveContext = await getLiveContext(
+    const liveContext = await getJourneyLiveContext(
+      destinations.map((item: { nameEn?: string; name: string }) => item.nameEn || item.name),
       primaryDestination,
       currency,
       safeRequest.startDate,
       safeRequest.endDate,
       safeRequest.interests,
     )
+    const aiContext = {
+      place: liveContext.place,
+      weather: liveContext.weather,
+      exchange: liveContext.exchange,
+      destinations: liveContext.destinations,
+      realPlaces: (liveContext.realPlaces || []).slice(0, 30).map((item: any) => ({
+        placeId: item.placeId,
+        name: item.name,
+        category: item.category,
+        address: item.address,
+        latitude: item.latitude,
+        longitude: item.longitude,
+        rating: item.rating,
+        reviewCount: item.reviewCount,
+        mapsUrl: item.mapsUrl,
+        website: item.website,
+        provider: item.provider,
+      })),
+      retrievedAt: liveContext.retrievedAt,
+    }
     const existingPlan = JSON.stringify(body?.existingPlan || {}).slice(0, 30000)
     const operationInstruction = action === 'regenerate_activity'
       ? `Ajuste somente a atividade indicada e preserve todo o restante. Bloco: ${JSON.stringify(body?.block || {}).slice(0, 500)}. Roteiro atual: ${existingPlan}`
@@ -391,10 +487,21 @@ serve(async (req) => {
         ? `Atualize o roteiro atual conforme este pedido do usuário: "${cleanText(body?.adjustment, 600)}". Preserve tudo o que não precisar mudar. Roteiro atual: ${existingPlan}`
         : 'Crie um roteiro novo e coerente.'
 
-    const configuredModel = Deno.env.get('GEMINI_MODEL') || 'gemini-3.5-flash-lite'
-    const models = [...new Set([configuredModel, 'gemini-3.5-flash-lite', 'gemini-3.6-flash'])]
+    const configuredModel = Deno.env.get('GEMINI_MODEL') || 'gemini-3.6-flash'
+    const models = [...new Set([
+      configuredModel,
+      'gemini-3.6-flash',
+      'gemini-3.5-flash-lite',
+    ])]
     const strictDaySchemaLimit = 3
-    const chunkSpecs = [{ startDay: 1, days: duration }]
+    const chunkSpecs = Array.from(
+      { length: Math.ceil(duration / strictDaySchemaLimit) },
+      (_, index) => ({
+        startDay: index * strictDaySchemaLimit + 1,
+        days: Math.min(strictDaySchemaLimit, duration - index * strictDaySchemaLimit),
+      }),
+    )
+    const usedActivityTitles = new Set<string>()
 
     const generateChunk = async (spec: { startDay: number; days: number }) => {
       const ratio = spec.days / duration
@@ -415,6 +522,18 @@ serve(async (req) => {
           amount: Math.round(item.amount * ratio * 100) / 100,
           amountInBRL: Math.round(item.amountInBRL * ratio * 100) / 100,
         })),
+        dayDestinations: Array.from({ length: spec.days }, (_, offset) => {
+          const absoluteDayIndex = spec.startDay + offset - 1
+          const destinationIndex = Math.min(
+            Math.max(destinations.length - 1, 0),
+            Math.floor(absoluteDayIndex * Math.max(destinations.length, 1) / duration),
+          )
+          const selected = destinations[destinationIndex]
+          return {
+            day: spec.startDay + offset,
+            destination: selected?.name || destination,
+          }
+        }),
       }
       const chunkEndDay = spec.startDay + spec.days - 1
       const includePlanDetails = spec.startDay === 1
@@ -423,7 +542,8 @@ serve(async (req) => {
 Pedido deste bloco: ${JSON.stringify(chunkRequest)}
 Contexto do roteiro completo: ${duration} dias; este bloco cobre os dias ${spec.startDay} a ${chunkEndDay}.
 Perfil do viajante: ${JSON.stringify(safeUserContext)}
-Dados externos disponíveis: ${JSON.stringify(liveContext)}
+Dados externos disponíveis: ${JSON.stringify(aiContext)}
+Locais já usados em blocos anteriores e que não podem ser repetidos: ${JSON.stringify([...usedActivityTitles])}
 Operação: ${operationInstruction}
 
 Regras:
@@ -431,6 +551,11 @@ Regras:
 - Crie exatamente 3 atividades objetivas por dia (manhã, tarde e noite). Mantenha title, description e purchaseNote concisos.
 - O padrão de orçamento é ${safeRequest.budgetLevel}: economy significa econômico/barato, balanced significa médio e premium significa caro/confortável.
 - Distribua manhã, tarde e noite sem deslocamentos impossíveis; agrupe locais próximos.
+- Cada atividade deve citar pelo nome um lugar real e identificável: atração, monumento, museu, parque, bairro, mercado ou restaurante. Não use títulos genéricos como "caminhada pelo centro", "experiência cultural", "tempo livre" ou "restaurante local".
+- Faça o viajante realmente conhecer o destino: priorize os pontos turísticos essenciais, alterne ícones conhecidos com experiências locais e explique em description o que será visto ou vivido ali.
+- Organize cada dia por uma região ou eixo geográfico. Quando houver mais de um destino, distribua os dias proporcionalmente e não misture países ou cidades distantes no mesmo dia.
+- Siga dayDestinations exatamente: cada dia deve acontecer somente no destino atribuído a ele. Use um dia de deslocamento coerente quando houver troca de país.
+- Use realPlaces do destino correto sempre que estiver disponível. Não repita a mesma atração em dias diferentes.
 - Todos os custos devem ser numéricos em ${currency}, para ${travelers} viajante(s), e o total deste bloco deve respeitar o orçamento proporcional quando ele for maior que zero.
 - budget.items deve detalhar Passagens, Hospedagem, Alimentação, Transporte local, Passeios e ingressos, Compras e Reserva. Os itens devem somar exatamente budget.total.
 - Quando destinationBudgets existir, respeite o teto proporcional de cada país e use amountInBRL como referência consolidada.
@@ -465,66 +590,100 @@ Regras:
       let lastStatus = 502
       let lastProviderStatus = ''
       let failureCode = 'AI_PROVIDER_ERROR'
+      const attempts: Array<Record<string, unknown>> = []
 
       for (const model of models) {
-        try {
-          const geminiResponse = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-              signal: AbortSignal.timeout(80000),
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: {
-                  maxOutputTokens,
-                  responseMimeType: 'application/json',
-                  responseSchema,
-                },
-              }),
-            },
-          )
-          lastStatus = geminiResponse.status
-          const geminiData = await geminiResponse.json().catch(() => null)
-          lastProviderStatus = geminiData?.error?.status || ''
-          if (!geminiResponse.ok || !geminiData) {
-            failureCode = lastProviderStatus || `HTTP_${geminiResponse.status}`
-            console.error('travel-assistant provider attempt failed', {
-              model, chunkStartDay: spec.startDay, status: lastStatus,
-              providerStatus: lastProviderStatus,
-              providerMessage: cleanText(geminiData?.error?.message, 240),
-            })
-            continue
-          }
-          const responseText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text
-          if (!responseText) {
-            failureCode = 'AI_EMPTY_RESPONSE'
-            continue
-          }
+        const maxProviderAttempts = 2
+        for (let providerAttempt = 1; providerAttempt <= maxProviderAttempts; providerAttempt += 1) {
           try {
-            const candidatePlan = JSON.parse(responseText)
-            if (Array.isArray(candidatePlan.days) && candidatePlan.days.length === spec.days) {
-              return { success: true, plan: candidatePlan, spec }
+            const geminiResponse = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+                signal: AbortSignal.timeout(28000),
+                body: JSON.stringify({
+                  contents: [{ parts: [{ text: prompt }] }],
+                  generationConfig: {
+                    maxOutputTokens,
+                    responseMimeType: 'application/json',
+                    responseSchema,
+                  },
+                }),
+              },
+            )
+            lastStatus = geminiResponse.status
+            const geminiData = await geminiResponse.json().catch(() => null)
+            lastProviderStatus = geminiData?.error?.status || ''
+            if (!geminiResponse.ok || !geminiData) {
+              failureCode = lastProviderStatus || `HTTP_${geminiResponse.status}`
+              attempts.push({
+                model,
+                providerAttempt,
+                status: geminiResponse.status,
+                providerStatus: lastProviderStatus,
+                message: cleanText(geminiData?.error?.message, 240),
+              })
+              console.error('travel-assistant provider attempt failed', {
+                model, providerAttempt, chunkStartDay: spec.startDay, status: lastStatus,
+                providerStatus: lastProviderStatus,
+                providerMessage: cleanText(geminiData?.error?.message, 240),
+              })
+              const retryableProviderStatus = geminiResponse.status === 429 || geminiResponse.status === 503
+              if (retryableProviderStatus && providerAttempt < maxProviderAttempts) {
+                await new Promise(resolve => setTimeout(resolve, 1200 * providerAttempt))
+                continue
+              }
+              break
             }
-            failureCode = 'AI_INCOMPLETE_PLAN'
-          } catch {
-            failureCode = 'AI_INVALID_JSON'
+            const responseText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text
+            if (!responseText) {
+              failureCode = 'AI_EMPTY_RESPONSE'
+              attempts.push({ model, providerAttempt, status: geminiResponse.status, providerStatus: 'EMPTY_RESPONSE' })
+              break
+            }
+            try {
+              const candidatePlan = JSON.parse(responseText)
+              if (Array.isArray(candidatePlan.days) && candidatePlan.days.length === spec.days) {
+                for (const day of candidatePlan.days) {
+                  for (const activity of day?.activities || []) {
+                    const title = cleanText(activity?.title, 120)
+                    if (title) usedActivityTitles.add(title)
+                  }
+                }
+                return { success: true, plan: candidatePlan, spec }
+              }
+              failureCode = 'AI_INCOMPLETE_PLAN'
+              attempts.push({ model, providerAttempt, status: geminiResponse.status, providerStatus: failureCode })
+            } catch {
+              failureCode = 'AI_INVALID_JSON'
+              attempts.push({ model, providerAttempt, status: geminiResponse.status, providerStatus: failureCode })
+            }
+            break
+          } catch (error) {
+            failureCode = error instanceof DOMException && error.name === 'TimeoutError'
+              ? 'AI_PROVIDER_TIMEOUT'
+              : 'AI_PROVIDER_NETWORK_ERROR'
+            console.error('travel-assistant provider request error', {
+              model, providerAttempt, chunkStartDay: spec.startDay, code: failureCode,
+              message: cleanText(error instanceof Error ? error.message : '', 240),
+            })
+            attempts.push({
+              model,
+              providerAttempt,
+              status: 0,
+              providerStatus: failureCode,
+              message: cleanText(error instanceof Error ? error.message : '', 240),
+            })
+            break
           }
-        } catch (error) {
-          failureCode = error instanceof DOMException && error.name === 'TimeoutError'
-            ? 'AI_PROVIDER_TIMEOUT'
-            : 'AI_PROVIDER_NETWORK_ERROR'
-          console.error('travel-assistant provider request error', {
-            model, chunkStartDay: spec.startDay, code: failureCode,
-            message: cleanText(error instanceof Error ? error.message : '', 240),
-          })
         }
       }
-      return { success: false, failureCode, status: lastStatus, providerStatus: lastProviderStatus, spec }
+      return { success: false, failureCode, status: lastStatus, providerStatus: lastProviderStatus, spec, attempts }
     }
 
     const chunkResults: any[] = []
-    const chunkConcurrency = 4
+    const chunkConcurrency = 1
     for (let index = 0; index < chunkSpecs.length; index += chunkConcurrency) {
       const batch = await Promise.all(
         chunkSpecs.slice(index, index + chunkConcurrency).map(generateChunk),
@@ -541,7 +700,12 @@ Regras:
           : 'O planejador está temporariamente indisponível. Tente novamente em instantes.'
       console.error('travel-assistant generation failed', failedChunk)
       return jsonResponse(
-        { success: false, error, code: failedChunk.failureCode },
+        {
+          success: false,
+          error,
+          code: failedChunk.failureCode,
+          ...(debugRequested ? { diagnostics: failedChunk.attempts } : {}),
+        },
         failedChunk.status === 429 ? 429 : 503,
       )
     }
@@ -589,6 +753,8 @@ Regras:
       ...source,
       updatedAt: liveContext.retrievedAt,
     }))
+
+    addExactMapLinks(plan, destination)
 
     return jsonResponse({ success: true, plan, liveContext })
   } catch (error) {
