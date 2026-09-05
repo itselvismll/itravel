@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 
 const BASE_ASSISTANT_TIMEOUT_MS = 150000;
+const activeAssistantRequests = new Map();
 
 export const TRAVEL_INTERESTS = [
   'Cultura', 'Gastronomia', 'Natureza', 'Praia', 'História',
@@ -13,7 +14,7 @@ export const TRAVEL_PACES = [
   { id: 'intense', label: 'Intenso' },
 ];
 
-const invokeAssistant = async (payload) => {
+const executeAssistantRequest = async (payload) => {
   const controller = new AbortController();
   const requestedDuration = Number(payload?.planRequest?.duration) || 3;
   const timeoutMs = Math.min(300000, Math.max(BASE_ASSISTANT_TIMEOUT_MS, requestedDuration * 10000));
@@ -67,6 +68,20 @@ const invokeAssistant = async (payload) => {
 
 export const generateTravelPlan = async ({ planRequest, userContext }) => {
   return invokeAssistant({ action: 'generate_plan', planRequest, userContext });
+};
+
+const invokeAssistant = (payload) => {
+  const requestKey = JSON.stringify(payload);
+  const activeRequest = activeAssistantRequests.get(requestKey);
+  if (activeRequest) return activeRequest;
+
+  const request = executeAssistantRequest(payload).finally(() => {
+    if (activeAssistantRequests.get(requestKey) === request) {
+      activeAssistantRequests.delete(requestKey);
+    }
+  });
+  activeAssistantRequests.set(requestKey, request);
+  return request;
 };
 
 export const regeneratePlanActivity = async ({ planRequest, userContext, plan, block }) => {

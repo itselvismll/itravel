@@ -434,7 +434,12 @@ test('long AI plans must contain exactly the requested duration and explain ever
   assert.match(assistant, /dayDestinations:/);
   assert.match(assistant, /Siga dayDestinations exatamente/);
   assert.match(assistant, /const maxProviderAttempts = 2/);
-  assert.match(assistant, /retryableProviderStatus/);
+  assert.match(assistant, /getProviderRetryDelayMs/);
+  assert.match(assistant, /geminiResponse\.status === 429/);
+  assert.match(assistant, /model !== models\[models\.length - 1\]/);
+  assert.match(assistant, /await sleep\(1200\)/);
+  assert.match(assistant, /placeWindowSize/);
+  assert.match(service, /activeAssistantRequests/);
   assert.match(assistant, /const usedActivityTitles = new Set/);
   assert.match(assistant, /Locais já usados em blocos anteriores/);
   assert.match(assistant, /Cada atividade deve citar pelo nome um lugar real e identificável/);

@@ -10,6 +10,31 @@ const jsonResponse = (body: unknown, status = 200) => new Response(
   { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
 )
 
+const sleep = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds))
+
+const parseDurationMs = (value: unknown) => {
+  if (typeof value !== 'string') return 0
+  const match = value.trim().match(/^(\d+(?:\.\d+)?)(ms|s)$/i)
+  if (!match) return 0
+  const amount = Number(match[1])
+  return match[2].toLowerCase() === 's' ? amount * 1000 : amount
+}
+
+const getProviderRetryDelayMs = (response: Response, data: any, attempt: number) => {
+  const retryAfter = response.headers.get('retry-after')
+  const retryAfterSeconds = Number(retryAfter)
+  const retryAfterDate = retryAfter && !Number.isFinite(retryAfterSeconds)
+    ? Date.parse(retryAfter) - Date.now()
+    : 0
+  const retryInfo = Array.isArray(data?.error?.details)
+    ? data.error.details.find((detail: any) => String(detail?.['@type'] || '').endsWith('RetryInfo'))
+    : null
+  const providerDelay = parseDurationMs(retryInfo?.retryDelay)
+  const headerDelay = Number.isFinite(retryAfterSeconds) ? retryAfterSeconds * 1000 : retryAfterDate
+  const fallbackDelay = 2000 * (2 ** Math.max(0, attempt - 1)) + Math.floor(Math.random() * 750)
+  return Math.min(60000, Math.max(1000, providerDelay, headerDelay, fallbackDelay))
+}
+
 const cleanText = (value: unknown, max = 160) => (
   typeof value === 'string' ? value.trim().slice(0, max) : ''
 )
@@ -264,7 +289,12 @@ const getJourneyLiveContext = async (
       placeNames: (context.realPlaces || []).slice(0, 12).map((item: any) => item.name),
       placesProvider: context.placesProvider,
     })),
-    realPlaces: destinationContexts.flatMap(context => context.realPlaces || []),
+    realPlaces: destinationContexts.flatMap((context, index) => (
+      (context.realPlaces || []).map((place: any) => ({
+        ...place,
+        requestedDestination: uniqueDestinations[index],
+      }))
+    )),
     sources: destinationContexts.flatMap(context => context.sources || []),
     retrievedAt: new Date().toISOString(),
   }
@@ -477,6 +507,7 @@ serve(async (req) => {
         mapsUrl: item.mapsUrl,
         website: item.website,
         provider: item.provider,
+        requestedDestination: item.requestedDestination,
       })),
       retrievedAt: liveContext.retrievedAt,
     }
@@ -537,12 +568,30 @@ serve(async (req) => {
       }
       const chunkEndDay = spec.startDay + spec.days - 1
       const includePlanDetails = spec.startDay === 1
+      const chunkDestinationNames = new Set(
+        chunkRequest.dayDestinations.map(item => item.destination.toLocaleLowerCase()),
+      )
+      const destinationPlaces = aiContext.realPlaces.filter((place: any) => (
+        chunkDestinationNames.has(cleanText(place.requestedDestination, 100).toLocaleLowerCase())
+      ))
+      const availablePlaces = destinationPlaces.length ? destinationPlaces : aiContext.realPlaces
+      const placeWindowSize = Math.min(15, Math.max(spec.days * 3 + 3, 9))
+      const placeOffset = availablePlaces.length
+        ? ((spec.startDay - 1) * 3) % availablePlaces.length
+        : 0
+      const rotatedPlaces = availablePlaces.length
+        ? [...availablePlaces.slice(placeOffset), ...availablePlaces.slice(0, placeOffset)]
+        : []
+      const chunkAiContext = {
+        ...aiContext,
+        realPlaces: rotatedPlaces.slice(0, placeWindowSize),
+      }
       const prompt = `Você é o planejador de viagens do Journi. Responda em português brasileiro e apenas no JSON solicitado.
 
 Pedido deste bloco: ${JSON.stringify(chunkRequest)}
 Contexto do roteiro completo: ${duration} dias; este bloco cobre os dias ${spec.startDay} a ${chunkEndDay}.
 Perfil do viajante: ${JSON.stringify(safeUserContext)}
-Dados externos disponíveis: ${JSON.stringify(aiContext)}
+Dados externos disponíveis: ${JSON.stringify(chunkAiContext)}
 Locais já usados em blocos anteriores e que não podem ser repetidos: ${JSON.stringify([...usedActivityTitles])}
 Operação: ${operationInstruction}
 
@@ -590,6 +639,7 @@ Regras:
       let lastStatus = 502
       let lastProviderStatus = ''
       let failureCode = 'AI_PROVIDER_ERROR'
+      let recommendedRetryDelayMs = 0
       const attempts: Array<Record<string, unknown>> = []
 
       for (const model of models) {
@@ -629,9 +679,20 @@ Regras:
                 providerStatus: lastProviderStatus,
                 providerMessage: cleanText(geminiData?.error?.message, 240),
               })
-              const retryableProviderStatus = geminiResponse.status === 429 || geminiResponse.status === 503
-              if (retryableProviderStatus && providerAttempt < maxProviderAttempts) {
-                await new Promise(resolve => setTimeout(resolve, 1200 * providerAttempt))
+              if (geminiResponse.status === 429) {
+                recommendedRetryDelayMs = Math.max(
+                  recommendedRetryDelayMs,
+                  getProviderRetryDelayMs(geminiResponse, geminiData, providerAttempt),
+                )
+                // Quota costuma ser compartilhada entre tentativas do mesmo modelo.
+                // Não repita imediatamente: aguarde e deixe o próximo modelo tentar uma vez.
+                if (model !== models[models.length - 1]) {
+                  await sleep(Math.min(15000, recommendedRetryDelayMs))
+                }
+                break
+              }
+              if (geminiResponse.status === 503 && providerAttempt < maxProviderAttempts) {
+                await sleep(getProviderRetryDelayMs(geminiResponse, geminiData, providerAttempt))
                 continue
               }
               break
@@ -679,7 +740,15 @@ Regras:
           }
         }
       }
-      return { success: false, failureCode, status: lastStatus, providerStatus: lastProviderStatus, spec, attempts }
+      return {
+        success: false,
+        failureCode,
+        status: lastStatus,
+        providerStatus: lastProviderStatus,
+        recommendedRetryDelayMs,
+        spec,
+        attempts,
+      }
     }
 
     const chunkResults: any[] = []
@@ -690,11 +759,15 @@ Regras:
       )
       chunkResults.push(...batch)
       if (batch.some(result => !result.success)) break
+      if (index + chunkConcurrency < chunkSpecs.length) await sleep(1200)
     }
     const failedChunk = chunkResults.find(result => !result.success)
     if (failedChunk) {
+      const retryAfterSeconds = failedChunk.status === 429
+        ? Math.max(5, Math.ceil((failedChunk.recommendedRetryDelayMs || 30000) / 1000))
+        : 0
       const error = failedChunk.status === 429
-        ? 'O limite temporário da IA foi atingido. Aguarde um minuto e tente novamente.'
+        ? `A IA atingiu o limite temporário. Aguarde cerca de ${retryAfterSeconds} segundos e tente novamente.`
         : failedChunk.failureCode === 'AI_INCOMPLETE_PLAN'
           ? 'A IA não concluiu todos os dias do roteiro. Tente novamente em instantes.'
           : 'O planejador está temporariamente indisponível. Tente novamente em instantes.'
@@ -704,6 +777,7 @@ Regras:
           success: false,
           error,
           code: failedChunk.failureCode,
+          ...(retryAfterSeconds ? { retryAfterSeconds } : {}),
           ...(debugRequested ? { diagnostics: failedChunk.attempts } : {}),
         },
         failedChunk.status === 429 ? 429 : 503,
