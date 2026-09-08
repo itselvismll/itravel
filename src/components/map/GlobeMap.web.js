@@ -28,6 +28,7 @@ import {
   GLOBE_SPACE_BACKGROUND,
   GLOBE_SKY,
   SATELLITE_IMAGERY_ATTRIBUTION,
+  isSatelliteTileError,
   preconnectToStadia,
   collapseAttributionOnce,
 } from './globeConfig';
@@ -228,6 +229,16 @@ export default function GlobeMap({
     const handleLoad = () => setReady(true);
 
     const handleError = (event) => {
+      // O 403 dos tiles de satélite é conhecido, aceito e não tem o que fazer a
+      // respeito na tela (ver globeConfig): ele não vira overlay, não sobe para o
+      // onError do pai e não chega ao console — só o `setReady` continua, para o
+      // globo aparecer com a parte que carregou em vez de ficar carregando para
+      // sempre. Qualquer OUTRO erro do mapa segue o caminho normal, visível.
+      if (isSatelliteTileError(event?.error)) {
+        setReady(true);
+        return;
+      }
+
       const message = event?.error?.message || 'Erro desconhecido ao carregar o mapa';
       setFailure(message);
       onErrorRef.current?.(event?.error || new Error(message));

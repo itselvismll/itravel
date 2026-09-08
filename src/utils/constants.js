@@ -52,6 +52,9 @@ export const API_CONFIG = {
   // Tiles do mapa (Stadia Maps). Em localhost e em domínios autorizados no painel
   // da Stadia a key é opcional; fora deles os tiles retornam 401 sem ela.
   STADIA_API_KEY: process.env.EXPO_PUBLIC_STADIA_API_KEY || '',
+  // Site key publica do hCaptcha. A secret key fica so no painel do Supabase
+  // (Authentication -> Attack Protection); aqui entra apenas a metade publica.
+  HCAPTCHA_SITE_KEY: process.env.EXPO_PUBLIC_HCAPTCHA_SITE_KEY || '',
 };
 
 export const LIMITS = {

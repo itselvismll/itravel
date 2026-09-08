@@ -22,11 +22,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import GlobeMap from '../../components/map/GlobeMap';
 import CountryBadgeMarkers from '../../components/map/CountryBadgeMarkers';
 import CountryFillLayer from '../../components/map/CountryFillLayer';
+import PlanRouteLayer from '../../components/map/PlanRouteLayer';
 import CountryDetailModal from '../../components/map/CountryDetailModal';
 import CountryFlag from '../../components/CountryFlag';
 import GuidedFirstCountryCard from '../../components/onboarding/GuidedFirstCountryCard';
 import FirstCountryCelebration from '../../components/onboarding/FirstCountryCelebration';
 import { useOnboarding } from '../../context/OnboardingContext';
+import { useActivePlan } from '../../context/ActivePlanContext';
 import { TAB_BAR_CLEARANCE } from '../../utils/tabBarLayout';
 import useGlobeCountries from '../../components/map/useGlobeCountries';
 import {
@@ -71,6 +73,12 @@ export default function GlobeScreen({ navigation }) {
   const [showCountrySearch, setShowCountrySearch] = useState(false);
 
   const handleMapReady = useCallback((instance) => setMap(instance), []);
+
+  // Roteiro aplicado no globo. Sem nenhum ativo, `points` é vazio e a camada não
+  // cria layer nenhuma — o globo fica só com países visitados e wishlist. O
+  // controle de aplicar/remover mora na tela de roteiros salvos, não aqui: o
+  // globo não ganha botão nem card sobreposto.
+  const { points: planPoints, activePlanId } = useActivePlan();
 
   const visitedCount = visited.size;
   const totalCountries = countries.length || TOTAL_COUNTRIES;
@@ -199,6 +207,7 @@ export default function GlobeScreen({ navigation }) {
             wishlist={wishlist}
             onSelectCountry={handleSelectByCode}
           />
+          <PlanRouteLayer map={map} points={planPoints} planId={activePlanId} />
           <CountryBadgeMarkers map={map} countries={countries} onSelect={openCountry} />
         </View>
       ) : (

@@ -11,10 +11,16 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { deleteTripPlan, getSavedTripPlans } from '../../services/tripPlanService';
 import { confirm, notify } from '../../utils/dialogs';
+import { useActivePlan } from '../../context/ActivePlanContext';
 
 export default function SavedTripsScreen({ navigation }) {
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Esta tela é o ÚNICO controle de "roteiro no globo" — o mapa não tem botão
+  // nem card sobreposto. Só um roteiro fica aplicado por vez: aplicar outro
+  // substitui o anterior (a troca é atômica no banco, ver activePlanService).
+  const { activePlanId, applyToMap, removeFromMap } = useActivePlan();
 
   const loadPlans = useCallback(async () => {
     setLoading(true);
@@ -39,8 +45,30 @@ export default function SavedTripsScreen({ navigation }) {
     const approved = await confirm('Excluir roteiro', `Remover “${plan.title}”?`);
     if (!approved) return;
     const result = await deleteTripPlan(plan.id);
-    if (!result.success) notify('Erro ao excluir', result.error);
-    else setPlans(current => current.filter(item => item.id !== plan.id));
+    if (!result.success) {
+      notify('Erro ao excluir', result.error);
+      return;
+    }
+    // O roteiro excluído não pode continuar plotado no globo.
+    if (plan.id === activePlanId) await removeFromMap();
+    setPlans(current => current.filter(item => item.id !== plan.id));
+  };
+
+  const toggleOnMap = async (plan) => {
+    const isActive = plan.id === activePlanId;
+    const hasPoints = (plan.plan_data?.days || []).some(
+      day => (day?.activities || []).some(activity => activity?.latitude != null)
+    );
+
+    // Roteiro antigo, salvo antes de as coordenadas existirem, não tem o que
+    // plotar — melhor dizer isso do que aplicar e o globo não mudar nada.
+    if (!isActive && !hasPoints) {
+      notify('Sem pontos no mapa', 'Este roteiro não tem coordenadas. Gere-o novamente para vê-lo no globo.');
+      return;
+    }
+
+    const result = isActive ? await removeFromMap() : await applyToMap(plan);
+    if (!result.success) notify('Não foi possível atualizar o globo', result.error);
   };
 
   return (
@@ -75,22 +103,54 @@ export default function SavedTripsScreen({ navigation }) {
           {plans.map(plan => {
             const request = plan.request_data || {};
             const days = plan.plan_data?.days?.length || 0;
+            const isActive = plan.id === activePlanId;
             return (
-              <TouchableOpacity key={plan.id} onPress={() => openPlan(plan)} style={styles.card} activeOpacity={0.86}>
-                <View style={styles.cardIcon}><Ionicons name="airplane" size={20} color="#C4B5FD" /></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.cardTitle} numberOfLines={1}>{plan.title}</Text>
-                  <Text style={styles.destination}>{plan.origin ? `${plan.origin} → ` : ''}{plan.destination}</Text>
-                  <View style={styles.metaRow}>
-                    <Text style={styles.meta}>{days} dias</Text>
-                    <Text style={styles.dot}>•</Text>
-                    <Text style={styles.meta}>{request.travelers || plan.travelers} viajante(s)</Text>
-                    {plan.local_only && <Text style={styles.localBadge}>LOCAL</Text>}
+              <TouchableOpacity
+                key={plan.id}
+                onPress={() => openPlan(plan)}
+                style={[styles.card, isActive && styles.cardActive]}
+                activeOpacity={0.86}
+              >
+                <View style={styles.cardTop}>
+                  <View style={styles.cardIcon}><Ionicons name="airplane" size={20} color="#C4B5FD" /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cardTitle} numberOfLines={1}>{plan.title}</Text>
+                    <Text style={styles.destination}>{plan.origin ? `${plan.origin} → ` : ''}{plan.destination}</Text>
+                    <View style={styles.metaRow}>
+                      <Text style={styles.meta}>{days} dias</Text>
+                      <Text style={styles.dot}>•</Text>
+                      <Text style={styles.meta}>{request.travelers || plan.travelers} viajante(s)</Text>
+                      {plan.local_only && <Text style={styles.localBadge}>LOCAL</Text>}
+                    </View>
                   </View>
+                  <TouchableOpacity onPress={() => removePlan(plan)} style={styles.deleteButton}>
+                    <Ionicons name="trash-outline" size={18} color="#FF8AA0" />
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity onPress={() => removePlan(plan)} style={styles.deleteButton}>
-                  <Ionicons name="trash-outline" size={18} color="#FF8AA0" />
-                </TouchableOpacity>
+
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    onPress={() => toggleOnMap(plan)}
+                    style={[styles.mapButton, isActive && styles.mapButtonActive]}
+                    accessibilityLabel={isActive ? 'Remover do mapa' : 'Aplicar no mapa'}
+                  >
+                    <Ionicons
+                      name={isActive ? 'eye-off-outline' : 'map-outline'}
+                      size={15}
+                      color={isActive ? '#C4B5FD' : '#fff'}
+                    />
+                    <Text style={[styles.mapButtonText, isActive && styles.mapButtonTextActive]}>
+                      {isActive ? 'Remover do mapa' : 'Aplicar no mapa'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {isActive && (
+                    <View style={styles.activeTag}>
+                      <View style={styles.activeDot} />
+                      <Text style={styles.activeTagText}>Ativo no mapa</Text>
+                    </View>
+                  )}
+                </View>
               </TouchableOpacity>
             );
           })}
@@ -108,7 +168,19 @@ const styles = StyleSheet.create({
   title: { color: '#F7F7F2', fontSize: 18, fontWeight: '800' },
   subtitle: { color: '#858DAD', fontSize: 11, marginTop: 2 },
   content: { width: '100%', maxWidth: 760, alignSelf: 'center', padding: 15, gap: 11, paddingBottom: 50 },
-  card: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 15, backgroundColor: '#171D36', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
+  card: { gap: 12, padding: 15, backgroundColor: '#171D36', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
+  // O roteiro plotado no globo se destaca na cor da marca, para a resposta de
+  // "qual está no mapa?" caber num relance da lista.
+  cardActive: { borderColor: '#6C2BD9', backgroundColor: 'rgba(108,43,217,0.14)' },
+  cardTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  actionRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  mapButton: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: '#6C2BD9', paddingHorizontal: 13, paddingVertical: 9, borderRadius: 11 },
+  mapButtonActive: { backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: 'rgba(196,181,253,0.35)' },
+  mapButtonText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  mapButtonTextActive: { color: '#C4B5FD' },
+  activeTag: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, backgroundColor: 'rgba(108,43,217,0.28)', borderWidth: 1, borderColor: '#6C2BD9' },
+  activeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#00D1C1' },
+  activeTagText: { color: '#E9E3FF', fontSize: 10, fontWeight: '800' },
   cardIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: 'rgba(139,92,246,0.16)', alignItems: 'center', justifyContent: 'center' },
   cardTitle: { color: '#F7F7F2', fontSize: 14, fontWeight: '800' },
   destination: { color: '#A2A9C5', fontSize: 11, marginTop: 3 },

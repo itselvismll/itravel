@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+﻿import React, { useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +8,8 @@ import { checkUsernameAvailable } from '../../services/profileService';
 import { USERNAME_MAX_LENGTH, normalizeUsername, validateUsername } from '../../utils/username';
 import Logo from '../../components/Logo';
 import { notify } from '../../utils/dialogs';
+import HCaptchaWidget from '../../components/auth/HCaptchaWidget';
+import { HCAPTCHA_ENABLED, HCAPTCHA_ERROR_MESSAGE } from '../../components/auth/hcaptchaConfig';
 
 export default function RegisterScreen({ navigation, onRegisterSuccess }) {
   const [fullName, setFullName] = useState('');
@@ -21,6 +23,8 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState(/** @type {string | null} */ (null));
+  const captchaRef = useRef(/** @type {{ reset: () => void, markUsed: () => void } | null} */ (null));
   const [errors, setErrors] = useState(
     /** @type {Record<string, string | null>} */ ({})
   );
@@ -103,18 +107,27 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
     }
 
     setLoading(true);
-    const result = await signUp(email, password, username, fullName);
+    const result = await signUp(email, password, username, fullName, captchaToken ?? undefined);
     setLoading(false);
 
     if (result.success) {
+      // Token do hCaptcha é de uso único: consumido, some do estado.
+      captchaRef.current?.markUsed();
+      setCaptchaToken(null);
       navigation.navigate('ConfirmEmail', { email });
     } else {
+      // Falhou? O token já foi queimado na tentativa — recarrega o desafio.
+      captchaRef.current?.reset();
+      setCaptchaToken(null);
+
       let errorMessage = result.error;
 
       if (errorMessage.includes('already registered')) {
         errorMessage = 'Este email já está cadastrado';
       } else if (/rate limit|too many|429/i.test(errorMessage)) {
         errorMessage = 'Muitas tentativas de cadastro em pouco tempo. Aguarde alguns minutos e tente novamente.';
+      } else if (/captcha/i.test(errorMessage)) {
+        errorMessage = HCAPTCHA_ERROR_MESSAGE;
       }
 
       notify('Erro no Cadastro', errorMessage);
@@ -122,6 +135,10 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
   };
 
   const passwordValidation = validatePassword(password);
+
+  // Sem site key configurada o desafio não aparece, então não travamos o
+  // formulário — o Supabase continua recusando pelo lado do servidor.
+  const submitDisabled = loading || (HCAPTCHA_ENABLED && !captchaToken);
 
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
@@ -378,11 +395,18 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
           </View>
           {errors.terms && <Text style={styles.errorText}>{errors.terms}</Text>}
 
+          {/* Verificação anti-bot (hCaptcha) */}
+          <HCaptchaWidget
+            ref={captchaRef}
+            onVerify={setCaptchaToken}
+            onError={() => notify('Verificação de segurança', HCAPTCHA_ERROR_MESSAGE)}
+          />
+
           {/* Botão Cadastrar */}
           <TouchableOpacity 
-            style={[styles.button, loading && styles.buttonDisabled]}
+            style={[styles.button, submitDisabled && styles.buttonDisabled]}
             onPress={handleRegister}
-            disabled={loading}
+            disabled={submitDisabled}
           >
             <LinearGradient
               colors={['#FF5722', '#FF7043']}

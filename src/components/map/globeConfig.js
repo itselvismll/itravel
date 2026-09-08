@@ -7,6 +7,18 @@ import { API_CONFIG } from '../../utils/constants';
 // labels e contornos vetoriais por cima. É o visual do globo do Journi — o
 // terreno real é o que faz o país pintado de roxo ler como território visitado.
 // https://docs.stadiamaps.com/map-styles/alidade-satellite/
+//
+// SOLUÇÃO TEMPORÁRIA, ESCOLHIDA DE OLHOS ABERTOS: o plano Stadia Starter não
+// inclui satélite. Onde a conta não tem direito à imagem, cada tile de
+// /data/imagery/ responde 403 — são requisições que falham a cada quadro, e o
+// erro delas fica SILENCIADO por isSatelliteTileError (abaixo). Duas styles
+// vetoriais cobertas pelo plano foram testadas no lugar (alidade_smooth_dark e
+// outdoors) e o visual do satélite foi preferido mesmo assim.
+//
+// O silêncio é um curativo, não a cura. As saídas de verdade são:
+//   (a) upgrade para o plano Stadia Standard, que cobre satélite;
+//   (b) trocar a fonte da imagem pelo satélite gratuito do Esri (World Imagery);
+//   (c) voltar para uma style vetorial do plano atual.
 const STADIA_STYLE_ID = 'alidade_satellite';
 
 // A key vem de EXPO_PUBLIC_STADIA_API_KEY. Em localhost e nos domínios
@@ -53,6 +65,51 @@ export const preconnectToStadia = () => {
 // automaticamente pelo AttributionControl.
 export const SATELLITE_IMAGERY_ATTRIBUTION =
   '© CNES, Distribution Airbus DS, © Airbus DS, © PlanetObserver (Contains Copernicus Data)';
+
+// Caminho dos tiles de satélite da Stadia. É o que distingue o 403 aceito (a
+// imagem que o plano não cobre) de qualquer outra falha do mapa.
+const SATELLITE_TILE_PATH = '/data/imagery/';
+
+/** Status do tile sem direito de acesso. O 401 (key ausente/domínio não
+ * cadastrado) fica DE FORA de propósito: esse é acionável e continua aparecendo. */
+const SATELLITE_TILE_FORBIDDEN = 403;
+
+/**
+ * Padrão para o LogBox ignorar o 403 de satélite no dev NATIVO.
+ *
+ * Deliberadamente estreito: casa a URL do tile de imagem da Stadia junto com o
+ * 403. Qualquer outro erro — inclusive outro 403, de outra URL — continua
+ * aparecendo. Nada de ignoreAllLogs.
+ */
+export const SATELLITE_TILE_LOG_PATTERN =
+  /(tiles\.stadiamaps\.com\/data\/imagery\/.*\b403\b)|(\b403\b.*tiles\.stadiamaps\.com\/data\/imagery\/)/;
+
+/**
+ * É o 403 dos tiles de satélite que o plano não cobre?
+ *
+ * O MapLibre entrega um AJAXError no evento `error`, com `status` e `url`
+ * próprios; a leitura da mensagem existe só como rede de segurança para quando o
+ * erro chega embrulhado e perde os campos.
+ *
+ * A checagem exige as DUAS coisas — o caminho da imagem E o 403. Um 403 em outra
+ * URL, ou qualquer outro erro nos tiles de imagem, passa direto e continua
+ * visível: o que se aceita aqui é só a falha já conhecida e diagnosticada.
+ *
+ * @param {{ status?: number, url?: string, message?: string } | null | undefined} error
+ * @returns {boolean}
+ */
+export const isSatelliteTileError = (error) => {
+  if (!error) return false;
+
+  const target = `${error.url ?? ''} ${error.message ?? ''}`;
+  if (!target.includes(SATELLITE_TILE_PATH)) return false;
+
+  return (
+    error.status === SATELLITE_TILE_FORBIDDEN ||
+    target.includes(`(${SATELLITE_TILE_FORBIDDEN})`) ||
+    target.includes(`${SATELLITE_TILE_FORBIDDEN} `)
+  );
+};
 
 // Vista inicial: globo inteiro, levemente inclinado para o norte.
 export const GLOBE_INITIAL_VIEW = {

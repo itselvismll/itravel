@@ -281,8 +281,11 @@ export default function AppNavigator() {
     const checkUser = async () => {
       try {
         await completeWebOAuthSession();
-      } catch {
-        // Keep the login screen available when Google cancels or rejects OAuth.
+      } catch (error) {
+        // A tela de login segue disponível quando o OAuth é cancelado ou recusado,
+        // mas o motivo precisa aparecer: engolir isso escondeu por muito tempo a
+        // falha de troca do code do Google.
+        console.error('[auth] Falha ao concluir o OAuth na web:', error);
       }
 
       const result = await getCurrentUser();

@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+﻿import React, { useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   Image, ScrollView, Platform, ActivityIndicator,
@@ -8,6 +8,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES } from '../../utils/constants';
 import { signIn, signInWithGoogle } from '../../services/supabase';
 import { notify } from '../../utils/dialogs';
+import HCaptchaWidget from '../../components/auth/HCaptchaWidget';
+import { HCAPTCHA_ENABLED, HCAPTCHA_ERROR_MESSAGE } from '../../components/auth/hcaptchaConfig';
 
 export default function LoginScreen({ navigation, onLoginSuccess }) {
   const [email, setEmail] = useState('');
@@ -15,6 +17,8 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState(/** @type {string | null} */ (null));
+  const captchaRef = useRef(/** @type {{ reset: () => void, markUsed: () => void } | null} */ (null));
   const [errors, setErrors] = useState(
     /** @type {Record<string, string | null>} */ ({})
   );
@@ -44,14 +48,21 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
     }
 
     setLoading(true);
-    const result = await signIn(email, password);
+    const result = await signIn(email, password, captchaToken ?? undefined);
     setLoading(false);
 
     if (result.success) {
+      // Token do hCaptcha é de uso único: consumido, some do estado.
+      captchaRef.current?.markUsed();
+      setCaptchaToken(null);
       if (onLoginSuccess) {
         onLoginSuccess(result.user);
       }
     } else {
+      // Falhou? O token já foi queimado na tentativa — recarrega o desafio.
+      captchaRef.current?.reset();
+      setCaptchaToken(null);
+
       let errorMessage = 'Erro ao fazer login';
       
       if (result.error.includes('Invalid login credentials')) {
@@ -60,6 +71,8 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
         errorMessage = 'Por favor, confirme seu email antes de fazer login';
       } else if (/rate limit|too many|429/i.test(result.error)) {
         errorMessage = 'Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente.';
+      } else if (/captcha/i.test(result.error)) {
+        errorMessage = HCAPTCHA_ERROR_MESSAGE;
       }
 
       notify('Erro no Login', errorMessage);
@@ -88,6 +101,10 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
 
     if (!result.redirecting) setGoogleLoading(false);
   };
+
+  // Sem site key configurada o desafio não aparece, então não travamos o
+  // formulário — o Supabase continua recusando pelo lado do servidor.
+  const submitDisabled = loading || (HCAPTCHA_ENABLED && !captchaToken);
 
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
@@ -210,11 +227,18 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
             <Text style={styles.forgotPasswordText}>Esqueceu sua senha?</Text>
           </TouchableOpacity>
 
+          {/* Verificação anti-bot (hCaptcha) */}
+          <HCaptchaWidget
+            ref={captchaRef}
+            onVerify={setCaptchaToken}
+            onError={() => notify('Verificação de segurança', HCAPTCHA_ERROR_MESSAGE)}
+          />
+
           {/* Botão de Login */}
           <TouchableOpacity 
-            style={[styles.button, loading && styles.buttonDisabled]}
+            style={[styles.button, submitDisabled && styles.buttonDisabled]}
             onPress={handleLogin}
-            disabled={loading}
+            disabled={submitDisabled}
           >
             <LinearGradient
               colors={['#FF5722', '#FF7043']}

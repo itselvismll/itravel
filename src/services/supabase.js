@@ -43,10 +43,18 @@ const clearOAuthParamsFromBrowserUrl = () => {
   );
 };
 
+// Quem troca o `?code=` por sessão é o `detectSessionInUrl` do client, dentro do
+// _initialize() que roda no construtor. Esta função NÃO repete essa troca: o code
+// do PKCE é de uso único, e as duas chamadas competindo por ele derrubavam o login
+// com Google (a perdedora recebia "invalid authorization code"). Aqui só olhamos o
+// resultado — getSession() espera o initialize terminar — e reportamos a falha, que
+// o auth-js guarda para si e nunca propaga para o app.
 export async function completeWebOAuthSession() {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
 
   const callbackUrl = new URL(window.location.href);
+  // O auth-js só trata `error` na URL quando vem com `error_description` junto;
+  // um `?error=access_denied` seco passaria batido, então checamos os dois.
   const oauthError = callbackUrl.searchParams.get('error_description')
     || callbackUrl.searchParams.get('error');
   if (oauthError) {
@@ -54,35 +62,38 @@ export async function completeWebOAuthSession() {
     throw new Error(decodeURIComponent(oauthError.replace(/\+/g, ' ')));
   }
 
-  const code = callbackUrl.searchParams.get('code');
   const hashParams = new URLSearchParams(callbackUrl.hash.replace(/^#/, ''));
-  const accessToken = hashParams.get('access_token');
-  const refreshToken = hashParams.get('refresh_token');
+  const isOAuthCallback = Boolean(
+    callbackUrl.searchParams.get('code') || hashParams.get('access_token')
+  );
 
-  if (!code && (!accessToken || !refreshToken)) {
-    const { data } = await supabase.auth.getSession();
-    return data.session;
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+
+  if (isOAuthCallback && !data.session) {
+    clearOAuthParamsFromBrowserUrl();
+    throw new Error(
+      'O provedor retornou um código de autorização, mas o Supabase não abriu a sessão. '
+      + 'Verifique se a URL de redirecionamento está na allowlist do projeto.'
+    );
   }
 
-  const result = code
-    ? await supabase.auth.exchangeCodeForSession(code)
-    : await supabase.auth.setSession({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-    });
+  // Em caso de sucesso o auth-js já remove o `code`; aqui varremos o que sobrou.
+  if (isOAuthCallback) clearOAuthParamsFromBrowserUrl();
 
-  if (result.error) throw result.error;
-  clearOAuthParamsFromBrowserUrl();
-  return result.data.session;
+  return data.session;
 }
 
 // Função de cadastro
-export async function signUp(email, password, username, fullName) {
+export async function signUp(email, password, username, fullName, captchaToken) {
   try {
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
       options: {
+        // Validado contra a secret key do hCaptcha configurada em
+        // Authentication -> Attack Protection no painel do Supabase.
+        captchaToken,
         data: {
           username: normalizeUsername(username),
           full_name: fullName,
@@ -102,11 +113,12 @@ export async function signUp(email, password, username, fullName) {
 }
 
 // Função de login
-export async function signIn(email, password) {
+export async function signIn(email, password, captchaToken) {
   try {
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
+      options: { captchaToken },
     });
 
     if (error) throw error;
@@ -127,10 +139,12 @@ const getPasswordRecoveryRedirectUrl = () => {
   return Linking.createURL('reset-password', { queryParams: { recovery: '1' } });
 };
 
-export async function requestPasswordReset(email) {
+export async function requestPasswordReset(email, captchaToken) {
   try {
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: getPasswordRecoveryRedirectUrl(),
+      // A proteção do hCaptcha no Supabase cobre a recuperação de senha também.
+      captchaToken,
     });
     if (error) throw error;
     return { success: true };
@@ -150,9 +164,15 @@ export async function updateRecoveredPassword(password) {
 }
 
 const getGoogleRedirectUrl = () => {
-  // Web OAuth always returns to the hosted app. This avoids completing Google
-  // login on a localhost port that may no longer be running.
-  if (Platform.OS === 'web') return API_CONFIG.WEB_APP_URL;
+  // O PKCE guarda o code_verifier no localStorage da origem onde o fluxo começou.
+  // Voltar para uma origem fixa quebraria o login sempre que ele não tivesse
+  // começado nela (localhost, preview), porque lá o verifier não existe — por isso
+  // o retorno é para a origem atual, com a URL de produção como rede de segurança.
+  if (Platform.OS === 'web') {
+    return typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : API_CONFIG.WEB_APP_URL;
+  }
 
   return Linking.createURL('auth/callback');
 };
