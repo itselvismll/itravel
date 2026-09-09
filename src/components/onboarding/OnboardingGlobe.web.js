@@ -12,11 +12,11 @@ import { Map as MapLibreMap, AttributionControl, config as maplibreConfig } from
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import {
-  GLOBE_STYLE_URL,
+  loadGlobeStyle,
   GLOBE_SPACE_BACKGROUND,
   GLOBE_SKY,
   SATELLITE_IMAGERY_ATTRIBUTION,
-  preconnectToStadia,
+  preconnectToTileHosts,
   collapseAttributionOnce,
 } from '../map/globeConfig';
 import { localizeMapLabels } from '../map/styleLocalization';
@@ -30,7 +30,7 @@ import {
 import { loadWorldCountries } from '../../data/worldGeoData';
 
 maplibreConfig.WORKER_URL = '/maplibre/maplibre-gl-worker.mjs';
-preconnectToStadia();
+preconnectToTileHosts();
 
 const FADE_MS = 700;
 
@@ -71,32 +71,25 @@ export default function OnboardingGlobe({ slideIndex = 0, style = undefined }) {
   const [ready, setReady] = useState(false);
   const [geoData, setGeoData] = useState(null);
 
+  // O mapa passou a nascer DEPOIS de um fetch (a style é montada em
+  // loadGlobeStyle), então `mapRef.current` não está mais preenchido na primeira
+  // render. Este estado é o que avisa o efeito das camadas de país de que já há
+  // mapa: uma ref sozinha não dispara re-render, e sem ele o onboarding perderia
+  // os países pintados sempre que a style demorasse mais que o GeoJSON.
+  const [mapCreated, setMapCreated] = useState(false);
+
   useEffect(() => {
     if (!containerRef.current) return undefined;
 
     const scene = SLIDE_SCENES[0];
-    const map = new MapLibreMap({
-      container: containerRef.current,
-      style: GLOBE_STYLE_URL,
-      center: scene.center,
-      zoom: scene.zoom,
-      // Cenário, não mapa: nenhum gesto deve competir com o swipe dos slides.
-      interactive: false,
-      attributionControl: false,
-    });
-    mapRef.current = map;
 
-    // Os tiles aqui são os mesmos da Stadia/OpenStreetMap da tela de Mapa, e o
-    // crédito é obrigatório mesmo num globo decorativo. Recolhido, ele é só o ⓘ
-    // no canto — não disputa espaço com o texto dos slides.
-    map.addControl(
-      new AttributionControl({
-        compact: true,
-        customAttribution: SATELLITE_IMAGERY_ATTRIBUTION,
-      }),
-      'bottom-left'
-    );
-    const releaseAttribution = collapseAttributionOnce(map);
+    // A style chega por fetch (a source de satélite é trocada dentro dela — ver
+    // loadGlobeStyle), então o mapa nasce assíncrono: a limpeza pode rodar antes
+    // da style chegar, e aí só há uma criação para cancelar.
+    let cancelled = false;
+    /** @type {MapLibreMap | null} */
+    let map = null;
+    let releaseAttribution = () => {};
 
     const handleStyleLoad = () => {
       map.setProjection({ type: 'globe' });
@@ -105,20 +98,53 @@ export default function OnboardingGlobe({ slideIndex = 0, style = undefined }) {
     };
     const handleLoad = () => setReady(true);
     // Tile que falha não pode prender o fade: melhor o globo incompleto do que
-    // um retângulo vazio atrás do texto.
+    // um retângulo vazio atrás do texto. Vale também para a style que não vem: o
+    // onboarding segue sem o cenário em vez de travar no fade.
     const handleError = () => setReady(true);
 
-    map.on('style.load', handleStyleLoad);
-    map.on('load', handleLoad);
-    map.on('error', handleError);
+    loadGlobeStyle().then((globeStyle) => {
+      if (cancelled || !containerRef.current) return;
+
+      map = new MapLibreMap({
+        container: containerRef.current,
+        style: globeStyle,
+        center: scene.center,
+        zoom: scene.zoom,
+        // Cenário, não mapa: nenhum gesto deve competir com o swipe dos slides.
+        interactive: false,
+        attributionControl: false,
+      });
+      mapRef.current = map;
+      setMapCreated(true);
+
+      // A imagem aqui é a mesma do Mapbox da tela de Mapa, e o crédito é
+      // obrigatório mesmo num globo decorativo. Recolhido, ele é só o ⓘ no
+      // canto — não disputa espaço com o texto dos slides.
+      map.addControl(
+        new AttributionControl({
+          compact: true,
+          customAttribution: SATELLITE_IMAGERY_ATTRIBUTION,
+        }),
+        'bottom-left'
+      );
+      releaseAttribution = collapseAttributionOnce(map);
+
+      map.on('style.load', handleStyleLoad);
+      map.on('load', handleLoad);
+      map.on('error', handleError);
+    }, handleError);
 
     return () => {
+      cancelled = true;
+      if (!map) return;
       map.off('style.load', handleStyleLoad);
       map.off('load', handleLoad);
       map.off('error', handleError);
       releaseAttribution();
       map.remove();
+      map = null;
       mapRef.current = null;
+      setMapCreated(false);
       setReady(false);
     };
   }, []);
@@ -133,7 +159,9 @@ export default function OnboardingGlobe({ slideIndex = 0, style = undefined }) {
     return () => { cancelled = true; };
   }, []);
 
-  // Monta as layers de território assim que a geometria chega.
+  // Monta as layers de território assim que a geometria E o mapa existem — as
+  // duas coisas chegam por caminhos assíncronos independentes (o GeoJSON e a
+  // style), e qualquer uma pode ganhar a corrida.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !geoData) return undefined;
@@ -151,7 +179,7 @@ export default function OnboardingGlobe({ slideIndex = 0, style = undefined }) {
 
     return () => { map.off('style.load', attach); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- a cena entra só na montagem; a troca por slide é o efeito abaixo
-  }, [geoData]);
+  }, [geoData, mapCreated]);
 
   // Troca de slide: repinta os países e leva a câmera para a região da cena.
   useEffect(() => {

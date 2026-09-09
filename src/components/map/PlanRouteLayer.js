@@ -8,6 +8,7 @@ export default function PlanRouteLayer({
   map = null,
   points = undefined,
   planId = undefined,
+  selectedDay = null,
 }) {
   return null;
 }

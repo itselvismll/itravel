@@ -22,14 +22,14 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 const JOURNI_SYMBOL = require('../../../assets/journi_simbolo.png');
 
 import {
-  GLOBE_STYLE_URL,
+  loadGlobeStyle,
   GLOBE_MAX_ZOOM,
   GLOBE_INITIAL_VIEW,
   GLOBE_SPACE_BACKGROUND,
   GLOBE_SKY,
   SATELLITE_IMAGERY_ATTRIBUTION,
   isSatelliteTileError,
-  preconnectToStadia,
+  preconnectToTileHosts,
   collapseAttributionOnce,
 } from './globeConfig';
 import { localizeMapLabels } from './styleLocalization';
@@ -43,7 +43,7 @@ maplibreConfig.WORKER_URL = '/maplibre/maplibre-gl-worker.mjs';
 
 // No import, não na montagem: quando o componente monta, o React já gastou o
 // tempo de render que a conexão poderia ter usado.
-preconnectToStadia();
+preconnectToTileHosts();
 
 // Duração do fade do globo entrando em cena. Curto o bastante para não parecer
 // lentidão, longo o bastante para não ler como "piscada".
@@ -183,38 +183,55 @@ export default function GlobeMap({
   useEffect(() => {
     if (!containerRef.current) return undefined;
 
-    const map = new MapLibreMap({
-      container: containerRef.current,
-      style: GLOBE_STYLE_URL,
-      center: GLOBE_INITIAL_VIEW.center,
-      zoom: GLOBE_INITIAL_VIEW.zoom,
-      minZoom: GLOBE_INITIAL_VIEW.minZoom,
-      maxZoom: GLOBE_MAX_ZOOM,
-      // Desligado aqui para adicionar o controle com a atribuição do provedor.
-      attributionControl: false,
-    });
-    mapRef.current = map;
+    // A style é buscada antes do mapa nascer porque a source de satélite é
+    // trocada dentro dela (Stadia → Mapbox); ver loadGlobeStyle em globeConfig.
+    // Por isso a construção do mapa é assíncrona, e por isso existem o
+    // `cancelled` e o `map` de escopo: a limpeza pode rodar ANTES de a style
+    // chegar, e aí não há mapa nenhum para desmontar — só uma criação para
+    // cancelar.
+    let cancelled = false;
+    /** @type {MapLibreMap | null} */
+    let map = null;
+    let releaseAttribution = () => {};
 
-    map.addControl(
-      new AttributionControl({
-        compact: true,
-        customAttribution: SATELLITE_IMAGERY_ATTRIBUTION,
-      }),
-      'bottom-left'
-    );
-    // O `compact: true` acima define o FORMATO (ícone ⓘ com o painel atrás);
-    // quem define o ESTADO INICIAL recolhido é esta chamada — o MapLibre não tem
-    // opção para isso e abre o painel sozinho. Ver collapseAttributionOnce.
-    const releaseAttribution = collapseAttributionOnce(map);
+    const buildMap = (globeStyle) => {
+      map = new MapLibreMap({
+        container: containerRef.current,
+        style: globeStyle,
+        center: GLOBE_INITIAL_VIEW.center,
+        zoom: GLOBE_INITIAL_VIEW.zoom,
+        minZoom: GLOBE_INITIAL_VIEW.minZoom,
+        maxZoom: GLOBE_MAX_ZOOM,
+        // Desligado aqui para adicionar o controle com a atribuição do provedor.
+        attributionControl: false,
+      });
+      mapRef.current = map;
 
-    // Sem NavigationControl: os botões + / − são redundantes num app de toque
-    // (scroll e pinça já dão zoom) e ficavam embaixo do pill de países visitados,
-    // no canto inferior direito. Esse canto agora é só do pill.
-    // O GlobeControl (globo ↔ mercator) fica no canto do crédito, empilhado
-    // acima dele — é o único canto sem UI do app por cima.
-    if (showGlobeControl) {
-      map.addControl(new GlobeControl(), 'bottom-left');
-    }
+      map.addControl(
+        new AttributionControl({
+          compact: true,
+          customAttribution: SATELLITE_IMAGERY_ATTRIBUTION,
+        }),
+        'bottom-left'
+      );
+      // O `compact: true` acima define o FORMATO (ícone ⓘ com o painel atrás);
+      // quem define o ESTADO INICIAL recolhido é esta chamada — o MapLibre não tem
+      // opção para isso e abre o painel sozinho. Ver collapseAttributionOnce.
+      releaseAttribution = collapseAttributionOnce(map);
+
+      // Sem NavigationControl: os botões + / − são redundantes num app de toque
+      // (scroll e pinça já dão zoom) e ficavam embaixo do pill de países visitados,
+      // no canto inferior direito. Esse canto agora é só do pill.
+      // O GlobeControl (globo ↔ mercator) fica no canto do crédito, empilhado
+      // acima dele — é o único canto sem UI do app por cima.
+      if (showGlobeControl) {
+        map.addControl(new GlobeControl(), 'bottom-left');
+      }
+
+      map.on('style.load', handleStyleLoad);
+      map.on('load', handleLoad);
+      map.on('error', handleError);
+    };
 
     const handleStyleLoad = () => {
       // setProjection só pode ser chamado depois que a style carregou.
@@ -248,16 +265,30 @@ export default function GlobeMap({
       setReady(true);
     };
 
-    map.on('style.load', handleStyleLoad);
-    map.on('load', handleLoad);
-    map.on('error', handleError);
+    loadGlobeStyle().then(
+      (globeStyle) => {
+        if (cancelled || !containerRef.current) return;
+        buildMap(globeStyle);
+      },
+      (error) => {
+        if (cancelled) return;
+        // Style que não carrega é o mapa inteiro, não só a foto: isso é falha
+        // visível, ao contrário do 403 de um tile de satélite.
+        setFailure(error.message);
+        onErrorRef.current?.(error);
+        setReady(true);
+      }
+    );
 
     return () => {
+      cancelled = true;
+      if (!map) return;
       map.off('style.load', handleStyleLoad);
       map.off('load', handleLoad);
       map.off('error', handleError);
       releaseAttribution();
       map.remove();
+      map = null;
       mapRef.current = null;
       setReady(false);
     };

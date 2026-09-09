@@ -1,4 +1,7 @@
-// Configuração compartilhada do globo 3D (MapLibre GL + Stadia Maps).
+// Configuração compartilhada do globo 3D (MapLibre GL).
+//
+// A style vem da Stadia (vetorial: fronteiras, rótulos, ruas) e a imagem de
+// satélite vem do Mapbox — loadGlobeStyle() abaixo é onde as duas se juntam.
 // Isolado do componente para poder ser importado tanto no web quanto no native
 // (o native usa só as constantes de texto/atribuição, sem tocar no MapLibre).
 import { API_CONFIG } from '../../utils/constants';
@@ -8,17 +11,12 @@ import { API_CONFIG } from '../../utils/constants';
 // terreno real é o que faz o país pintado de roxo ler como território visitado.
 // https://docs.stadiamaps.com/map-styles/alidade-satellite/
 //
-// SOLUÇÃO TEMPORÁRIA, ESCOLHIDA DE OLHOS ABERTOS: o plano Stadia Starter não
-// inclui satélite. Onde a conta não tem direito à imagem, cada tile de
-// /data/imagery/ responde 403 — são requisições que falham a cada quadro, e o
-// erro delas fica SILENCIADO por isSatelliteTileError (abaixo). Duas styles
-// vetoriais cobertas pelo plano foram testadas no lugar (alidade_smooth_dark e
-// outdoors) e o visual do satélite foi preferido mesmo assim.
-//
-// O silêncio é um curativo, não a cura. As saídas de verdade são:
-//   (a) upgrade para o plano Stadia Standard, que cobre satélite;
-//   (b) trocar a fonte da imagem pelo satélite gratuito do Esri (World Imagery);
-//   (c) voltar para uma style vetorial do plano atual.
+// A style CONTINUA sendo a alidade_satellite: as camadas vetoriais dela (as
+// fronteiras escuras, os rótulos claros, o ajuste de brilho/contraste do layer
+// `imagery`) são desenhadas para ficar por cima de uma foto, e nenhuma outra
+// style da Stadia lê bem sobre satélite. O que mudou é só DE ONDE VEM A FOTO: a
+// imagem da Stadia saiu e entrou a do Mapbox — ver MAPBOX_SATELLITE_SOURCE e
+// loadGlobeStyle(). O curativo de silenciar o 403 da imagem virou reserva.
 const STADIA_STYLE_ID = 'alidade_satellite';
 
 // A key vem de EXPO_PUBLIC_STADIA_API_KEY. Em localhost e nos domínios
@@ -31,11 +29,132 @@ export const GLOBE_STYLE_URL = `https://tiles.stadiamaps.com/styles/${STADIA_STY
 
 export const GLOBE_MAX_ZOOM = 20;
 
-// Host dos tiles e da style. Separado da URL para o preconnect poder usá-lo.
+// Hosts dos tiles e da style. Separados das URLs para o preconnect poder usá-los.
 export const STADIA_ORIGIN = 'https://tiles.stadiamaps.com';
+export const MAPBOX_ORIGIN = 'https://api.mapbox.com';
+
+/** Id da source raster de imagem dentro da style da Stadia. É esta source que
+ * loadGlobeStyle() troca — o layer `imagery` que a consome, com o ajuste de
+ * brilho/contraste/saturação da style, fica exatamente como está. */
+const IMAGERY_SOURCE_ID = 'imagery';
+
+/* ----------------------------------------------------------------------------
+ * CONFIG ANTIGA (satélite da Stadia), MANTIDA COMENTADA PARA REVERTER RÁPIDO.
+ *
+ * Não era escrita aqui: era a source `imagery` que já vem dentro do JSON da
+ * style alidade_satellite, reproduzida abaixo como estava.
+ *
+ *   imagery: {
+ *     type: 'raster',
+ *     url: 'https://tiles.stadiamaps.com/data/imagery.json',
+ *     tileSize: 512,
+ *     minzoom: 0,
+ *     maxzoom: 18,
+ *     scheme: 'xyz',
+ *     attribution:
+ *       '© CNES, Distribution Airbus DS, © Airbus DS, © PlanetObserver (Contains Copernicus Data)',
+ *   }
+ *
+ * Por que saiu: o plano Stadia Starter não inclui satélite. Em localhost a
+ * Stadia servia os tiles assim mesmo e a imagem aparecia, então o problema ficou
+ * invisível no desenvolvimento — em produção (journi.expo.app) cada tile de
+ * /data/imagery/ respondia 403 e o globo ficava sem foto nenhuma.
+ *
+ * Para voltar: apague o `sources[IMAGERY_SOURCE_ID] = ...` de loadGlobeStyle()
+ * — a style da Stadia já traz esta source pronta — e devolva a atribuição antiga
+ * em SATELLITE_IMAGERY_ATTRIBUTION.
+ * -------------------------------------------------------------------------- */
+
+/** Tileset de satélite do Mapbox. */
+const MAPBOX_SATELLITE_TILESET = 'mapbox.satellite';
 
 /**
- * Abre a conexão com a Stadia antes de o mapa existir.
+ * Source raster do satélite do Mapbox (Raster Tiles API).
+ * https://docs.mapbox.com/api/maps/raster-tiles/
+ *
+ * `tileSize: 256` porque é esse o tamanho que o endpoint devolve na variante
+ * usada aqui, a sem sufixo de densidade; é a variante com `2x` antes da extensão
+ * que dá 512. Declarar 512 aqui faria o MapLibre esticar um tile de 256 no
+ * espaço de 512 e o globo sairia borrado; e como o tile de 512 pesa ~2,7× mais
+ * (39 KB contra 14 KB, medido no zoom 2), o 256 é também a escolha mais barata
+ * para uma esfera que carrega o mundo inteiro.
+ *
+ * `.jpg90` é JPEG com qualidade 90, o formato mais leve para foto. Tiles que
+ * incluem mapbox.satellite voltam como JPEG de qualquer jeito, mesmo se a URL
+ * pedir PNG.
+ *
+ * maxzoom 22 é o do tileset (a Stadia parava em 18) — acima do GLOBE_MAX_ZOOM de
+ * 20, então o globo nunca precisa esticar tile.
+ *
+ * @type {import('@maplibre/maplibre-gl-style-spec').RasterSourceSpecification | null}
+ */
+export const MAPBOX_SATELLITE_SOURCE = API_CONFIG.MAPBOX_TOKEN
+  ? {
+      type: 'raster',
+      tiles: [
+        `${MAPBOX_ORIGIN}/v4/${MAPBOX_SATELLITE_TILESET}/{z}/{x}/{y}.jpg90?access_token=${API_CONFIG.MAPBOX_TOKEN}`,
+      ],
+      tileSize: 256,
+      minzoom: 0,
+      maxzoom: 22,
+      scheme: 'xyz',
+    }
+  : null;
+
+/** Busca da style, feita uma vez por sessão e compartilhada entre os dois globos
+ * (o da tela de Mapa e o do onboarding). Se falhar, o cache é solto para a
+ * próxima montagem poder tentar de novo. */
+let globeStyleRequest = null;
+const fetchGlobeStyleOnce = () => {
+  if (!globeStyleRequest) {
+    globeStyleRequest = fetch(GLOBE_STYLE_URL)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Falha ao carregar a style do mapa (HTTP ${response.status})`);
+        }
+        return response.json();
+      })
+      .catch((error) => {
+        globeStyleRequest = null;
+        throw error;
+      });
+  }
+  return globeStyleRequest;
+};
+
+/**
+ * A style do globo: a alidade_satellite da Stadia com a imagem trocada pela do
+ * Mapbox.
+ *
+ * Por que buscar a style aqui em vez de passar a URL direto para o MapLibre: a
+ * source de satélite mora DENTRO do JSON da style, e a única forma de trocar uma
+ * source antes de o mapa existir é entregar o objeto da style já montado. Trocar
+ * depois, no `style.load`, chegaria tarde — os tiles da Stadia já teriam saído,
+ * e com eles os 403 que esta migração existe para acabar.
+ *
+ * Não custa uma requisição a mais: é a MESMA busca que o MapLibre faria sozinho
+ * a partir da URL, e a Stadia responde com `cache-control: max-age=86400`, então
+ * da segunda visita em diante ela nem sai da máquina.
+ *
+ * Sem token do Mapbox a style volta intacta, com a imagery da Stadia — o globo
+ * degrada para o comportamento antigo (403 silencioso) em vez de quebrar.
+ *
+ * @returns {Promise<import('@maplibre/maplibre-gl-style-spec').StyleSpecification>}
+ */
+export const loadGlobeStyle = async () => {
+  const style = await fetchGlobeStyleOnce();
+
+  // Cópia: o MapLibre MUTA o objeto de style que recebe, e os dois globos dividem
+  // este cache.
+  const copy = structuredClone(style);
+  if (MAPBOX_SATELLITE_SOURCE) {
+    copy.sources[IMAGERY_SOURCE_ID] = { ...MAPBOX_SATELLITE_SOURCE };
+  }
+  return copy;
+};
+
+/**
+ * Abre a conexão com a Stadia e com o Mapbox antes de o mapa existir.
  *
  * DNS + TCP + TLS com um host novo custa uma ida e volta de rede cada, e nada
  * disso começa antes do primeiro request. Como o primeiro request é a style — e
@@ -46,54 +165,79 @@ export const STADIA_ORIGIN = 'https://tiles.stadiamaps.com';
  * A style em si já é cacheada pelo browser: a Stadia responde com
  * `cache-control: public, max-age=86400`, então da segunda visita em diante ela
  * nem sai da máquina.
+ *
+ * São DOIS hosts porque a imagem e o vetor vêm de provedores diferentes: a foto
+ * do api.mapbox.com, o resto da style do tiles.stadiamaps.com. O do Mapbox é o
+ * que mais rende: os tiles de satélite são o volume de requisições do globo, e
+ * eles só começam depois que a style chega.
  */
-export const preconnectToStadia = () => {
+export const preconnectToTileHosts = () => {
   if (typeof document === 'undefined') return;
-  if (document.querySelector(`link[rel="preconnect"][href="${STADIA_ORIGIN}"]`)) return;
 
-  const link = document.createElement('link');
-  link.rel = 'preconnect';
-  link.href = STADIA_ORIGIN;
-  // Os tiles são buscados como recurso anônimo (sem cookie); sem o crossOrigin o
-  // browser abriria uma segunda conexão e o preconnect não teria servido.
-  link.crossOrigin = 'anonymous';
-  document.head.appendChild(link);
+  [STADIA_ORIGIN, MAPBOX_ORIGIN].forEach((origin) => {
+    if (document.querySelector(`link[rel="preconnect"][href="${origin}"]`)) return;
+
+    const link = document.createElement('link');
+    link.rel = 'preconnect';
+    link.href = origin;
+    // Os tiles são buscados como recurso anônimo (sem cookie); sem o crossOrigin o
+    // browser abriria uma segunda conexão e o preconnect não teria servido.
+    link.crossOrigin = 'anonymous';
+    document.head.appendChild(link);
+  });
 };
 
-// Crédito extra obrigatório da imagem de satélite do Alidade Satellite. Os créditos
-// de Stadia/OpenMapTiles/OpenStreetMap já vêm dentro da style JSON e são renderizados
-// automaticamente pelo AttributionControl.
+// Crédito extra obrigatório da imagem de satélite — agora do Mapbox. É o que a
+// própria TileJSON do mapbox.satellite declara, e os termos do Mapbox exigem os
+// links. Os créditos de Stadia/OpenMapTiles/OpenStreetMap já vêm dentro da style
+// JSON e são renderizados automaticamente pelo AttributionControl.
+//
+// Crédito antigo (satélite da Stadia), para reverter junto com a source:
+//   '© CNES, Distribution Airbus DS, © Airbus DS, © PlanetObserver (Contains Copernicus Data)'
 export const SATELLITE_IMAGERY_ATTRIBUTION =
-  '© CNES, Distribution Airbus DS, © Airbus DS, © PlanetObserver (Contains Copernicus Data)';
+  '<a href="https://www.mapbox.com/about/maps/" target="_blank" rel="noopener">© Mapbox</a> ' +
+  '<a href="https://www.maxar.com/" target="_blank" rel="noopener">© Maxar</a>';
 
-// Caminho dos tiles de satélite da Stadia. É o que distingue o 403 aceito (a
-// imagem que o plano não cobre) de qualquer outra falha do mapa.
-const SATELLITE_TILE_PATH = '/data/imagery/';
+// Caminhos de tile de satélite. São eles que distinguem o 403 aceito — imagem
+// que a conta não tem direito de servir naquele domínio — de qualquer outra
+// falha do mapa.
+//
+// São DOIS porque a migração é reversível: o do Mapbox é o caminho atual, o da
+// Stadia continua coberto para o caso de a config antiga voltar. Um caminho a
+// mais aqui não afrouxa a checagem — ela exige caminho E status.
+const SATELLITE_TILE_PATHS = [
+  // Mapbox Raster Tiles API (atual). 403 aqui = token restrito a outras URLs no
+  // painel do Mapbox, ou conta sem acesso ao tileset.
+  '/v4/mapbox.satellite/',
+  // Stadia (config antiga, comentada acima). 403 = plano Starter sem satélite.
+  '/data/imagery/',
+];
 
-/** Status do tile sem direito de acesso. O 401 (key ausente/domínio não
- * cadastrado) fica DE FORA de propósito: esse é acionável e continua aparecendo. */
+/** Status do tile sem direito de acesso. O 401 (token/key ausente ou inválido)
+ * fica DE FORA de propósito: esse é acionável e continua aparecendo. */
 const SATELLITE_TILE_FORBIDDEN = 403;
 
 /**
  * Padrão para o LogBox ignorar o 403 de satélite no dev NATIVO.
  *
- * Deliberadamente estreito: casa a URL do tile de imagem da Stadia junto com o
- * 403. Qualquer outro erro — inclusive outro 403, de outra URL — continua
- * aparecendo. Nada de ignoreAllLogs.
+ * Deliberadamente estreito: casa a URL do tile de imagem — do Mapbox ou da
+ * Stadia — junto com o 403. Qualquer outro erro, inclusive outro 403 de outra
+ * URL, continua aparecendo. Nada de ignoreAllLogs.
  */
 export const SATELLITE_TILE_LOG_PATTERN =
-  /(tiles\.stadiamaps\.com\/data\/imagery\/.*\b403\b)|(\b403\b.*tiles\.stadiamaps\.com\/data\/imagery\/)/;
+  /(api\.mapbox\.com\/v4\/mapbox\.satellite\/.*\b403\b)|(\b403\b.*api\.mapbox\.com\/v4\/mapbox\.satellite\/)|(tiles\.stadiamaps\.com\/data\/imagery\/.*\b403\b)|(\b403\b.*tiles\.stadiamaps\.com\/data\/imagery\/)/;
 
 /**
- * É o 403 dos tiles de satélite que o plano não cobre?
+ * É o 403 de um tile de satélite que a conta não tem direito de servir aqui?
  *
  * O MapLibre entrega um AJAXError no evento `error`, com `status` e `url`
  * próprios; a leitura da mensagem existe só como rede de segurança para quando o
  * erro chega embrulhado e perde os campos.
  *
- * A checagem exige as DUAS coisas — o caminho da imagem E o 403. Um 403 em outra
- * URL, ou qualquer outro erro nos tiles de imagem, passa direto e continua
- * visível: o que se aceita aqui é só a falha já conhecida e diagnosticada.
+ * A checagem exige as DUAS coisas — um caminho de imagem conhecido (Mapbox ou
+ * Stadia) E o 403. Um 403 em outra URL, ou qualquer outro erro nos tiles de
+ * imagem, passa direto e continua visível: o que se aceita aqui é só a falha já
+ * conhecida e diagnosticada.
  *
  * @param {{ status?: number, url?: string, message?: string } | null | undefined} error
  * @returns {boolean}
@@ -102,7 +246,7 @@ export const isSatelliteTileError = (error) => {
   if (!error) return false;
 
   const target = `${error.url ?? ''} ${error.message ?? ''}`;
-  if (!target.includes(SATELLITE_TILE_PATH)) return false;
+  if (!SATELLITE_TILE_PATHS.some((path) => target.includes(path))) return false;
 
   return (
     error.status === SATELLITE_TILE_FORBIDDEN ||
@@ -160,7 +304,7 @@ const ATTRIB_EXPANDED_CLASS = 'maplibregl-compact-show';
  * de quem acabou de abri-lo.
  *
  * A atribuição em si não sai do mapa — continua completa atrás do ícone, como
- * exigem a Stadia e o OpenStreetMap.
+ * exigem a Stadia, o Mapbox e o OpenStreetMap.
  *
  * @param {import('maplibre-gl').Map} map
  * @returns {() => void} desinscrição, para o cleanup do componente

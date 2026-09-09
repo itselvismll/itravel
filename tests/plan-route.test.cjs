@@ -28,6 +28,9 @@ const {
   PLAN_LABEL_ZOOM,
   PLAN_LAYER_IDS,
   PLAN_LINE_LAYER_ID,
+  PLAN_LINE_FALLBACK_LAYER_ID,
+  planDays,
+  setPlanDayFilter,
   PLAN_LINE_SOURCE_ID,
   PLAN_NUMBER_LAYER_ID,
   PLAN_PIN_LAYER_ID,
@@ -52,12 +55,16 @@ const fakeMap = (/** @type {{ styleLayers?: any[] }} */ { styleLayers } = {}) =>
   const layers = new Map();
   const inserted = [];
   const listeners = [];
+  // Registro das chamadas que MUDAM o mapa depois de montado. É o que prova, por
+  // exemplo, que trocar de dia mexe só no filtro e não reenvia geometria.
+  const calls = [];
 
   return {
     sources,
     layers,
     inserted,
     listeners,
+    calls,
     getStyle: () => ({
       layers: styleLayers ?? [
         { id: 'background', type: 'background' },
@@ -83,6 +90,11 @@ const fakeMap = (/** @type {{ styleLayers?: any[] }} */ { styleLayers } = {}) =>
       inserted.push({ id: layer.id, beforeId });
     },
     removeLayer: (id) => layers.delete(id),
+    setFilter: (id, filter) => {
+      calls.push(['setFilter', id, filter]);
+      const layer = layers.get(id);
+      if (layer) layer.filter = filter;
+    },
     getCanvas: () => ({ style: {} }),
     on: (type, layerId, handler) => listeners.push({ type, layerId, handler }),
     off: (type, layerId, handler) => {
@@ -281,8 +293,20 @@ test('o rótulo com o nome do lugar só aparece no nível de cidade', () => {
   const rotulo = map.getLayer(PLAN_LABEL_LAYER_ID).layout;
   assert.deepEqual(rotulo['icon-image'], ['get', 'icon']);
   assert.deepEqual(rotulo['text-field'], ['get', 'title']);
-  // A linha do dia é tracejada.
-  assert.deepEqual(map.getLayer(PLAN_LINE_LAYER_ID).paint['line-dasharray'], [2, 1.6]);
+  // A linha reta entre os pontos é tracejada; a rota real do Directions é
+  // contínua. São layers diferentes porque `line-dasharray` não aceita
+  // expression data-driven — e porque as duas não significam a mesma coisa.
+  assert.equal(map.getLayer(PLAN_LINE_LAYER_ID).paint['line-dasharray'], undefined);
+  assert.deepEqual(
+    map.getLayer(PLAN_LINE_FALLBACK_LAYER_ID).paint['line-dasharray'],
+    [2, 1.6]
+  );
+  // Cada uma pinta só as features do seu caso, sem sobrepor a outra.
+  assert.deepEqual(map.getLayer(PLAN_LINE_LAYER_ID).filter, ['==', ['get', 'routed'], true]);
+  assert.deepEqual(
+    map.getLayer(PLAN_LINE_FALLBACK_LAYER_ID).filter,
+    ['!=', ['get', 'routed'], true]
+  );
 });
 
 test('a fonte do texto é herdada da style, não fixada num nome de provedor', () => {
@@ -341,4 +365,140 @@ test('clique sem feature não abre popup', () => {
     .handler({ features: [] });
 
   assert.equal(chamou, false);
+});
+
+// ── Rota do Mapbox no desenho ────────────────────────────────────────────────
+
+test('sem rota do Mapbox o desenho é o da IA, com linha reta', () => {
+  const data = buildPlanRouteData([point(1, 1), point(1, 2), point(1, 3)]);
+
+  const linha = data.lines.features[0];
+  // A reta liga os pontos direto: é o palpite, e a layer tracejada é quem o
+  // desenha.
+  assert.equal(linha.properties.routed, false);
+  assert.equal(linha.geometry.coordinates.length, 3);
+  assert.deepEqual(
+    data.points.features.map((f) => f.properties.orderLabel),
+    ['1', '2', '3']
+  );
+});
+
+test('com rota do Mapbox a linha vira o traçado real e os pinos renumeram', () => {
+  // A Optimization devolveu a visita na ordem 1 → 3 → 2, e o Directions devolveu
+  // o caminho de rua entre elas.
+  const points = [point(1, 1), point(1, 2), point(1, 3)];
+  const otimizado = [points[0], points[2], points[1]];
+  const traçado = [[-1, 1], [-2, 2], [-3, 3], [-4, 4]];
+  const routes = new Map([[1, { points: otimizado, coordinates: traçado, optimized: true, routed: true }]]);
+
+  const data = buildPlanRouteData(points, routes);
+
+  const linha = data.lines.features[0];
+  assert.equal(linha.properties.routed, true);
+  assert.deepEqual(linha.geometry.coordinates, traçado);
+
+  // O número do pino segue a SEQUÊNCIA desenhada, não o `order` da IA: um pino
+  // "3" entre o 1 e o 2 faria a linha parecer errada.
+  const props = data.points.features.map((f) => f.properties);
+  assert.deepEqual(props.map((p) => p.orderLabel), ['1', '2', '3']);
+  assert.deepEqual(props.map((p) => p.sequence), [1, 2, 3]);
+  // E o `order` original continua disponível para quem precisar dele.
+  assert.deepEqual(props.map((p) => p.order), [1, 3, 2]);
+});
+
+test('rota que cobre menos pontos que o dia é descartada', () => {
+  // Resposta truncada sumiria com paradas do roteiro. Melhor a ordem da IA
+  // inteira do que uma ordem "melhor" com um lugar a menos.
+  const points = [point(1, 1), point(1, 2), point(1, 3)];
+  const routes = new Map([[1, { points: [points[0], points[1]], coordinates: null }]]);
+
+  const data = buildPlanRouteData(points, routes);
+
+  assert.equal(data.points.features.length, 3);
+  assert.deepEqual(
+    data.points.features.map((f) => f.properties.order),
+    [1, 2, 3]
+  );
+});
+
+test('um dia com rota e outro sem convivem no mesmo roteiro', () => {
+  // É o estado normal enquanto as respostas chegam uma a uma, e o estado final
+  // quando o Mapbox falha só em alguns dias.
+  const points = [point(1, 1), point(1, 2), point(2, 1), point(2, 2)];
+  const routes = new Map([[1, { coordinates: [[0, 0], [1, 1]], routed: true }]]);
+
+  const data = buildPlanRouteData(points, routes);
+  const porDia = new Map(data.lines.features.map((f) => [f.properties.day, f.properties.routed]));
+
+  assert.equal(porDia.get(1), true);
+  assert.equal(porDia.get(2), false);
+});
+
+// ── Filtro de dia ────────────────────────────────────────────────────────────
+
+test('o filtro de dia esconde os outros dias sem tocar nos dados', () => {
+  const map = fakeMap();
+  const data = buildPlanRouteData([point(1, 1), point(1, 2), point(2, 1), point(2, 2)]);
+  attachPlanRouteLayers(map, { data });
+  map.calls.length = 0;
+
+  assert.equal(setPlanDayFilter(map, 2), true);
+
+  // Nada de setData: a geometria já está no worker e trocar de dia é só mudar o
+  // que se pinta dela.
+  for (const [kind] of map.calls) assert.equal(kind, 'setFilter');
+
+  // Nas layers de ponto, o filtro é só o dia.
+  assert.deepEqual(map.getLayer(PLAN_PIN_LAYER_ID).filter, ['==', ['get', 'day'], 2]);
+
+  // Nas de linha, o dia entra JUNTO com o `routed` — se o dia sobrescrevesse o
+  // filtro base, a rota real e a reta apareceriam as duas ao mesmo tempo.
+  assert.deepEqual(map.getLayer(PLAN_LINE_LAYER_ID).filter, [
+    'all',
+    ['==', ['get', 'routed'], true],
+    ['==', ['get', 'day'], 2],
+  ]);
+  assert.deepEqual(map.getLayer(PLAN_LINE_FALLBACK_LAYER_ID).filter, [
+    'all',
+    ['!=', ['get', 'routed'], true],
+    ['==', ['get', 'day'], 2],
+  ]);
+});
+
+test('voltar para "todos" devolve o filtro base, não nenhum filtro', () => {
+  const map = fakeMap();
+  attachPlanRouteLayers(map, { data: buildPlanRouteData([point(1, 1), point(2, 1)]) });
+
+  setPlanDayFilter(map, 1);
+  setPlanDayFilter(map, null);
+
+  // O ponto volta sem filtro nenhum...
+  assert.equal(map.getLayer(PLAN_PIN_LAYER_ID).filter, undefined);
+  // ...mas a linha PRECISA manter o `routed`, senão as duas layers desenhariam
+  // a mesma feature e o tracejado apareceria por baixo da rota real.
+  assert.deepEqual(map.getLayer(PLAN_LINE_LAYER_ID).filter, ['==', ['get', 'routed'], true]);
+});
+
+test('filtrar antes das layers existirem não quebra', () => {
+  assert.equal(setPlanDayFilter(fakeMap(), 1), false);
+  assert.equal(setPlanDayFilter(null, 1), false);
+});
+
+test('os dias do roteiro saem ordenados e sem repetição', () => {
+  assert.deepEqual(planDays([point(2, 1), point(1, 1), point(1, 2), point(10, 1)]), [1, 2, 10]);
+  assert.deepEqual(planDays([]), []);
+  assert.deepEqual(planDays(undefined), []);
+});
+
+test('toda layer do roteiro responde ao filtro de dia', () => {
+  // Uma layer esquecida aqui deixaria, por exemplo, o rótulo do dia 3 na tela
+  // com o mapa mostrando o dia 1.
+  const map = fakeMap();
+  attachPlanRouteLayers(map, { data: buildPlanRouteData([point(1, 1), point(2, 1)]) });
+  setPlanDayFilter(map, 1);
+
+  for (const layerId of PLAN_LAYER_IDS) {
+    const filter = JSON.stringify(map.getLayer(layerId).filter);
+    assert.match(filter, /"day"/, `${layerId} não filtra por dia`);
+  }
 });

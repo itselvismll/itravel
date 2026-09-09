@@ -5,8 +5,9 @@
 // Assim o cartão segue a rotação e o zoom do globo pelo próprio MapLibre e
 // continua sendo estilo do app, não HTML solto.
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { CATEGORY_EMOJI } from './planRoute';
+import { ISOCHRONE_COLOR } from './isochroneLayer';
 
 /**
  * @param {{
@@ -16,9 +17,24 @@ import { CATEGORY_EMOJI } from './planRoute';
  *   day?: number,
  *   order?: number,
  *   color?: string,
+ *   nearbyMinutes?: number,
+ *   nearbyLoading?: boolean,
+ *   nearbyActive?: boolean,
+ *   onToggleNearby?: () => void,
  * }} props
  */
-export default function PlanPointPopup({ title, description, category, day, order, color }) {
+export default function PlanPointPopup({
+  title,
+  description,
+  category,
+  day,
+  order,
+  color,
+  nearbyMinutes = 15,
+  nearbyLoading = false,
+  nearbyActive = false,
+  onToggleNearby,
+}) {
   return (
     <View style={styles.card}>
       <View style={styles.header}>
@@ -39,6 +55,38 @@ export default function PlanPointPopup({ title, description, category, day, orde
         <Text style={styles.description} numberOfLines={4}>
           {description}
         </Text>
+      )}
+
+      {/* O texto diz o RAIO, não a feature: "Ver em 15 min a pe" responde a
+          pergunta do usuario sozinho, enquanto "O que tem por perto" ainda
+          deixa em aberto o quao perto. Com a area no ar o mesmo botao a
+          esconde, que e o caminho de volta mais curto de dentro do popup. */}
+      {!!onToggleNearby && (
+        <Pressable
+          onPress={onToggleNearby}
+          disabled={nearbyLoading}
+          accessibilityRole="button"
+          accessibilityState={{ busy: nearbyLoading, selected: nearbyActive }}
+          style={({ pressed }) => [
+            styles.nearbyButton,
+            nearbyActive && styles.nearbyButtonActive,
+            pressed && styles.nearbyButtonPressed,
+            nearbyLoading && styles.nearbyButtonDisabled,
+          ]}
+        >
+          {nearbyLoading ? (
+            <ActivityIndicator size="small" color={ISOCHRONE_COLOR} />
+          ) : (
+            <Text style={styles.nearbyIcon}>{nearbyActive ? '✕' : '🚶'}</Text>
+          )}
+          <Text style={styles.nearbyText} numberOfLines={1}>
+            {nearbyLoading
+              ? 'Calculando...'
+              : nearbyActive
+                ? 'Ocultar area'
+                : `Ver em ${nearbyMinutes} min a pe`}
+          </Text>
+        </Pressable>
       )}
     </View>
   );
@@ -71,5 +119,35 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_400Regular',
     fontSize: 11,
     lineHeight: 16,
+  },
+  nearbyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 2,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(0,209,193,0.45)',
+    backgroundColor: 'rgba(0,209,193,0.12)',
+    // A altura nao pode variar entre os tres estados (parado, carregando,
+    // ativo): o popup do MapLibre se reposiciona quando o conteudo muda de
+    // tamanho, e o cartao pularia embaixo do dedo no meio do toque.
+    minHeight: 32,
+  },
+  nearbyButtonActive: {
+    backgroundColor: 'rgba(0,209,193,0.22)',
+    borderColor: 'rgba(0,209,193,0.75)',
+  },
+  nearbyButtonPressed: { opacity: 0.7 },
+  nearbyButtonDisabled: { opacity: 0.8 },
+  nearbyIcon: { fontSize: 12, lineHeight: 16 },
+  nearbyText: {
+    color: ISOCHRONE_COLOR,
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

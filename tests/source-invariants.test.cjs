@@ -346,7 +346,15 @@ test('explore, feed, and passport keep their responsive visual treatment', () =>
   assert.match(explore, /<CountryFlag/);
   assert.match(feed, /maxWidth: 760/);
   assert.match(feed, /aspectRatio: 4 \/ 3/);
-  assert.match(profile, /tagCountryMark/);
+  // A etiqueta de bagagem do passaporte saiu do ProfileScreen e virou o
+  // CountryTag, compartilhado com o Quero Visitar, o perfil público e o modal da
+  // lista completa. O que este invariante protege continua o mesmo — o
+  // passaporte não volta a ser uma lista de bandeiras soltas —, só mudou de
+  // arquivo junto com a marcação.
+  const countryTag = read('src/components/profile/CountryTag.js');
+  assert.match(countryTag, /tagCountryMark/);
+  assert.match(countryTag, /<CountryFlag/);
+  assert.match(profile, /<CountryGridSection/);
   assert.match(profile, /<CountryFlag/);
   assert.match(explore, /maxWidth: 1100/);
   assert.match(feed, /countryCode=\{post\.country_code\}/);
@@ -580,6 +588,19 @@ test('map, currencies, and social notifications do not depend on partial provide
   assert.match(globeConfig, /tiles\.stadiamaps\.com\/styles\/\$\{STADIA_STYLE_ID\}\.json/);
   assert.match(globeConfig, /alidade_satellite/);
   assert.doesNotMatch(globeConfig, /openfreemap/i);
+
+  // A FOTO, porém, vem do Mapbox: o plano Stadia Starter não serve satélite fora
+  // de localhost, e em produção cada tile de /data/imagery/ voltava 403 — globo
+  // sem imagem nenhuma. A style continua a da Stadia; só a source `imagery` é
+  // trocada, dentro do loadGlobeStyle.
+  assert.match(globeConfig, /MAPBOX_ORIGIN = .https:\/\/api\.mapbox\.com./);
+  assert.match(globeConfig, /\$\{MAPBOX_ORIGIN\}\/v4\/\$\{MAPBOX_SATELLITE_TILESET\}\/\{z\}\/\{x\}\/\{y\}\.jpg90/);
+  assert.match(globeConfig, /MAPBOX_SATELLITE_TILESET = 'mapbox\.satellite'/);
+  // 256 é o tamanho do tile do endpoint sem @2x. Declarar 512 esticaria a imagem.
+  assert.match(globeConfig, /tileSize: 256/);
+  // A troca acontece ANTES de o mapa nascer: depois do style.load os tiles da
+  // Stadia já teriam saído, e com eles os 403 que a migração veio resolver.
+  assert.match(globeConfig, /copy\.sources\[IMAGERY_SOURCE_ID\] = \{ \.\.\.MAPBOX_SATELLITE_SOURCE \}/);
   assert.match(currency, /@fawazahmed0\/currency-api@latest/);
   assert.match(currency, /world-countries@latest\/dist\/countries\.json/);
   assert.match(currency, /open\.er-api\.com\/v6\/latest/);
@@ -712,10 +733,12 @@ test('the globe fades in from a branded overlay instead of flashing', () => {
   // Erro de tile não pode prender o overlay para sempre.
   assert.match(globeMap, /setReady\(true\)/);
 
-  // Handshake com o provedor de tiles adiantado para o import do módulo.
+  // Handshake com os provedores de tiles adiantado para o import do módulo. São
+  // dois hosts: a style vem da Stadia e a foto de satélite do Mapbox.
   assert.match(config, /rel = 'preconnect'/);
   assert.match(config, /tiles\.stadiamaps\.com/);
-  assert.match(globeMap, /preconnectToStadia\(\)/);
+  assert.match(config, /api\.mapbox\.com/);
+  assert.match(globeMap, /preconnectToTileHosts\(\)/);
 });
 
 test('client source sticks to APIs that exist on react-native-web', () => {
@@ -734,9 +757,13 @@ test('map attribution stays present but starts collapsed', () => {
   const globeMap = stripComments(read('src/components/map/GlobeMap.web.js'));
   const onboardingGlobe = stripComments(read('src/components/onboarding/OnboardingGlobe.web.js'));
 
-  // O crédito da Stadia/OSM é exigência de licença: ele não pode sumir, só
-  // começar fechado.
+  // O crédito da Stadia/OSM/Mapbox é exigência de licença: ele não pode sumir, só
+  // começar fechado. Trocado o provedor da imagem, o crédito dela troca junto —
+  // creditar a Airbus por uma foto do Mapbox seria atribuição errada.
   assert.match(config, /SATELLITE_IMAGERY_ATTRIBUTION/);
+  const attribution = config.split('export const SATELLITE_IMAGERY_ATTRIBUTION')[1] ?? '';
+  assert.match(attribution, /mapbox\.com/);
+  assert.match(attribution, /maxar\.com/);
   for (const source of [globeMap, onboardingGlobe]) {
     assert.match(source, /new AttributionControl\(\{\s*compact: true/);
     assert.match(source, /customAttribution: SATELLITE_IMAGERY_ATTRIBUTION/);

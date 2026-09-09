@@ -14,6 +14,7 @@ export const PLAN_POINT_SOURCE_ID = 'journi-plan-points';
 export const PLAN_LINE_SOURCE_ID = 'journi-plan-lines';
 
 export const PLAN_LINE_LAYER_ID = 'journi-plan-line';
+export const PLAN_LINE_FALLBACK_LAYER_ID = 'journi-plan-line-fallback';
 export const PLAN_HALO_LAYER_ID = 'journi-plan-halo';
 export const PLAN_PIN_LAYER_ID = 'journi-plan-pin';
 export const PLAN_NUMBER_LAYER_ID = 'journi-plan-number';
@@ -24,6 +25,7 @@ export const PLAN_LABEL_LAYER_ID = 'journi-plan-label';
 // ACIMA do fill de país e ABAIXO dos rótulos da Stadia.
 export const PLAN_LAYER_IDS = [
   PLAN_LINE_LAYER_ID,
+  PLAN_LINE_FALLBACK_LAYER_ID,
   PLAN_HALO_LAYER_ID,
   PLAN_PIN_LAYER_ID,
   PLAN_NUMBER_LAYER_ID,
@@ -126,48 +128,81 @@ export const categoryIconId = (category) =>
  * precisar de filtro nenhum na layer. Dia com um ponto só não vira linha —
  * LineString exige dois pares de coordenadas.
  *
+ * O segundo argumento é o resultado do `buildPlanRoutes` (mapboxRouting.js) e é
+ * OPCIONAL em todos os níveis. Sem ele — porque as APIs ainda não responderam,
+ * falharam ou nem foram chamadas — o desenho é o de sempre: os pontos na ordem
+ * da IA, ligados por retas. Com ele, o dia é redesenhado na ordem otimizada e a
+ * linha passa a ser o traçado real das ruas.
+ *
+ * O número do pino segue a POSIÇÃO na sequência desenhada, não o `order` que a
+ * IA mandou: depois de otimizar, um pino "3" no meio do caminho entre o 1 e o 2
+ * faria a linha parecer errada. O `order` original continua nas properties, para
+ * quem precisar dele.
+ *
  * @param {Array<{day:number, order:number, title?:string, description?:string,
  *   category?:string, latitude:number, longitude:number}>} points
+ * @param {Map<number, { points?: Array<any>, coordinates?: Array<any>|null }>} [routes]
  * @returns {{ points: any, lines: any }}
  */
-export const buildPlanRouteData = (points) => {
+export const buildPlanRouteData = (points, routes) => {
   const list = points ?? [];
-  const pointFeatures = [];
   const byDay = new Map();
 
+  // Agrupa preservando a ordem de entrada (getPlanPoints já ordena por dia e
+  // sequência), para o dia sem rota otimizada continuar exatamente como estava.
   for (const point of list) {
     const day = Number(point?.day) || 1;
-    const color = dayColor(day);
-    const coordinates = [point.longitude, point.latitude];
-
-    pointFeatures.push({
-      type: 'Feature',
-      geometry: { type: 'Point', coordinates },
-      properties: {
-        day,
-        order: Number(point?.order) || 1,
-        // O número desenhado é string: `text-field` não formata número, e um
-        // valor numérico cru sai com casa decimal em algumas styles.
-        orderLabel: String(Number(point?.order) || 1),
-        title: point?.title || '',
-        description: point?.description || '',
-        category: point?.category || 'outro',
-        icon: categoryIconId(point?.category),
-        color,
-      },
-    });
-
     if (!byDay.has(day)) byDay.set(day, []);
-    byDay.get(day).push(coordinates);
+    byDay.get(day).push(point);
   }
 
+  const pointFeatures = [];
   const lineFeatures = [];
-  for (const [day, coordinates] of byDay) {
-    if (coordinates.length < 2) continue;
+
+  for (const [day, aiOrdered] of byDay) {
+    const route = routes?.get?.(day);
+    const color = dayColor(day);
+
+    // A ordem otimizada só é aceita se cobrir o mesmo número de pontos do dia:
+    // uma resposta truncada sumiria com paradas do roteiro.
+    const ordered =
+      route?.points?.length === aiOrdered.length ? route.points : aiOrdered;
+
+    const straight = [];
+    ordered.forEach((point, index) => {
+      const coordinates = [point.longitude, point.latitude];
+      straight.push(coordinates);
+
+      pointFeatures.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates },
+        properties: {
+          day,
+          order: Number(point?.order) || index + 1,
+          sequence: index + 1,
+          // O número desenhado é string: `text-field` não formata número, e um
+          // valor numérico cru sai com casa decimal em algumas styles.
+          orderLabel: String(index + 1),
+          title: point?.title || '',
+          description: point?.description || '',
+          category: point?.category || 'outro',
+          icon: categoryIconId(point?.category),
+          color,
+        },
+      });
+    });
+
+    // Rota real quando o Directions respondeu; reta entre os pontos quando não.
+    // `routed` é o que separa as duas layers de linha — contínua para o traçado
+    // verdadeiro, tracejada para o palpite.
+    const routed = Array.isArray(route?.coordinates) && route.coordinates.length >= 2;
+    const geometry = routed ? route.coordinates : straight;
+    if (geometry.length < 2) continue;
+
     lineFeatures.push({
       type: 'Feature',
-      geometry: { type: 'LineString', coordinates },
-      properties: { day, color: dayColor(day) },
+      geometry: { type: 'LineString', coordinates: geometry },
+      properties: { day, color, routed },
     });
   }
 
@@ -176,6 +211,10 @@ export const buildPlanRouteData = (points) => {
     lines: { type: 'FeatureCollection', features: lineFeatures },
   };
 };
+
+/** Dias presentes no roteiro, em ordem — alimenta o seletor de dias. */
+export const planDays = (points) =>
+  [...new Set((points ?? []).map((point) => Number(point?.day) || 1))].sort((a, b) => a - b);
 
 /**
  * Caixa que envolve todos os pontos, no formato que o `fitBounds` espera.
@@ -262,16 +301,45 @@ export const attachPlanRouteLayers = (map, { data } = {}) => {
   const textFont = resolveTextFont(map);
   const withFont = (layout) => (textFont ? { ...layout, 'text-font': textFont } : layout);
 
+  // Duas layers para a mesma source, separadas pelo `routed` da feature.
+  //
+  // Não é enfeite: `line-dasharray` não aceita expression data-driven, então uma
+  // layer só teria de escolher um traço para os dois casos — e eles NÃO são o
+  // mesmo caso. A linha contínua é o caminho real que o Directions devolveu; a
+  // tracejada é uma reta entre os pontos, que é um palpite. Desenhar o palpite
+  // com a mesma confiança do traçado verdadeiro seria mentir sobre o trajeto,
+  // ainda mais num mapa onde a reta cruza rio, prédio e via sem saída.
   if (!map.getLayer(PLAN_LINE_LAYER_ID)) {
     map.addLayer(
       {
         id: PLAN_LINE_LAYER_ID,
         type: 'line',
         source: PLAN_LINE_SOURCE_ID,
+        filter: ['==', ['get', 'routed'], true],
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': ['get', 'color'],
           'line-opacity': 0.9,
+          'line-width': ['interpolate', ['linear'], ['zoom'], 2, 1.4, 6, 2.2, 12, 3.2],
+        },
+      },
+      beforeId
+    );
+  }
+
+  if (!map.getLayer(PLAN_LINE_FALLBACK_LAYER_ID)) {
+    map.addLayer(
+      {
+        id: PLAN_LINE_FALLBACK_LAYER_ID,
+        type: 'line',
+        source: PLAN_LINE_SOURCE_ID,
+        filter: ['!=', ['get', 'routed'], true],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': ['get', 'color'],
+          // Um pouco mais apagada que a rota real, além de tracejada: são dois
+          // sinais dizendo "isto é aproximado".
+          'line-opacity': 0.75,
           'line-width': ['interpolate', ['linear'], ['zoom'], 2, 1.4, 6, 2.2, 12, 3.2],
           // Tracejado: distingue o trajeto planejado de qualquer via real da
           // style, que é sempre contínua.
@@ -376,6 +444,45 @@ export const attachPlanRouteLayers = (map, { data } = {}) => {
       },
       beforeId
     );
+  }
+
+  return true;
+};
+
+// O `routed` continua mandando em qual das duas layers de linha cada feature
+// aparece; o dia entra POR CIMA disso. Guardar o filtro base aqui é o que
+// permite compor os dois sem uma layer apagar a regra da outra.
+const BASE_FILTERS = {
+  [PLAN_LINE_LAYER_ID]: ['==', ['get', 'routed'], true],
+  [PLAN_LINE_FALLBACK_LAYER_ID]: ['!=', ['get', 'routed'], true],
+};
+
+/**
+ * Mostra só um dia do roteiro, ou todos.
+ *
+ * Filtro na layer, e não dados diferentes na source: a geometria já está no
+ * worker, e trocar de dia é só mudar o que se pinta dela. É o que faz a troca
+ * ser instantânea, sem reenviar nada nem refazer as chamadas do Mapbox.
+ *
+ * @param {any} map
+ * @param {number | null} day dia a exibir; null/undefined mostra o roteiro todo
+ * @returns {boolean} false quando as layers ainda não existem
+ */
+export const setPlanDayFilter = (map, day) => {
+  if (!map?.getLayer?.(PLAN_PIN_LAYER_ID)) return false;
+
+  const dayFilter = Number.isFinite(day) ? ['==', ['get', 'day'], Number(day)] : null;
+
+  for (const layerId of PLAN_LAYER_IDS) {
+    if (!map.getLayer?.(layerId)) continue;
+
+    const base = BASE_FILTERS[layerId] || null;
+    let filter = null;
+    if (base && dayFilter) filter = ['all', base, dayFilter];
+    else filter = dayFilter || base;
+
+    // `undefined` (e não null) é o que o MapLibre entende por "sem filtro".
+    map.setFilter(layerId, filter || undefined);
   }
 
   return true;

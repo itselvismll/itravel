@@ -19,6 +19,7 @@ import {
 } from '../../services/followService';
 import { getPhotoCommentCounts } from '../../services/photoService';
 import CountryFlag from '../../components/CountryFlag';
+import CountryGridSection from '../../components/profile/CountryGridSection';
 import Avatar from '../../components/Avatar';
 import StarRating from '../../components/StarRating';
 import { getOrCreateConversation } from '../../services/messageService';
@@ -276,20 +277,11 @@ export default function PublicProfileScreen({ route, navigation }) {
         </View>
 
         {visitedCountries.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>PAÍSES VISITADOS</Text>
-            <View style={styles.flagGrid}>
-              {visitedCountries.map((country) => (
-                <CountryFlag
-                  key={country.country_code}
-                  countryCode={country.country_code}
-                  width={38}
-                  height={25}
-                  borderRadius={4}
-                />
-              ))}
-            </View>
-          </View>
+          <CountryGridSection
+            countries={visitedCountries}
+            title="Países visitados"
+            icon="book-outline"
+          />
         ) : null}
 
         <View style={styles.section}>
@@ -448,7 +440,6 @@ const styles = StyleSheet.create({
   levelText: { flex: 1 },
   levelName: { fontSize: 15, fontWeight: '700', color: '#F7F7F2' },
   levelSub: { fontSize: 11, color: '#9aa0c6', marginTop: 2 },
-  flagGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   photoGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

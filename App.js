@@ -7,10 +7,11 @@ import { ActivePlanProvider } from './src/context/ActivePlanContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import { SATELLITE_TILE_LOG_PATTERN } from './src/components/map/globeConfig';
 
-// O 403 dos tiles de satélite da Stadia é conhecido e aceito (o plano Starter não
-// cobre satélite — ver globeConfig.js), e no dev nativo ele viraria caixa vermelha
-// do LogBox a cada tile. UM padrão, que exige a URL do imagery E o 403 juntos:
-// todo o resto do app continua reportando normalmente. Nada de ignoreAllLogs.
+// O 403 de um tile de satélite (token/plano sem direito à imagem naquele domínio
+// — ver globeConfig.js) não tem o que fazer a respeito em tempo de execução, e no
+// dev nativo viraria caixa vermelha do LogBox a cada tile. UM padrão, que exige a
+// URL do imagery — do Mapbox ou da Stadia — E o 403 juntos: todo o resto do app
+// continua reportando normalmente. Nada de ignoreAllLogs.
 //
 // No web isto é inofensivo e não faz nada: o LogBox do react-native-web é um stub
 // vazio. Quem cala o erro lá é o filtro no `map.on('error')` do GlobeMap.web.js —
