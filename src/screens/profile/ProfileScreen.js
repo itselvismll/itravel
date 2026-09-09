@@ -22,13 +22,10 @@ import { getCurrentUser, signOut, getVisitedCountries, supabase } from '../../se
 import { getWishlist } from '../../services/socialService';
 import { getProfile } from '../../services/profileService';
 import { deletePhoto, getAllUserPhotos, getPhotoCommentCounts } from '../../services/photoService';
-import {
-  getAlpha2,
-  getStampRotation,
-  getCountryNamePtByCode,
-} from '../../utils/countryUtils';
+import { getCountryNamePtByCode } from '../../utils/countryUtils';
 import StarRating from '../../components/StarRating';
 import CountryFlag from '../../components/CountryFlag';
+import CountryGridSection from '../../components/profile/CountryGridSection';
 import { useUpload } from '../../context/UploadContext';
 import { getLevelInfo } from '../../utils/travelerLevels';
 import { confirm, notify } from '../../utils/dialogs';
@@ -310,101 +307,27 @@ export default function ProfileScreen({ navigation }) {
       </View>
 
       {/* Passaporte */}
-      <View style={styles.card}>
-        <View style={styles.cardTitleRow}>
-          <Ionicons name="book-outline" size={14} color="#999" />
-          <Text style={styles.cardTitle}>PASSAPORTE</Text>
-        </View>
-        {visitedCountries.length === 0 ? (
-          <View style={styles.emptyPassport}>
-            <Text style={{ fontSize: 32 }}>🧳</Text>
-            <Text style={styles.emptyPassportText}>
-              Seus carimbos aparecem aqui conforme você visita novos países
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.stampsGrid}>
-            {visitedCountries.map((country, index) => {
-              const rotations = [-4, 3, -3, 4];
-              const rotation = rotations[index % 4];
-              return (
-                <View
-                  key={country.country_code}
-                  style={[styles.travelTag, { transform: [{ rotate: `${rotation}deg` }] }]}
-                >
-                  <View style={styles.tagHole} />
-                  <View style={styles.tagCountryMark}>
-                    <CountryFlag
-                      countryCode={country.country_code}
-                      width={24}
-                      height={16}
-                      borderRadius={2}
-                    />
-                    <Text style={styles.tagCountryCode}>
-                      {getAlpha2(country.country_code).toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={styles.tagDivider} />
-                  <View style={styles.tagFooter}>
-                    <Text style={styles.tagName} numberOfLines={1}>
-                      {getCountryNamePtByCode(
-                        country.country_code,
-                        country.country_name
-                      ).toUpperCase()}
-                    </Text>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        )}
-      </View>
+      <CountryGridSection
+        countries={visitedCountries}
+        title="Passaporte"
+        icon="book-outline"
+        emptyState={{
+          icon: '🧳',
+          text: 'Seus carimbos aparecem aqui conforme você visita novos países',
+        }}
+      />
 
       {/* Wishlist */}
       {wishlist.length > 0 && (
-        <View style={styles.card}>
-          <View style={styles.cardTitleRow}>
-            <Ionicons name="heart-outline" size={14} color="#00D1C1" />
-            <Text style={[styles.cardTitle, { color: '#00D1C1' }]}>QUERO VISITAR</Text>
-          </View>
-          <View style={styles.stampsGrid}>
-            {wishlist.map((item, index) => {
-              const rotations = [-4, 3, -3, 4];
-              const rotation = rotations[index % 4];
-              return (
-                <View
-                  key={item.id}
-                  style={[styles.travelTag, { transform: [{ rotate: `${rotation}deg` }] }]}
-                >
-                  <View style={[styles.tagHole, { backgroundColor: '#00D1C1', borderColor: '#00A89C' }]} />
-                  <View style={styles.tagCountryMark}>
-                    <CountryFlag
-                      countryCode={item.country_code}
-                      width={24}
-                      height={16}
-                      borderRadius={2}
-                    />
-                    <Text style={[styles.tagCountryCode, { color: '#00A89C' }]}>
-                      {getAlpha2(item.country_code).toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={styles.tagDivider} />
-                  <View style={styles.tagFooter}>
-                    <Text style={styles.tagName} numberOfLines={1}>
-                      {getCountryNamePtByCode(
-                        item.country_code,
-                        item.country_name
-                      ).toUpperCase()}
-                    </Text>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        </View>
+        <CountryGridSection
+          countries={wishlist}
+          title="Quero visitar"
+          icon="heart-outline"
+          accentColor="#00D1C1"
+          accentBorderColor="#00A89C"
+        />
       )}
 
-      {/* Botão compartilhar passaporte */}
       <TouchableOpacity
         style={styles.tripPlansBtn}
         onPress={() => navigation.navigate('SavedTrips')}
@@ -419,6 +342,7 @@ export default function ProfileScreen({ navigation }) {
         <Ionicons name="chevron-forward" size={20} color="#8D95B4" />
       </TouchableOpacity>
 
+      {/* Botão compartilhar passaporte */}
       <TouchableOpacity style={styles.shareBtn} onPress={() => setPassportShareVisible(true)}>
         <Ionicons name="share-social-outline" size={18} color="white" />
         <Text style={styles.shareBtnText}>Compartilhar meu passaporte</Text>
@@ -763,76 +687,6 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   progressLabel: { fontSize: 11, color: '#aaa' },
-  stampsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingVertical: 8, justifyContent: 'flex-start' },
-  travelTag: {
-    width: 104,
-    height: 58,
-    backgroundColor: '#F3ECDC',
-    borderRadius: 10,
-    ...Platform.select({
-      web: { boxShadow: '2px 3px 4px rgba(0,0,0,0.25)' },
-      default: {
-        shadowColor: '#000',
-        shadowOffset: { width: 2, height: 3 },
-        shadowOpacity: 0.25,
-        shadowRadius: 4,
-        elevation: 4,
-      },
-    }),
-    overflow: 'hidden',
-  },
-  tagHole: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#0D1326',
-    borderWidth: 1,
-    borderColor: '#A0906C',
-    zIndex: 2,
-  },
-  tagCountryMark: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  tagCountryCode: {
-    color: '#D97706',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  tagDivider: {
-    position: 'absolute',
-    bottom: 18,
-    left: 8,
-    right: 8,
-    borderBottomWidth: 1,
-    borderColor: '#C8BFA5',
-    borderStyle: 'dashed',
-  },
-  tagFooter: {
-    position: 'absolute',
-    bottom: 5,
-    left: 8,
-    right: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  tagName: {
-    fontWeight: '700',
-    fontSize: 9,
-    color: '#46371E',
-    flex: 1,
-  },
-  emptyPassport: { alignItems: 'center', paddingVertical: 20, gap: 10 },
-  emptyPassportText: { fontSize: 12, color: '#bbb', textAlign: 'center', lineHeight: 18 },
   publicationsGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'stretch', gap: 12 },
   publicationCard: { width: '48%', minWidth: 156, flexGrow: 1, maxWidth: 430, borderRadius: 14, overflow: 'hidden', backgroundColor: '#171D36', position: 'relative' },
   publicationImage: { width: '100%', aspectRatio: 4 / 3, backgroundColor: '#252B42' },

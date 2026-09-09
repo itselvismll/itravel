@@ -1,4 +1,5 @@
-// Mapa principal do app: globo 3D (MapLibre GL + Stadia Alidade Satellite).
+// Mapa principal do app: globo 3D (MapLibre GL, vetorial da Stadia Alidade
+// Satellite com a imagem de satélite do Mapbox).
 //
 // Substituiu o mapa Leaflet ao fim da migração. Tem projeção globe, satélite,
 // rótulos em português, atmosfera, fundo estrelado, badges progressivos por
@@ -23,11 +24,14 @@ import GlobeMap from '../../components/map/GlobeMap';
 import NativeGlobe from '../../components/map/NativeGlobe.dom';
 import CountryBadgeMarkers from '../../components/map/CountryBadgeMarkers';
 import CountryFillLayer from '../../components/map/CountryFillLayer';
+import PlanRouteLayer from '../../components/map/PlanRouteLayer';
+import PlanDayTabs from '../../components/map/PlanDayTabs';
 import CountryDetailModal from '../../components/map/CountryDetailModal';
 import CountryFlag from '../../components/CountryFlag';
 import GuidedFirstCountryCard from '../../components/onboarding/GuidedFirstCountryCard';
 import FirstCountryCelebration from '../../components/onboarding/FirstCountryCelebration';
 import { useOnboarding } from '../../context/OnboardingContext';
+import { useActivePlan } from '../../context/ActivePlanContext';
 import { TAB_BAR_CLEARANCE } from '../../utils/tabBarLayout';
 import useGlobeCountries from '../../components/map/useGlobeCountries';
 import {
@@ -35,6 +39,7 @@ import {
   COUNTRY_SEARCH_DEBOUNCE_MS,
   MIN_COUNTRY_QUERY_LENGTH,
 } from '../../utils/geoSearch';
+import { planDays } from '../../components/map/planRoute';
 
 // Denominador de partida do pill, usado só enquanto o GeoJSON não chegou. Assim
 // que `countries` carrega, o total passa a ser o tamanho real da lista — é o
@@ -75,6 +80,23 @@ export default function GlobeScreen({ navigation }) {
   const [nativeMapError, setNativeMapError] = useState(null);
 
   const handleMapReady = useCallback((instance) => setMap(instance), []);
+
+  // Roteiro aplicado no globo. Sem nenhum ativo, `points` é vazio e a camada não
+  // cria layer nenhuma — o globo fica só com países visitados e wishlist. O
+  // controle de aplicar/remover mora na tela de roteiros salvos, não aqui: o
+  // globo não ganha botão nem card sobreposto.
+  const { points: planPoints, activePlanId } = useActivePlan();
+
+  // Dia em foco no roteiro; `null` mostra a viagem inteira, que é como ela abre.
+  const [selectedDay, setSelectedDay] = useState(null);
+  const planDayList = useMemo(() => planDays(planPoints), [planPoints]);
+
+  // Trocar de roteiro volta para "Todos": o dia 3 do roteiro anterior não quer
+  // dizer nada no novo, e pior — se o novo tiver dois dias, o filtro esconderia
+  // o roteiro inteiro e o globo pareceria vazio.
+  useEffect(() => {
+    setSelectedDay(null);
+  }, [activePlanId]);
 
   const visitedCount = visited.size;
   const totalCountries = countries.length || TOTAL_COUNTRIES;
@@ -218,6 +240,12 @@ export default function GlobeScreen({ navigation }) {
             wishlist={wishlist}
             onSelectCountry={handleSelectByCode}
           />
+          <PlanRouteLayer
+            map={map}
+            points={planPoints}
+            planId={activePlanId}
+            selectedDay={selectedDay}
+          />
           <CountryBadgeMarkers map={map} countries={countries} onSelect={openCountry} />
         </View>
       ) : isFocused ? (
@@ -313,6 +341,17 @@ export default function GlobeScreen({ navigation }) {
           barra de gestos.
           O contador é o número real de visitados sobre o total de países que o
           globo desenha. */}
+      {isWeb ? (
+        <PlanDayTabs
+          days={planDayList}
+          selectedDay={selectedDay}
+          onSelect={setSelectedDay}
+          // Acima do pill de países visitados, que ocupa o canto inferior
+          // direito. O topo é da barra de IA e da busca.
+          style={{ bottom: TAB_BAR_CLEARANCE + insets.bottom + PLAN_TABS_LIFT }}
+        />
+      ) : null}
+
       <View
         style={[styles.visitedPill, { bottom: TAB_BAR_CLEARANCE + insets.bottom }]}
         accessibilityRole="text"
@@ -375,6 +414,10 @@ const glass = {
   borderWidth: 1,
   borderColor: 'rgba(108,43,217,0.4)',
 };
+
+// Altura do pill de países visitados mais uma folga, para as abas de dia
+// ficarem em cima dele em vez de disputarem o mesmo canto.
+const PLAN_TABS_LIFT = 52;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#05070F' },

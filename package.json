@@ -10,12 +10,14 @@
     "postinstall": "node scripts/copy-maplibre-worker.cjs",
     "check": "node scripts/verify-source.cjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/source-invariants.test.cjs tests/badge-collision.test.cjs tests/globe-badges.test.cjs tests/globe-zoom-filter.test.cjs tests/country-fill.test.cjs tests/uk-nations.test.cjs tests/country-anchors.test.cjs tests/username.test.cjs"
+    "test": "node --test tests/source-invariants.test.cjs tests/badge-collision.test.cjs tests/globe-badges.test.cjs tests/globe-zoom-filter.test.cjs tests/country-fill.test.cjs tests/uk-nations.test.cjs tests/country-anchors.test.cjs tests/username.test.cjs tests/country-grid.test.cjs tests/plan-geography.test.cjs tests/plan-route.test.cjs tests/plan-routing.test.cjs tests/plan-isochrone.test.cjs tests/globe-satellite-errors.test.cjs"
   },
   "dependencies": {
     "@expo-google-fonts/poppins": "^0.4.1",
     "@expo/metro-runtime": "~55.0.12",
     "@expo/vector-icons": "^15.0.2",
+    "@hcaptcha/react-hcaptcha": "^2.2.0",
+    "@hcaptcha/react-native-hcaptcha": "^4.1.0",
     "@react-navigation/bottom-tabs": "^7.16.1",
     "@react-navigation/native": "^7.2.4",
     "@react-navigation/native-stack": "^7.15.1",
@@ -36,6 +38,7 @@
     "expo-web-browser": "~55.0.19",
     "html-to-image": "^1.11.13",
     "maplibre-gl": "^6.3.0",
+    "prop-types": "^15.8.1",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-native": "0.83.10",

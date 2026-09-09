@@ -119,9 +119,28 @@ test('web dialogs have browser implementations', () => {
 test('email-confirmation signup creates profiles through a database trigger', () => {
   const authService = read('src/services/supabase.js');
   const migration = read('supabase/migrations/20260721120000_create_profiles_on_signup.sql');
-  assert.match(authService, /options:\s*\{\s*data:/);
+  assert.match(authService, /options:\s*\{[\s\S]*?data:\s*\{/);
   assert.match(migration, /after insert on auth\.users/);
   assert.match(migration, /security definer/);
+});
+
+test('email/password auth sends an hCaptcha token to Supabase', () => {
+  const authService = read('src/services/supabase.js');
+  assert.match(authService, /signInWithPassword\(\{[\s\S]*?options:\s*\{\s*captchaToken\s*\}/);
+  assert.match(authService, /signUp\(\{[\s\S]*?captchaToken,/);
+
+  // Um widget por plataforma: inline na web, WebView em modal no nativo.
+  assert.match(read('src/components/auth/HCaptchaWidget.web.js'), /@hcaptcha\/react-hcaptcha/);
+  assert.match(read('src/components/auth/HCaptchaWidget.js'), /@hcaptcha\/react-native-hcaptcha/);
+  assert.match(read('src/utils/constants.js'), /EXPO_PUBLIC_HCAPTCHA_SITE_KEY/);
+
+  // Token e de uso unico: submit bloqueado sem ele e widget resetado no erro.
+  for (const screen of ['src/screens/auth/LoginScreen.js', 'src/screens/auth/RegisterScreen.js']) {
+    const source = read(screen);
+    assert.match(source, /const submitDisabled = loading \|\| \(HCAPTCHA_ENABLED && !captchaToken\);/);
+    assert.match(source, /captchaRef\.current\?\.reset\(\);/);
+    assert.match(source, /disabled=\{submitDisabled\}/);
+  }
 });
 
 test('legacy users are backfilled before comments reference profiles', () => {
@@ -293,7 +312,17 @@ test('Google login uses Supabase OAuth and Expo browser callbacks', () => {
   assert.match(auth, /window\.history\.replaceState/);
   assert.match(auth, /API_CONFIG\.WEB_APP_URL/);
   assert.doesNotMatch(auth, /isLocalDevelopment/);
-  assert.match(auth, /Platform\.OS === 'web'\) return API_CONFIG\.WEB_APP_URL/);
+  assert.match(auth, /window\.location\?\.origin[\s\S]*?:\s*API_CONFIG\.WEB_APP_URL/);
+
+  // O code do PKCE e de uso unico: quem o troca por sessao e o detectSessionInUrl
+  // do client, e mais ninguem. Uma segunda troca manual aqui fazia as duas
+  // competirem pelo mesmo code e derrubava o login com Google.
+  const webCallback = auth.slice(
+    auth.indexOf('export async function completeWebOAuthSession'),
+    auth.indexOf('const getPasswordRecoveryRedirectUrl')
+  );
+  assert.match(auth, /detectSessionInUrl: true/);
+  assert.doesNotMatch(stripComments(webCallback), /exchangeCodeForSession/);
   assert.match(login, /signInWithGoogle/);
   assert.match(app, /"scheme": "journi"/);
   assert.match(app, /"expo-web-browser"/);
@@ -312,7 +341,14 @@ test('client source is free of console calls and centralizes remote flag images'
   visit(sourceRoot);
   const source = files.map(file => stripComments(fs.readFileSync(file, 'utf8'))).join('\n');
   const countryFlag = read('src/components/CountryFlag.js');
-  assert.doesNotMatch(source, /console\.(log|debug|info|warn|error)\s*\(/);
+  const filesWithConsole = files
+    .filter(file => /console\.(log|debug|info|warn|error)\s*\(/.test(stripComments(fs.readFileSync(file, 'utf8'))))
+    .map(file => path.relative(root, file).split(path.sep).join('/'));
+  assert.deepEqual(filesWithConsole, ['src/navigation/AppNavigator.js']);
+  assert.doesNotMatch(
+    stripComments(read('src/navigation/AppNavigator.js')),
+    /console\.(log|debug|info|warn)\s*\(/
+  );
   assert.match(countryFlag, /https:\/\/flagcdn\.com\//);
   assert.match(countryFlag, /cache: 'force-cache'/);
 
@@ -332,7 +368,15 @@ test('explore, feed, and passport keep their responsive visual treatment', () =>
   assert.match(explore, /<CountryFlag/);
   assert.match(feed, /maxWidth: 760/);
   assert.match(feed, /aspectRatio: 4 \/ 3/);
-  assert.match(profile, /tagCountryMark/);
+  // A etiqueta de bagagem do passaporte saiu do ProfileScreen e virou o
+  // CountryTag, compartilhado com o Quero Visitar, o perfil público e o modal da
+  // lista completa. O que este invariante protege continua o mesmo — o
+  // passaporte não volta a ser uma lista de bandeiras soltas —, só mudou de
+  // arquivo junto com a marcação.
+  const countryTag = read('src/components/profile/CountryTag.js');
+  assert.match(countryTag, /tagCountryMark/);
+  assert.match(countryTag, /<CountryFlag/);
+  assert.match(profile, /<CountryGridSection/);
   assert.match(profile, /<CountryFlag/);
   assert.match(explore, /maxWidth: 1100/);
   assert.match(feed, /countryCode=\{post\.country_code\}/);
@@ -583,6 +627,19 @@ test('map, currencies, and social notifications do not depend on partial provide
   assert.match(globeConfig, /tiles\.stadiamaps\.com\/styles\/\$\{STADIA_STYLE_ID\}\.json/);
   assert.match(globeConfig, /alidade_satellite/);
   assert.doesNotMatch(globeConfig, /openfreemap/i);
+
+  // A FOTO, porém, vem do Mapbox: o plano Stadia Starter não serve satélite fora
+  // de localhost, e em produção cada tile de /data/imagery/ voltava 403 — globo
+  // sem imagem nenhuma. A style continua a da Stadia; só a source `imagery` é
+  // trocada, dentro do loadGlobeStyle.
+  assert.match(globeConfig, /MAPBOX_ORIGIN = .https:\/\/api\.mapbox\.com./);
+  assert.match(globeConfig, /\$\{MAPBOX_ORIGIN\}\/v4\/\$\{MAPBOX_SATELLITE_TILESET\}\/\{z\}\/\{x\}\/\{y\}\.jpg90/);
+  assert.match(globeConfig, /MAPBOX_SATELLITE_TILESET = 'mapbox\.satellite'/);
+  // 256 é o tamanho do tile do endpoint sem @2x. Declarar 512 esticaria a imagem.
+  assert.match(globeConfig, /tileSize: 256/);
+  // A troca acontece ANTES de o mapa nascer: depois do style.load os tiles da
+  // Stadia já teriam saído, e com eles os 403 que a migração veio resolver.
+  assert.match(globeConfig, /copy\.sources\[IMAGERY_SOURCE_ID\] = \{ \.\.\.MAPBOX_SATELLITE_SOURCE \}/);
   assert.match(currency, /@fawazahmed0\/currency-api@latest/);
   assert.match(currency, /world-countries@latest\/dist\/countries\.json/);
   assert.match(currency, /open\.er-api\.com\/v6\/latest/);
@@ -715,10 +772,12 @@ test('the globe fades in from a branded overlay instead of flashing', () => {
   // Erro de tile não pode prender o overlay para sempre.
   assert.match(globeMap, /setReady\(true\)/);
 
-  // Handshake com o provedor de tiles adiantado para o import do módulo.
+  // Handshake com os provedores de tiles adiantado para o import do módulo. São
+  // dois hosts: a style vem da Stadia e a foto de satélite do Mapbox.
   assert.match(config, /rel = 'preconnect'/);
   assert.match(config, /tiles\.stadiamaps\.com/);
-  assert.match(globeMap, /preconnectToStadia\(\)/);
+  assert.match(config, /api\.mapbox\.com/);
+  assert.match(globeMap, /preconnectToTileHosts\(\)/);
 });
 
 test('client source sticks to APIs that exist on react-native-web', () => {
@@ -737,9 +796,13 @@ test('map attribution stays present but starts collapsed', () => {
   const globeMap = stripComments(read('src/components/map/GlobeMap.web.js'));
   const onboardingGlobe = stripComments(read('src/components/onboarding/OnboardingGlobe.web.js'));
 
-  // O crédito da Stadia/OSM é exigência de licença: ele não pode sumir, só
-  // começar fechado.
+  // O crédito da Stadia/OSM/Mapbox é exigência de licença: ele não pode sumir, só
+  // começar fechado. Trocado o provedor da imagem, o crédito dela troca junto —
+  // creditar a Airbus por uma foto do Mapbox seria atribuição errada.
   assert.match(config, /SATELLITE_IMAGERY_ATTRIBUTION/);
+  const attribution = config.split('export const SATELLITE_IMAGERY_ATTRIBUTION')[1] ?? '';
+  assert.match(attribution, /mapbox\.com/);
+  assert.match(attribution, /maxar\.com/);
   for (const source of [globeMap, onboardingGlobe]) {
     assert.match(source, /new AttributionControl\(\{\s*compact: true/);
     assert.match(source, /customAttribution: SATELLITE_IMAGERY_ATTRIBUTION/);
@@ -804,4 +867,62 @@ test('mobile performance safeguards keep heavy content bounded', () => {
   assert.match(nativeGlobe, /performanceMode/);
   assert.match(globeMap, /pixelRatio: performanceMode \? 1 : undefined/);
   assert.match(globeMap, /maxTileCacheSize: performanceMode \? 48 : null/);
+});
+
+test('the itinerary layer is optional, isolated and drawn by GL layers', () => {
+  const globe = stripComments(read('src/screens/map/GlobeScreen.js'));
+  const layer = stripComments(read('src/components/map/PlanRouteLayer.web.js'));
+  const route = stripComments(read('src/components/map/planRoute.js'));
+
+  assert.match(globe, /<PlanRouteLayer\s+map=\{map\}\s+points=\{planPoints\}\s+planId=\{activePlanId\}/);
+  assert.match(globe, /useActivePlan\(\)/);
+
+  // O controle de aplicar/remover mora na tela de roteiros salvos: o globo nao
+  // ganha botao nem card sobreposto de roteiro.
+  assert.doesNotMatch(globe, /applyToMap|removeFromMap/);
+
+  // Sem roteiro ativo nenhuma layer e criada — o globo fica identico ao de antes
+  // da feature. E o que `hasPoints` guarda nos dois efeitos de montagem.
+  assert.match(layer, /const hasPoints = Boolean\(points\?\.length\)/);
+  assert.match(layer, /if \(!map \|\| !hasPoints\) return undefined;/);
+  assert.match(layer, /detachPlanRouteLayers\(map\)/);
+
+  // O modulo puro conversa com o mapa so por metodos publicos: nada de importar
+  // maplibre-gl, senao ele deixa de rodar no teste sem browser.
+  assert.doesNotMatch(route, /from 'maplibre-gl'/);
+
+  // Roteiro trocado repinta os dados; nada de recriar layer a cada aplicacao.
+  assert.match(layer, /updatePlanRouteData\(map, data\)/);
+
+  // Enquadramento pelo conjunto dos pontos, com flyTo so no roteiro de um ponto.
+  assert.match(layer, /map\.fitBounds\(bounds/);
+  assert.match(layer, /map\.flyTo\(\{ center: \[west, south\]/);
+});
+
+test('only one itinerary can be applied to the globe at a time', () => {
+  const migration = read('supabase/migrations/20260901120000_travel_plans_active_on_map.sql');
+  const service = stripComments(read('src/services/activePlanService.js'));
+  const screen = stripComments(read('src/screens/assistant/SavedTripsScreen.js'));
+
+  // Quem garante "um por usuario" e o banco, nao a UI.
+  assert.match(migration, /create unique index if not exists travel_plans_one_active_on_map_idx/);
+  assert.match(migration, /where is_active_on_map/);
+  // A troca e atomica: com duas instrucoes separadas o indice unico rejeitaria o
+  // instante com dois roteiros ativos.
+  assert.match(migration, /create or replace function public\.set_active_plan_on_map/);
+  assert.match(migration, /security invoker/);
+  assert.match(migration, /set search_path = ''/);
+  assert.match(migration, /user_id = auth\.uid\(\)/);
+
+  // Roteiro local_only tambem pode ser aplicado, pelo localStorage — e as duas
+  // origens sao exclusivas entre si.
+  assert.match(service, /journi\.activePlanOnMap/);
+  assert.match(service, /isLocalPlanId/);
+  assert.match(service, /setRemoteActivePlan\(null\)/);
+
+  // O marcador visual e o toggle vivem na tela de roteiros salvos.
+  assert.match(screen, /Aplicar no mapa/);
+  assert.match(screen, /Remover do mapa/);
+  assert.match(screen, /Ativo no mapa/);
+  assert.match(screen, /plan\.id === activePlanId/);
 });

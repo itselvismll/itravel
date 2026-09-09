@@ -66,10 +66,11 @@ const executeAssistantRequest = async (payload) => {
   }
 };
 
-export const generateTravelPlan = async ({ planRequest, userContext }) => {
-  return invokeAssistant({ action: 'generate_plan', planRequest, userContext });
-};
+export const generateTravelPlan = ({ planRequest, userContext }) =>
+  invokeAssistant({ action: 'generate_plan', planRequest, userContext });
 
+// Duas telas podem pedir o mesmo roteiro ao mesmo tempo (retry do usuário, remount).
+// A chave é o payload inteiro, então só pedidos idênticos compartilham a chamada em voo.
 const invokeAssistant = (payload) => {
   const requestKey = JSON.stringify(payload);
   const activeRequest = activeAssistantRequests.get(requestKey);

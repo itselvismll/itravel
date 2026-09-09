@@ -47,6 +47,33 @@ export const OUTLINE_WIDTH = 1.2;
 export const VISITED_OUTLINE_OPACITY = 0.9;
 export const WISHLIST_OUTLINE_OPACITY = 0.75;
 
+// Contorno BASE, de todo país — inclusive o não marcado.
+//
+// Antes o fallback era opacidade 0: quem não tinha marcação dependia só da
+// fronteira do basemap, que é uma linha preta tracejada (`boundary_country` da
+// alidade_satellite, `line-color: #000`). Preto sobre satélite escuro no zoom
+// inicial do globo é invisível na prática, e o efeito era um continente inteiro
+// virando uma mancha cinza única — a África, com poucos países marcados, era o
+// caso mais gritante.
+//
+// Branco e não a cor do fill: o país sem marcação não tem estado nenhum para
+// comunicar, e reaproveitar roxo ou branco-de-wishlist aqui inventaria um
+// terceiro significado. O branco a 0,32 lê como "borda do mapa", não como
+// marcação — é a linha do desenho, não um status.
+//
+// A hierarquia é mantida por DOIS canais somados, não só pela opacidade: 0,32
+// contra 0,75/0,9 na opacidade, e 0,7 contra 1,2 na largura. Somado a isso, o
+// país marcado tem FILL e o não marcado não tem — é esse o sinal dominante. Um
+// país marcado continua saltando; o não marcado apenas deixa de sumir.
+//
+// Os números saíram de comparação visual no globo real (zoom 1.4, África, que é
+// onde o problema aparecia): 0,22 ainda sumia sobre a selva do Congo, e 0,45
+// acendia um halo branco em toda linha de costa, porque o contorno do polígono
+// segue o litoral também.
+export const BASE_OUTLINE_COLOR = COLORS.white;
+export const BASE_OUTLINE_OPACITY = 0.32;
+export const BASE_OUTLINE_WIDTH = 0.7;
+
 const codeList = (codes) => [...(codes ?? [])].filter(Boolean).sort();
 
 /**
@@ -85,10 +112,27 @@ export const fillOpacityExpression = (visited, wishlist) =>
   classify(visited, wishlist, VISITED_FILL_OPACITY, WISHLIST_FILL_OPACITY, 0);
 
 export const outlineColorExpression = (visited, wishlist) =>
-  classify(visited, wishlist, VISITED_FILL_COLOR, WISHLIST_FILL_COLOR, TRANSPARENT);
+  classify(visited, wishlist, VISITED_FILL_COLOR, WISHLIST_FILL_COLOR, BASE_OUTLINE_COLOR);
 
 export const outlineOpacityExpression = (visited, wishlist) =>
-  classify(visited, wishlist, VISITED_OUTLINE_OPACITY, WISHLIST_OUTLINE_OPACITY, 0);
+  classify(
+    visited,
+    wishlist,
+    VISITED_OUTLINE_OPACITY,
+    WISHLIST_OUTLINE_OPACITY,
+    BASE_OUTLINE_OPACITY
+  );
+
+/**
+ * Largura do contorno, também por estado.
+ *
+ * É o segundo canal da hierarquia: se só a opacidade separasse o país marcado do
+ * não marcado, subir a base até ela ficar visível no globo inteiro começaria a
+ * competir com a marcação. Com a largura entrando junto, a base pode ser fina e
+ * discreta e ainda assim desenhar a fronteira.
+ */
+export const outlineWidthExpression = (visited, wishlist) =>
+  classify(visited, wishlist, OUTLINE_WIDTH, OUTLINE_WIDTH, BASE_OUTLINE_WIDTH);
 
 /**
  * Normaliza o GeoJSON do mundo para o que a fill layer precisa.
@@ -205,7 +249,7 @@ export const attachCountryLayers = (map, { data, visited, wishlist }) => {
         paint: {
           'line-color': outlineColorExpression(visited, wishlist),
           'line-opacity': outlineOpacityExpression(visited, wishlist),
-          'line-width': OUTLINE_WIDTH,
+          'line-width': outlineWidthExpression(visited, wishlist),
         },
       },
       beforeId
@@ -245,6 +289,13 @@ export const repaintCountryLayers = (map, { visited, wishlist }) => {
       COUNTRY_OUTLINE_LAYER_ID,
       'line-opacity',
       outlineOpacityExpression(visited, wishlist)
+    );
+    // A largura entrou na hierarquia junto com a cor, então ela também é
+    // repintada: sem isto, desmarcar um país deixaria a linha grossa para trás.
+    map.setPaintProperty(
+      COUNTRY_OUTLINE_LAYER_ID,
+      'line-width',
+      outlineWidthExpression(visited, wishlist)
     );
   }
 

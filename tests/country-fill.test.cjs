@@ -31,6 +31,15 @@ const {
   detachCountryLayers,
   fillColorExpression,
   fillOpacityExpression,
+  outlineColorExpression,
+  outlineOpacityExpression,
+  outlineWidthExpression,
+  BASE_OUTLINE_COLOR,
+  BASE_OUTLINE_OPACITY,
+  BASE_OUTLINE_WIDTH,
+  VISITED_OUTLINE_OPACITY,
+  WISHLIST_OUTLINE_OPACITY,
+  OUTLINE_WIDTH,
   findFirstSymbolLayerId,
   isStyleReady,
   repaintCountryLayers,
@@ -72,6 +81,12 @@ const colorOf = (code, visited, wishlist) =>
   evaluate(fillColorExpression(visited, wishlist), { alpha3: code });
 const opacityOf = (code, visited, wishlist) =>
   evaluate(fillOpacityExpression(visited, wishlist), { alpha3: code });
+const outlineOpacityOf = (code, visited, wishlist) =>
+  evaluate(outlineOpacityExpression(visited, wishlist), { alpha3: code });
+const outlineColorOf = (code, visited, wishlist) =>
+  evaluate(outlineColorExpression(visited, wishlist), { alpha3: code });
+const outlineWidthOf = (code, visited, wishlist) =>
+  evaluate(outlineWidthExpression(visited, wishlist), { alpha3: code });
 
 test('cada feature sai com um alpha3 só, venha o código de onde vier', () => {
   const data = buildCountryFillData({
@@ -148,6 +163,56 @@ test('a opacidade deixa o satélite aparecer por baixo', () => {
     WISHLIST_FILL_OPACITY > VISITED_FILL_OPACITY,
     'o branco da wishlist precisa de mais opacidade que o roxo para ser visível'
   );
+});
+
+test('todo país ganha contorno, inclusive o que não tem marcação', () => {
+  // A regressão que este teste tranca: o fallback do contorno era opacidade 0 e
+  // cor transparente, então o país sem marcação dependia só da fronteira do
+  // basemap — preta e tracejada, invisível sobre o satélite escuro no zoom
+  // inicial do globo. Continentes com poucas marcações (a África era o caso
+  // gritante) viravam uma massa única, sem separação entre países.
+  const visited = new Set(['BRA']);
+  const wishlist = new Set(['JPN']);
+
+  assert.ok(
+    outlineOpacityOf('AGO', visited, wishlist) > 0,
+    'país sem marcação ficou sem contorno próprio'
+  );
+  assert.equal(outlineOpacityOf('AGO', visited, wishlist), BASE_OUTLINE_OPACITY);
+  assert.equal(outlineColorOf('AGO', visited, wishlist), BASE_OUTLINE_COLOR);
+  assert.equal(outlineWidthOf('AGO', visited, wishlist), BASE_OUTLINE_WIDTH);
+
+  // Branco, e não a cor de um dos estados: o país não marcado não tem estado
+  // para comunicar, e pegar o roxo ou o branco-de-wishlist emprestado aqui
+  // inventaria um terceiro significado no mesmo canal visual.
+  assert.equal(BASE_OUTLINE_COLOR, '#FFFFFF');
+});
+
+test('o contorno base não compete com o do país marcado', () => {
+  // O contorno base existe para desenhar a fronteira, não para marcar. Os dois
+  // canais têm de manter a hierarquia SEPARADAMENTE: se um deles invertesse, o
+  // país sem marcação passaria a chamar tanta atenção quanto o marcado.
+  for (const marked of [VISITED_OUTLINE_OPACITY, WISHLIST_OUTLINE_OPACITY]) {
+    assert.ok(
+      BASE_OUTLINE_OPACITY < marked,
+      `contorno base (${BASE_OUTLINE_OPACITY}) não pode chegar ao do marcado (${marked})`
+    );
+  }
+  assert.ok(BASE_OUTLINE_WIDTH < OUTLINE_WIDTH, 'o contorno base tem de ser mais fino');
+
+  // E precisa continuar VISÍVEL: o ponto todo da correção é não voltar ao zero.
+  // A faixa foi calibrada no globo real — abaixo de ~0,25 some sobre a selva do
+  // Congo, acima de ~0,4 acende um halo branco em toda linha de costa.
+  assert.ok(
+    BASE_OUTLINE_OPACITY >= 0.25 && BASE_OUTLINE_OPACITY <= 0.4,
+    `opacidade base fora da faixa calibrada: ${BASE_OUTLINE_OPACITY}`
+  );
+
+  // O país marcado continua com a largura cheia, nos dois estados.
+  const visited = new Set(['BRA']);
+  const wishlist = new Set(['JPN']);
+  assert.equal(outlineWidthOf('BRA', visited, wishlist), OUTLINE_WIDTH);
+  assert.equal(outlineWidthOf('JPN', visited, wishlist), OUTLINE_WIDTH);
 });
 
 test('visitado vence wishlist quando o país está nas duas listas', () => {
@@ -367,6 +432,13 @@ test('marcar um país repinta sem reenviar a geometria', () => {
   const paint = map.getLayer(COUNTRY_FILL_LAYER_ID).paint;
   assert.equal(evaluate(paint['fill-color'], { alpha3: 'BRA' }), VISITED_FILL_COLOR);
   assert.equal(evaluate(paint['fill-opacity'], { alpha3: 'BRA' }), VISITED_FILL_OPACITY);
+
+  // A largura entrou na hierarquia junto com a cor, então ela também é
+  // repintada — senão desmarcar um país deixaria a linha grossa para trás.
+  const outline = map.getLayer(COUNTRY_OUTLINE_LAYER_ID).paint;
+  assert.equal(evaluate(outline['line-width'], { alpha3: 'BRA' }), OUTLINE_WIDTH);
+  assert.equal(evaluate(outline['line-width'], { alpha3: 'AGO' }), BASE_OUTLINE_WIDTH);
+  assert.equal(evaluate(outline['line-opacity'], { alpha3: 'AGO' }), BASE_OUTLINE_OPACITY);
 
   // Nada de setData nem addSource: a geometria já está no worker.
   for (const [kind] of map.calls) assert.equal(kind, 'setPaintProperty');

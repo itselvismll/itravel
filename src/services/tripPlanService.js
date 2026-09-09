@@ -1,4 +1,14 @@
 import { supabase } from './supabase';
+import { ensurePlanCoordinates } from '../utils/planGeography';
+
+// Roteiros salvos antes de a Edge Function passar a garantir coordenada/categoria/ordem
+// são normalizados na leitura, sem rede — o suficiente para o globo não receber um plano
+// com campos ausentes. O que estiver faltando é preenchido na próxima geração.
+const normalizeStoredPlan = async (record) => (
+  record?.plan_data?.days?.length
+    ? { ...record, plan_data: await ensurePlanCoordinates(record.plan_data) }
+    : record
+);
 
 const LOCAL_STORAGE_KEY = 'journi.localTravelPlans';
 let memoryPlans = [];
@@ -75,7 +85,11 @@ export const saveTripPlan = async ({ planId, request, plan }) => {
 export const getSavedTripPlans = async () => {
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) {
-    return { success: true, data: readLocalPlans(), warning: 'Exibindo roteiros locais.' };
+    return {
+      success: true,
+      data: await Promise.all(readLocalPlans().map(normalizeStoredPlan)),
+      warning: 'Exibindo roteiros locais.',
+    };
   }
 
   const { data, error } = await supabase
@@ -88,7 +102,7 @@ export const getSavedTripPlans = async () => {
   const localPlans = readLocalPlans();
   return {
     success: true,
-    data: [...localPlans, ...remotePlans],
+    data: await Promise.all([...localPlans, ...remotePlans].map(normalizeStoredPlan)),
     warning: error?.message,
   };
 };

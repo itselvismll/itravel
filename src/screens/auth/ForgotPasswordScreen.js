@@ -1,15 +1,23 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { requestPasswordReset } from '../../services/supabase';
 import { notify } from '../../utils/dialogs';
+import HCaptchaWidget from '../../components/auth/HCaptchaWidget';
+import { HCAPTCHA_ENABLED, HCAPTCHA_ERROR_MESSAGE } from '../../components/auth/hcaptchaConfig';
 
 export default function ForgotPasswordScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState(/** @type {string | null} */ (null));
+  const captchaRef = useRef(/** @type {{ reset: () => void, markUsed: () => void } | null} */ (null));
+
+  // Sem site key configurada o desafio não aparece, então não travamos o
+  // formulário — o Supabase continua recusando pelo lado do servidor.
+  const submitDisabled = loading || (HCAPTCHA_ENABLED && !captchaToken);
 
   const handleSubmit = async () => {
     const normalizedEmail = email.trim().toLowerCase();
@@ -19,14 +27,24 @@ export default function ForgotPasswordScreen({ navigation }) {
     }
 
     setLoading(true);
-    const result = await requestPasswordReset(normalizedEmail);
+    const result = await requestPasswordReset(normalizedEmail, captchaToken ?? undefined);
     setLoading(false);
 
     if (!result.success) {
-      notify('Não foi possível enviar', result.error || 'Tente novamente em alguns minutos.');
+      // Token do hCaptcha é de uso único: queimado na tentativa, recarrega.
+      captchaRef.current?.reset();
+      setCaptchaToken(null);
+      notify(
+        'Não foi possível enviar',
+        /captcha/i.test(result.error || '')
+          ? HCAPTCHA_ERROR_MESSAGE
+          : result.error || 'Tente novamente em alguns minutos.'
+      );
       return;
     }
 
+    captchaRef.current?.markUsed();
+    setCaptchaToken(null);
     setSent(true);
   };
 
@@ -56,7 +74,15 @@ export default function ForgotPasswordScreen({ navigation }) {
               autoCapitalize="none"
               autoCorrect={false}
             />
-            <TouchableOpacity style={styles.primary} onPress={handleSubmit} disabled={loading}>
+            {/* Verificação anti-bot (hCaptcha) */}
+            <HCaptchaWidget
+              ref={captchaRef}
+              theme="dark"
+              onVerify={setCaptchaToken}
+              onError={() => notify('Verificação de segurança', HCAPTCHA_ERROR_MESSAGE)}
+            />
+
+            <TouchableOpacity style={styles.primary} onPress={handleSubmit} disabled={submitDisabled}>
               {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Enviar link</Text>}
             </TouchableOpacity>
           </>
