@@ -114,27 +114,35 @@ test('os documentos trazem controlador, idade mínima, base legal e foro', () =>
   assert.match(termos, /leis da República Federativa do Brasil/i);
 });
 
-test('os marcadores pendentes são visíveis e consistentes nos dois documentos', () => {
-  // Nome do responsável e e-mail de contato ainda não foram definidos. Enquanto
-  // os marcadores existirem, o documento está publicável mas NÃO é conforme —
-  // este teste garante que eles fiquem visíveis em vez de virar texto solto.
-  const pendentes = ['[NOME COMPLETO DO RESPONSÁVEL]', '[E-MAIL DE CONTATO]'];
+test('nenhum marcador pendente sobrou nos documentos', () => {
+  // Os dois documentos nasceram com `[NOME COMPLETO DO RESPONSÁVEL]` e
+  // `[E-MAIL DE CONTATO]` como marcadores destacados, porque os valores ainda não
+  // existiam. Enquanto houvesse um marcador, o documento era publicável mas NÃO
+  // conforme: sem controlador identificado e sem canal de contato, a LGPD art. 18
+  // não é atendida e um revisor de loja pode barrar.
+  for (const doc of DOCS) {
+    const html = read(doc);
+    assert.doesNotMatch(html, /\[NOME COMPLETO DO RESPONSÁVEL\]/, `${doc}: marcador de nome`);
+    assert.doesNotMatch(html, /\[E-MAIL DE CONTATO\]/, `${doc}: marcador de e-mail`);
+    // O destaque visual saiu junto com os marcadores; se a classe reaparecer, é
+    // porque alguém trouxe um marcador de volta.
+    assert.doesNotMatch(html, /class="pendente"/, `${doc}: sobrou destaque de pendência`);
+  }
+});
+
+test('controlador e canal de contato estão identificados nos dois documentos', () => {
+  const CONTROLADOR = 'Elvis Misael Leite de Lima';
+  const CONTATO = 'suporte.journi@gmail.com';
 
   for (const doc of DOCS) {
     const html = read(doc);
-    for (const marcador of pendentes) {
-      if (!html.includes(marcador)) continue;
-      // Todo marcador precisa estar dentro de um destaque visual — comparação
-      // por string, sem regex, para não depender de escapar os colchetes.
-      assert.ok(
-        html.includes(`<span class="pendente">${marcador}</span>`),
-        `${doc}: o marcador ${marcador} não está dentro de <span class="pendente">`
-      );
-    }
-  }
-
-  // E os dois documentos precisam citar o mesmo contato.
-  for (const doc of DOCS) {
-    assert.match(read(doc), /\[E-MAIL DE CONTATO\]/, `${doc} sem canal de contato`);
+    assert.ok(html.includes(CONTROLADOR), `${doc}: controlador não identificado`);
+    assert.ok(html.includes(CONTATO), `${doc}: sem canal de contato`);
+    // Clicável: é um canal de exercício de direitos, e quem abre no celular
+    // espera tocar e escrever em vez de copiar à mão.
+    assert.ok(
+      html.includes(`<a href="mailto:${CONTATO}">`),
+      `${doc}: o e-mail não é um link mailto`
+    );
   }
 });
