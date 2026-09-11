@@ -1,6 +1,12 @@
 [functions.travel-assistant]
 verify_jwt = true
 
+# Chamada pelo pg_cron via pg_net, que não carrega JWT de usuário. A autorização
+# é o segredo compartilhado no header `x-purge-secret`, conferido dentro da
+# função — ver supabase/functions/purge-accounts/index.ts.
+[functions.purge-accounts]
+verify_jwt = false
+
 [auth]
 site_url = "https://journi.expo.app"
 additional_redirect_urls = [

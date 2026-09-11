@@ -13,6 +13,8 @@ import { COLORS } from '../utils/constants';
 import { TAB_BAR_HEIGHT, TAB_BAR_BOTTOM } from '../utils/tabBarLayout';
 import { completeWebOAuthSession, getCurrentUser, supabase } from '../services/supabase';
 import { useUpload } from '../context/UploadContext';
+import { cancelAccountDeletion } from '../services/profileService';
+import { notify } from '../utils/dialogs';
 import { navigationRef } from './navigationRef';
 import GlobalNotificationBanner from '../components/GlobalNotificationBanner';
 import ScreenErrorBoundary from '../components/ScreenErrorBoundary';
@@ -332,12 +334,33 @@ export default function AppNavigator() {
       setLoading(false);
     };
 
+    // `cancel_account_deletion` devolve false quando não havia exclusão pendente,
+    // então chamar sempre resolve o caso comum e o de reativação com uma ida só
+    // ao banco — ler o perfil antes, só para decidir se vale chamar, seria uma
+    // consulta a mais em todo login.
+    const reactivateIfPending = async () => {
+      const reativou = await cancelAccountDeletion();
+      if (reativou) {
+        notify(
+          'Sua conta está sendo reativada',
+          'Que bom que você voltou. Seu perfil, suas fotos e seu histórico continuam como estavam.'
+        );
+      }
+    };
+
     checkUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true);
       if (session?.user) {
         setUser(session.user);
+        // Reativação: entrar de novo dentro da carência desfaz a exclusão.
+        //
+        // O gancho vive AQUI, e não no LoginScreen, porque este é o único ponto
+        // por onde passam os três caminhos de entrada — e-mail, Google e
+        // restauração de sessão. Só no LoginScreen, quem entrasse pelo Google
+        // continuaria com a conta marcada para apagar.
+        if (event === 'SIGNED_IN') reactivateIfPending();
       } else {
         setUser(null);
       }

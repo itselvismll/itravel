@@ -155,3 +155,49 @@ export const checkUsernameAvailable = async (username, excludingUserId = null) =
   if (error) return false;
   return data === true;
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Exclusão de conta
+//
+// O pedido não apaga nada: marca `profiles.deletion_requested_at` e a conta
+// entra numa carência de 5 dias, invisível para terceiros (ver as policies em
+// 20260911140000_account_deletion.sql). Quem logar dentro do prazo reverte tudo;
+// quem não logar tem os dados apagados por um job diário.
+//
+// Toda a regra vive no banco, em funções `security definer`. Estas duas são só a
+// porta de entrada — o cliente não decide prazo nem o que é apagado.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Quantos dias a pessoa tem para se arrepender. Espelha
+ *  `account_deletion_grace_period()` no banco; usado só para texto de tela. */
+export const ACCOUNT_DELETION_GRACE_DAYS = 5;
+
+/**
+ * Pede a exclusão. Idempotente: pedir de novo não reinicia a contagem.
+ *
+ * Quem chama precisa deslogar em seguida — a conta fica invisível, e continuar
+ * na sessão mostraria um app pela metade.
+ *
+ * @returns {Promise<{ success: boolean, requestedAt?: string, error?: string }>}
+ */
+export const requestAccountDeletion = async () => {
+  const { data, error } = await supabase.rpc('request_account_deletion');
+  if (error) return { success: false, error: error.message };
+  return { success: true, requestedAt: data };
+};
+
+/**
+ * Reverte a exclusão, se houver uma pendente.
+ *
+ * Chamada em TODO login, sem checar antes se há pedido: a função devolve `false`
+ * quando não havia nada para cancelar, então uma ida ao banco resolve o caso
+ * comum e o caso de reativação com a mesma chamada. Ler o perfil antes só para
+ * decidir se vale chamar seria uma consulta a mais em todo login.
+ *
+ * @returns {Promise<boolean>} true quando uma exclusão pendente foi cancelada
+ */
+export const cancelAccountDeletion = async () => {
+  const { data, error } = await supabase.rpc('cancel_account_deletion');
+  if (error) return false;
+  return data === true;
+};

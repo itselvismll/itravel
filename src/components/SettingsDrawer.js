@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import LegalSheet from './LegalSheet';
 
 const APP_VERSION = '1.0.0';
 const DRAWER_WIDTH = Math.min(320, Math.round(Dimensions.get('window').width * 0.84));
@@ -41,6 +42,10 @@ export default function SettingsDrawer({
   onSupport,
   onLogout,
 }) {
+  // A folha legal e' irma do drawer, nao filha: um Modal dentro de outro Modal
+  // nao empilha de forma confiavel no iOS.
+  const [legalVisible, setLegalVisible] = useState(false);
+
   const translateX = useRef(new Animated.Value(DRAWER_WIDTH)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
 
@@ -141,7 +146,16 @@ export default function SettingsDrawer({
                 iconColor="#00D1C1"
                 onPress={onSupport}
               />
-              {/* Espaço reservado para novos itens (notificações, privacidade, idioma...) */}
+              {/* Abre a LegalSheet, e não uma URL direto: são DOIS documentos com
+                  nomes próprios, e um item só do menu precisa dar acesso aos dois.
+                  A mesma folha vai receber "Excluir minha conta". */}
+              <DrawerItem
+                icon="shield-checkmark-outline"
+                label="Política e Privacidade"
+                iconColor="#A78BFA"
+                onPress={() => setLegalVisible(true)}
+              />
+              {/* Espaço reservado para novos itens (notificações, idioma...) */}
             </View>
 
             <View style={styles.divider} />
@@ -156,6 +170,8 @@ export default function SettingsDrawer({
           </ScrollView>
         </Animated.View>
       </View>
+
+      <LegalSheet visible={legalVisible} onClose={() => setLegalVisible(false)} />
     </Modal>
   );
 }
