@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getCurrentUser, signOut, getVisitedCountries, supabase } from '../../services/supabase';
 import { getWishlist } from '../../services/socialService';
 import { getProfile } from '../../services/profileService';
+import { normalizeBio } from '../../utils/bio';
 import { deletePhoto, getAllUserPhotos, getPhotoCommentCounts } from '../../services/photoService';
 import { getCountryNamePtByCode } from '../../utils/countryUtils';
 import StarRating from '../../components/StarRating';
@@ -28,9 +29,13 @@ import CountryFlag from '../../components/CountryFlag';
 import CountryGridSection from '../../components/profile/CountryGridSection';
 import { useUpload } from '../../context/UploadContext';
 import { getLevelInfo } from '../../utils/travelerLevels';
+import TravelerLevelCard from '../../components/profile/TravelerLevelCard';
 import { confirm, notify } from '../../utils/dialogs';
+import useTabBarContentPadding from '../../hooks/useTabBarContentPadding';
 
 export default function ProfileScreen({ navigation }) {
+  // Folga para o fim do perfil não terminar atrás da tab bar flutuante.
+  const tabBarPadding = useTabBarContentPadding();
   const [profile, setProfile] = useState(null);
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [visitedCountries, setVisitedCountries] = useState([]);
@@ -141,7 +146,6 @@ export default function ProfileScreen({ navigation }) {
   const displayName = profile?.display_name || profile?.username || '?';
   const initials = profile?.display_name?.[0]?.toUpperCase() || '?';
   const levelInfo = getLevelInfo(visitedCountries.length);
-  const countriesToNext = levelInfo.next ? levelInfo.next.minCountries - visitedCountries.length : 0;
   const visitedCountryCodes = visitedCountries.map(c => c.country_code);
 
   const sharePassportExternally = async () => {
@@ -206,7 +210,11 @@ export default function ProfileScreen({ navigation }) {
 
   return (
     <View style={{ flex: 1 }}>
-    <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={{ paddingBottom: tabBarPadding }}
+      showsVerticalScrollIndicator={false}
+    >
 
       {/* Header escuro */}
       <View style={styles.header}>
@@ -254,6 +262,14 @@ export default function ProfileScreen({ navigation }) {
         {profile?.username && (
           <Text style={styles.username}>@{profile.username}</Text>
         )}
+        {/* A bio é opcional: sem texto, nada ocupa o lugar.
+
+            `normalizeBio` na EXIBIÇÃO é defensivo: bios gravadas antes da regra
+            de compactar quebras podem ter dez linhas em branco no banco e
+            abririam o vão vertical aqui. O texto antigo continua lá; a tela só
+            não o reproduz. Na próxima vez que o dono editar e salvar, o valor
+            gravado também é normalizado. */}
+        {profile?.bio ? <Text style={styles.bio}>{normalizeBio(profile.bio)}</Text> : null}
 
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
@@ -285,25 +301,15 @@ export default function ProfileScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Card de nível */}
+      {/* Card de nível. O conteúdo mora em TravelerLevelCard, compartilhado com
+          o perfil público — antes cada tela desenhava o seu, com listas de nível
+          que não batiam. */}
       <View style={styles.card}>
-        <View style={styles.levelRow}>
-          <Text style={styles.levelIcon}>{levelInfo.current.icon}</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.levelName}>{levelInfo.current.name}</Text>
-            <Text style={styles.levelCountText}>
-              {visitedCountries.length} {visitedCountries.length === 1 ? 'país visitado' : 'países visitados'}
-            </Text>
-          </View>
-        </View>
-        <View style={styles.progressBar}>
-          <View style={[styles.progressFill, { width: `${Math.round(levelInfo.progress * 100)}%` }]} />
-        </View>
-        <Text style={styles.progressLabel}>
-          {levelInfo.next
-            ? `Faltam ${countriesToNext} ${countriesToNext === 1 ? 'país' : 'países'} para ${levelInfo.next.icon} ${levelInfo.next.name}`
-            : 'Nível máximo atingido! 👑'}
-        </Text>
+        <TravelerLevelCard
+          countryCount={visitedCountries.length}
+          levelInfo={levelInfo}
+          light
+        />
       </View>
 
       {/* Passaporte */}
@@ -430,7 +436,6 @@ export default function ProfileScreen({ navigation }) {
       )}
 
       {/* Editar perfil, ajuda e sair agora vivem no SettingsDrawer (ícone de engrenagem no topo) */}
-      <View style={{ height: 32 }} />
 
     </ScrollView>
 
@@ -626,6 +631,36 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     letterSpacing: 0.2,
   },
+  // Sem numberOfLines: a bio aceita quebra de linha e o texto precisa aparecer
+  // inteiro, com as quebras que a pessoa escreveu. O limite de 160 caracteres já
+  // impede que isso empurre a tela.
+  bio: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: 'rgba(255,255,255,0.78)',
+    marginTop: 10,
+    textAlign: 'center',
+    paddingHorizontal: 24,
+
+    // ESTA LINHA É A CORREÇÃO DO VAZAMENTO, e ela não é decorativa.
+    //
+    // O `styles.header` que envolve isto tem `alignItems: 'center'`. Em
+    // flexbox, isso é `align-self: center` em cada filho — e um filho centrado
+    // é dimensionado pelo CONTEÚDO, não pela largura do pai. Com texto normal
+    // ninguém percebe, porque o conteúdo cabe; com uma sequência sem espaço
+    // ("aaaa…"), a largura de conteúdo é a da linha inteira e o Text cresce para
+    // fora do card, esticando horizontalmente em vez de quebrar.
+    //
+    // `stretch` devolve a largura do pai ao filho, e aí a quebra volta a
+    // acontecer — no espaço quando há espaço, e no meio da palavra quando não
+    // há. O `textAlign: 'center'` acima é o que mantém a aparência centralizada:
+    // quem centraliza passa a ser o TEXTO dentro da caixa, e não a caixa dentro
+    // do pai.
+    alignSelf: 'stretch',
+    // Cinto e suspensório: mesmo que alguém troque o alinhamento do pai, a bio
+    // não passa da largura disponível.
+    maxWidth: '100%',
+  },
   statsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 16 },
   statItem: { alignItems: 'center', paddingHorizontal: 20, paddingVertical: 4 },
   statVal: { fontSize: 20, fontWeight: '700', color: '#6C2BD9' },
@@ -670,23 +705,9 @@ const styles = StyleSheet.create({
   },
   emptyFav: { alignItems: 'center', paddingVertical: 20, gap: 8 },
   emptyFavText: { fontSize: 13, color: '#bbb' },
-  levelRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
-  levelIcon: { fontSize: 32 },
-  levelName: { fontSize: 18, fontWeight: '700', color: '#0D1326' },
-  levelCountText: { fontSize: 12, color: '#999', marginTop: 2 },
-  progressBar: {
-    height: 6,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginBottom: 6,
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#6C2BD9',
-    borderRadius: 3,
-  },
-  progressLabel: { fontSize: 11, color: '#aaa' },
+  // Os estilos de nível e de progresso saíram daqui: medalha, barra, trilha e
+  // rodapé agora moram em components/profile/TravelerLevelCard, compartilhado
+  // com o perfil público.
   publicationsGrid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'stretch', gap: 12 },
   publicationCard: { width: '48%', minWidth: 156, flexGrow: 1, maxWidth: 430, borderRadius: 14, overflow: 'hidden', backgroundColor: '#171D36', position: 'relative' },
   publicationImage: { width: '100%', aspectRatio: 4 / 3, backgroundColor: '#252B42' },

@@ -17,6 +17,7 @@ import {
   COUNTRY_SEARCH_DEBOUNCE_MS,
 } from '../../utils/geoSearch';
 import { followUser, unfollowUser, getFollowing, getUsersToDiscover } from '../../services/followService';
+import useTabBarContentPadding from '../../hooks/useTabBarContentPadding';
 import { searchTravelers, getSuggestedTravelers, addToWishlist, removeFromWishlist, isInWishlist } from '../../services/socialService';
 import { deletePhoto } from '../../services/photoService';
 import StarRating from '../../components/StarRating';
@@ -59,6 +60,10 @@ const getSeasonalBoost = countryCode => {
 };
 
 export default function ExploreScreen({ navigation }) {
+  // A tab bar flutua SOBRE a lista e não reserva espaço no layout: sem esta
+  // folga o botão "Seguir" dos últimos usuários nasce atrás dela, invisível e
+  // sem receber toque.
+  const tabBarPadding = useTabBarContentPadding();
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [allCountries, setAllCountries] = useState([]);
@@ -378,7 +383,11 @@ export default function ExploreScreen({ navigation }) {
       </View>
 
       {/* CONTEÚDO SCROLLÁVEL */}
-      <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.body}
+        contentContainerStyle={{ paddingBottom: tabBarPadding }}
+        showsVerticalScrollIndicator={false}
+      >
         {loading ? (
           <ActivityIndicator color="#6C2BD9" style={{ marginTop: 40 }} />
         ) : (
@@ -551,7 +560,6 @@ export default function ExploreScreen({ navigation }) {
               })}
             </View>
             )}
-            <View style={{ height: 20 }} />
           </>
         )}
       </ScrollView>

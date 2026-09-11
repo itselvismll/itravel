@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../../components/Avatar';
-import { getCurrentUser, supabase } from '../../services/supabase';
+import { getCurrentUser } from '../../services/supabase';
 import { getConversationMessages, markConversationRead, sendMessage } from '../../services/messageService';
+import { openPostgresChangesChannel } from '../../services/realtimeChannel';
 
 export default function ConversationScreen({ route, navigation }) {
   const { conversationId, profile } = route.params || {};
@@ -25,29 +26,32 @@ export default function ConversationScreen({ route, navigation }) {
   useEffect(() => {
     if (!conversationId || conversationId.startsWith('local-conversation-')) return undefined;
 
-    const channel = supabase
-      .channel(`conversation-${conversationId}`)
-      .on(
-        'postgres_changes',
+    // Este efeito se re-inscreve sozinho em uso normal: `userId` chega depois do
+    // primeiro render (vem do load()), e a troca de null para o id roda a
+    // limpeza e o efeito no mesmo commit — o mesmo encontro que apagava o Feed.
+    // Ver o cabeçalho de services/realtimeChannel.js.
+    return openPostgresChangesChannel({
+      topic: `conversation-${conversationId}`,
+      listeners: [
         {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `conversation_id=eq.${conversationId}`,
+          filter: {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          handler: payload => {
+            const incoming = payload.new;
+            setMessages(current => (
+              current.some(message => message.id === incoming.id)
+                ? current
+                : [...current, incoming]
+            ));
+            if (incoming.sender_id !== userId) markConversationRead(conversationId);
+          },
         },
-        payload => {
-          const incoming = payload.new;
-          setMessages(current => (
-            current.some(message => message.id === incoming.id)
-              ? current
-              : [...current, incoming]
-          ));
-          if (incoming.sender_id !== userId) markConversationRead(conversationId);
-        }
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+      ],
+    });
   }, [conversationId, userId]);
 
   const submit = async () => {

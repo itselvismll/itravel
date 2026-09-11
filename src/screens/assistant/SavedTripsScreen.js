@@ -12,8 +12,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { deleteTripPlan, getSavedTripPlans } from '../../services/tripPlanService';
 import { confirm, notify } from '../../utils/dialogs';
 import { useActivePlan } from '../../context/ActivePlanContext';
+import useTabBarContentPadding from '../../hooks/useTabBarContentPadding';
 
 export default function SavedTripsScreen({ navigation }) {
+  // Dentro do ProfileStack, sob as tabs: a barra cobriria o último roteiro.
+  const tabBarPadding = useTabBarContentPadding();
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -99,7 +102,10 @@ export default function SavedTripsScreen({ navigation }) {
           </TouchableOpacity>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={[styles.content, { paddingBottom: tabBarPadding }]}
+          showsVerticalScrollIndicator={false}
+        >
           {plans.map(plan => {
             const request = plan.request_data || {};
             const days = plan.plan_data?.days?.length || 0;

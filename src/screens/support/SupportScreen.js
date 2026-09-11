@@ -14,10 +14,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { getCurrentUser } from '../../services/supabase';
 import { createSupportTicket, SUPPORT_CATEGORIES } from '../../services/supportService';
+import useTabBarContentPadding from '../../hooks/useTabBarContentPadding';
 
 const validateEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
 export default function SupportScreen({ navigation }) {
+  // Esta tela aparece nos dois fluxos: dentro do ProfileStack (sob as tabs) e no
+  // AuthStack (sem barra). O hook devolve 0 no segundo caso.
+  const tabBarPadding = useTabBarContentPadding();
   const [loadingUser, setLoadingUser] = useState(true);
   const [user, setUser] = useState(null);
   const [email, setEmail] = useState('');
@@ -126,7 +130,12 @@ export default function SupportScreen({ navigation }) {
         </View>
       ) : (
         <ScrollView
-          contentContainerStyle={styles.content}
+          // Só sobrescreve o paddingBottom quando há barra: no AuthStack o hook
+          // devolve 0, e aplicar isso apagaria o respiro do próprio estilo.
+          contentContainerStyle={[
+            styles.content,
+            tabBarPadding > 0 && { paddingBottom: tabBarPadding },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >

@@ -5,7 +5,7 @@
 // e a prioridade na disputa por espaço — nunca a presença do badge.
 //
 // Módulo puro: sem DOM, sem MapLibre, sem react-native.
-import { getAlpha3 } from '../../utils/countryUtils';
+import { getAlpha3, UK_NATION_CODES } from '../../utils/countryUtils';
 import { EXPANDED, COMPACT } from './badgeCollision';
 
 export const VISITED = 'visited';
@@ -71,7 +71,12 @@ export const renderedBadgeMode = (country, mode, options) => {
 };
 
 // As 4 nações do Reino Unido, que o app trata como países independentes.
-export const UK_NATION_CODES = ['GB-ENG', 'GB-SCT', 'GB-WLS', 'GB-NIR'];
+//
+// A lista desceu para utils/countryUtils, porque `toStorableCountryCode` precisa
+// dela para decidir o que é código válido e não pode importar deste módulo (daria
+// ciclo: countryStatus já importa countryUtils). Reexportada aqui para quem já
+// importava daqui continuar funcionando.
+export { UK_NATION_CODES };
 
 /**
  * Quem marcou "Reino Unido" continua com o Reino Unido pintado.
@@ -116,6 +121,26 @@ export const toAlpha3Set = (rows) => {
 };
 
 /**
+ * O status de um país a partir dos conjuntos do usuário.
+ *
+ * Visitado vence wishlist: já foi, então "quero ir" virou histórico. É a mesma
+ * precedência do badge e do território pintado, e mora aqui para os dois
+ * caminhos que montam a lista — o do web, via buildGlobeCountries, e o do
+ * nativo, que recebe as âncoras prontas da WebView e só precisa do status —
+ * não poderem discordar.
+ *
+ * @param {string} code alpha-3
+ * @param {Set<string>} [visited]
+ * @param {Set<string>} [wishlist]
+ * @returns {string} VISITED | WISHLIST | UNMARKED
+ */
+export const statusOf = (code, visited, wishlist) => {
+  if (visited?.has(code)) return VISITED;
+  if (wishlist?.has(code)) return WISHLIST;
+  return UNMARKED;
+};
+
+/**
  * Monta a lista de badges do globo: TODAS as âncoras, cada uma com seu status.
  *
  * Países sem código ISO no GeoJSON (Kosovo, Somalilândia, bases militares…) não
@@ -134,19 +159,12 @@ export const buildGlobeCountries = (anchors, { visited, wishlist, nameOf }) => {
   const visitedCodes = visited ?? new Set();
   const wishlistCodes = wishlist ?? new Set();
 
-  return Object.entries(anchors ?? {}).map(([code, anchor]) => {
-    // Visitado vence wishlist: já foi, então "quero ir" virou histórico.
-    let status = UNMARKED;
-    if (visitedCodes.has(code)) status = VISITED;
-    else if (wishlistCodes.has(code)) status = WISHLIST;
-
-    return {
-      code,
-      name: nameOf(code),
-      lat: anchor.lat,
-      lng: anchor.lng,
-      area: anchor.area,
-      status,
-    };
-  });
+  return Object.entries(anchors ?? {}).map(([code, anchor]) => ({
+    code,
+    name: nameOf(code),
+    lat: anchor.lat,
+    lng: anchor.lng,
+    area: anchor.area,
+    status: statusOf(code, visitedCodes, wishlistCodes),
+  }));
 };

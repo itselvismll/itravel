@@ -18,6 +18,17 @@ import { COLORS } from '../../utils/constants';
 import { getGeoCountryAlpha3 } from '../../utils/geo-country-utils';
 
 export const COUNTRY_SOURCE_ID = 'journi-countries';
+
+// Até que zoom o worker gera tiles novos para esta source.
+//
+// O default do MapLibre é 18, que é a resposta certa para dado de rua e a errada
+// para fronteira de país: acima do zoom 6 a fronteira não ganha detalhe nenhum —
+// a geometria já foi simplificada na origem (ver build-country-geojson.cjs) — e
+// cada nível a mais é só mais tesselação no worker e mais buffers na GPU.
+//
+// A partir daqui o MapLibre reaproveita (overzoom) o tile do nível 6, que é
+// exatamente o que se quer: a mesma linha, esticada, sem trabalho novo.
+export const COUNTRY_SOURCE_MAXZOOM = 6;
 export const COUNTRY_FILL_LAYER_ID = 'journi-country-fill';
 export const COUNTRY_OUTLINE_LAYER_ID = 'journi-country-outline';
 
@@ -220,7 +231,7 @@ export const attachCountryLayers = (map, { data, visited, wishlist }) => {
   if (map.getSource(COUNTRY_SOURCE_ID)) {
     map.getSource(COUNTRY_SOURCE_ID).setData(data);
   } else {
-    map.addSource(COUNTRY_SOURCE_ID, { type: 'geojson', data });
+    map.addSource(COUNTRY_SOURCE_ID, { type: 'geojson', data, maxzoom: COUNTRY_SOURCE_MAXZOOM });
   }
 
   const beforeId = findFirstSymbolLayerId(map.getStyle()?.layers);

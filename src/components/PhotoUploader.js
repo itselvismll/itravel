@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { API_CONFIG, COLORS, SIZES } from '../utils/constants';
 import { uploadPhoto } from '../services/photoService';
-import { getAlpha2, getAlpha3 } from '../utils/countryUtils';
+import { getAlpha2, getAlpha3, toStorableCountryCode } from '../utils/countryUtils';
 import { markCountryAsVisited } from '../services/supabase';
 import {
   searchCities as searchCitiesApi,
@@ -205,10 +205,19 @@ export default function PhotoUploader({
 
     setUploading(true);
 
+    // `toStorableCountryCode` e não `getAlpha3`: getAlpha3 NUNCA falha — a última
+    // linha dela é `return code.toUpperCase()`, então `getAlpha3('XX')` devolve
+    // 'XX'. O fallback `|| selectedCity.countryCode` que existia aqui quase nunca
+    // chegava a rodar; quem gravava alpha-2 na coluna era a própria getAlpha3,
+    // devolvendo o código cru com cara de resposta boa. Era essa a origem da
+    // mistura de alpha-2 e alpha-3 em country_photos.
+    //
+    // Agora as três origens (fluxo do mapa, GPS e seletor de cidade) passam pela
+    // mesma porta, e o que não for reconhecido vira null em vez de virar linha
+    // no banco.
     const uploadCountryCode =
-      effectiveCountryCode ||
-      getAlpha3(selectedCity.countryCode)?.toUpperCase() ||
-      selectedCity.countryCode;
+      toStorableCountryCode(effectiveCountryCode) ||
+      toStorableCountryCode(selectedCity.countryCode);
     const uploadCountryName = effectiveCountryName || selectedCity.country;
 
     if (!uploadCountryCode || !uploadCountryName) {

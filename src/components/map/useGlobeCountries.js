@@ -10,7 +10,7 @@ import { loadWorldCountries } from '../../data/worldGeoData';
 import { getAlpha3, getCountryNamePtByCode } from '../../utils/countryUtils';
 import { getGeoCountryAlpha3, getGeoCountryName } from '../../utils/geo-country-utils';
 import { buildCountryAnchors } from './countryCentroids';
-import { buildGlobeCountries, expandUkNations, toAlpha3Set } from './countryStatus';
+import { buildGlobeCountries, expandUkNations, statusOf, toAlpha3Set } from './countryStatus';
 
 /**
  * Nome em português de cada código, a partir do nome em inglês do GeoJSON.
@@ -37,6 +37,27 @@ const buildNameIndex = (geoData) => {
  * inteiro em pill enquanto visitados e wishlist ainda estão carregando, e os
  * badges promovidos aparecem quando a resposta chega.
  *
+ * DE ONDE VÊM AS ÂNCORAS, E POR QUE ISSO É UMA OPÇÃO
+ *
+ * No web, daqui mesmo: o hook busca o GeoJSON e calcula os centroides.
+ *
+ * No nativo, não. Lá o globo roda dentro de uma WebView (NativeGlobe.dom.js), que
+ * é um contexto de JS separado — o cache de módulo do geoService não atravessa a
+ * ponte. Com `loadGeometry` ligado dos dois lados, o GeoJSON era baixado e
+ * processado DUAS VEZES por sessão, em dois engines diferentes (Hermes e o da
+ * WebView), e o lado React Native pagava os centroides em d3 sem ter o que fazer
+ * com a geometria: ele só precisa da lista de países para a busca e a contagem.
+ *
+ * Então no nativo a tela passa `loadGeometry: false`, a WebView calcula as
+ * âncoras uma vez e devolve pela ponte só `{ code, name, lat, lng, area }` — os
+ * ~238 objetos que interessam, e não os 38 mil vértices que não interessam.
+ * `adoptCountryAnchors` é a porta de entrada dessa lista.
+ *
+ * O STATUS é recalculado deste lado nos dois casos, a partir de `visited` e
+ * `wishlist`, que moram aqui. É o que mantém a marcação instantânea: marcar um
+ * país no modal promove o badge sem uma volta pela ponte nem pelo banco.
+ *
+ * @param {{ loadGeometry?: boolean }} [options]
  * @returns {{
  *   countries: Array<{ code: string, name: string, lat: number, lng: number, area: number, status: string }>,
  *   geoData: { features?: any[] } | null,
@@ -45,12 +66,16 @@ const buildNameIndex = (geoData) => {
  *   user: any,
  *   applyVisitedChange: (code: string, isVisited: boolean) => void,
  *   applyWishlistChange: (code: string, inWishlist: boolean) => void,
+ *   adoptCountryAnchors: (list: Array<{ code: string, name: string, lat: number, lng: number, area: number }>) => void,
  *   loading: boolean,
  *   error: string | null,
  * }}
  */
-export default function useGlobeCountries() {
+export default function useGlobeCountries({ loadGeometry = true } = {}) {
   const [anchors, setAnchors] = useState(null);
+  // Lista pronta vinda de fora (a WebView do nativo). Alternativa a `anchors`,
+  // nunca as duas ao mesmo tempo — ver o comentário do cabeçalho.
+  const [adoptedAnchors, setAdoptedAnchors] = useState(null);
   // O mesmo GeoJSON alimenta duas coisas: as âncoras dos badges e a geometria da
   // fill layer que pinta o território.
   const [geoData, setGeoData] = useState(null);
@@ -60,6 +85,9 @@ export default function useGlobeCountries() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    // No nativo quem carrega o GeoJSON é a WebView, e só ela. Ver o cabeçalho.
+    if (!loadGeometry) return undefined;
+
     let cancelled = false;
 
     loadWorldCountries()
@@ -79,7 +107,7 @@ export default function useGlobeCountries() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadGeometry]);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,14 +137,43 @@ export default function useGlobeCountries() {
     };
   }, []);
 
+  /**
+   * Recebe a lista de âncoras calculada fora daqui (a WebView do nativo).
+   *
+   * Guarda só a parte geográfica; o status é aplicado no `countries` abaixo, com
+   * os conjuntos que vivem deste lado. A lista chega uma vez por sessão, quando o
+   * GeoJSON termina de carregar lá dentro.
+   */
+  const adoptCountryAnchors = useCallback((list) => {
+    const next = Array.isArray(list) && list.length ? list : null;
+
+    setAdoptedAnchors((previous) => {
+      // Segunda trava contra o reenvio pela ponte (a primeira está no
+      // NativeGlobe). Adotar um array novo com o mesmo conteúdo recalcularia
+      // `countries`, e com ele todo o resto que depende dele — de graça.
+      if (previous?.length === next?.length) return previous;
+      return next;
+    });
+  }, []);
+
   const countries = useMemo(() => {
+    // Caminho do nativo: a lista já vem com código, nome e coordenada prontos —
+    // falta só cruzar com as marcações, que é o que muda quando o usuário
+    // marca um país.
+    if (adoptedAnchors) {
+      return adoptedAnchors.map((country) => ({
+        ...country,
+        status: statusOf(country.code, visited, wishlist),
+      }));
+    }
+
     if (!anchors) return [];
 
     const names = buildNameIndex(geoData);
     const nameOf = (code) => getCountryNamePtByCode(code, names.get(code) || code);
 
     return buildGlobeCountries(anchors, { visited, wishlist, nameOf });
-  }, [anchors, geoData, visited, wishlist]);
+  }, [adoptedAnchors, anchors, geoData, visited, wishlist]);
 
   // Marcar um país no modal precisa refletir no globo na hora — território
   // repintado e badge promovido — sem esperar uma nova ida ao banco. O modal
@@ -156,7 +213,10 @@ export default function useGlobeCountries() {
     user,
     applyVisitedChange,
     applyWishlistChange,
-    loading: !anchors && !error,
+    adoptCountryAnchors,
+    // Carregado é ter a lista de países, venha ela de onde vier: das âncoras
+    // calculadas aqui (web) ou das adotadas da WebView (nativo).
+    loading: !anchors && !adoptedAnchors && !error,
     error,
   };
 }

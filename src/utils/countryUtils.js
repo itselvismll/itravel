@@ -142,6 +142,53 @@ export const getCountryNamePtByCode = (code, fallbackName = '') => {
   }
 };
 
+// As 4 nações do Reino Unido, que o app trata como países independentes (têm
+// geometria, bandeira, conquista e badge próprios). NÃO são alpha-3 — são
+// ISO 3166-2, com 6 caracteres — e é por isso que elas precisam ser citadas
+// explicitamente em qualquer regra sobre "código de país válido".
+//
+// A lista canônica é esta. `countryStatus.js` a reexporta para não quebrar quem
+// já importava de lá; um teste garante que as duas não divirjam.
+export const UK_NATION_CODES = ['GB-ENG', 'GB-SCT', 'GB-WLS', 'GB-NIR'];
+
+/**
+ * O código que PODE ser gravado no banco, ou null se não der para identificar.
+ *
+ * POR QUE ISTO EXISTE, E POR QUE `getAlpha3` NÃO BASTA
+ *
+ * `getAlpha3` nunca falha: a última linha dela é `return code.toUpperCase()`, e
+ * por isso `getAlpha3('XX')` devolve `'XX'` — um alpha-2 que não existe, com
+ * cara de resposta boa. Os pontos de escrita confiavam nela e gravavam esse
+ * valor, e foi assim que `country_photos`, `visited_countries` e `wishlist`
+ * acabaram com alpha-2 e alpha-3 misturados na mesma coluna. As leituras do app
+ * compensam isso até hoje (ver countryCodeVariants em socialService e os
+ * `possibleCodes` de photoService), o que manteve o problema invisível.
+ *
+ * Esta função é o oposto: ela SÓ devolve um código que o app reconhece. Se não
+ * reconhecer, devolve null — e quem chama decide o que fazer, em vez de gravar
+ * um valor em formato desconhecido.
+ *
+ * "Reconhecer" é ser um alpha-3 do ALPHA3_TO_ALPHA2 ou uma das nações do Reino
+ * Unido. Checar só o tamanho (`length === 3`) seria errado nos dois sentidos:
+ * deixaria passar 'XYZ', que não é país nenhum, e recusaria 'GB-ENG', que é.
+ *
+ * @param {string | null | undefined} input alpha-2, alpha-3 ou código de nação
+ * @returns {string | null} código pronto para gravar, ou null
+ */
+export const toStorableCountryCode = (input) => {
+  if (typeof input !== 'string') return null;
+
+  const raw = input.trim().toUpperCase();
+  if (!raw) return null;
+
+  if (UK_NATION_CODES.includes(raw)) return raw;
+
+  const alpha3 = getAlpha3(raw);
+  // O `in` é o que separa um alpha-3 de verdade de um palpite que passou pelo
+  // `toUpperCase` final de getAlpha3.
+  return alpha3 && alpha3 in ALPHA3_TO_ALPHA2 ? alpha3 : null;
+};
+
 export const getAlpha3 = (input) => {
   if (!input) return null;
   const code = input.trim();

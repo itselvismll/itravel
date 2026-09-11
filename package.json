@@ -10,7 +10,7 @@
     "postinstall": "node scripts/copy-maplibre-worker.cjs",
     "check": "node scripts/verify-source.cjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/source-invariants.test.cjs tests/badge-collision.test.cjs tests/globe-badges.test.cjs tests/globe-zoom-filter.test.cjs tests/country-fill.test.cjs tests/uk-nations.test.cjs tests/country-anchors.test.cjs tests/username.test.cjs tests/country-grid.test.cjs tests/plan-geography.test.cjs tests/plan-route.test.cjs tests/plan-routing.test.cjs tests/plan-isochrone.test.cjs tests/globe-satellite-errors.test.cjs"
+    "test": "node --test tests/country-code-writes.test.cjs tests/traveler-level-card.test.cjs tests/profile-schema.test.cjs tests/bio.test.cjs tests/travel-requirements.test.cjs tests/realtime-channel.test.cjs tests/source-invariants.test.cjs tests/badge-collision.test.cjs tests/globe-badges.test.cjs tests/globe-zoom-filter.test.cjs tests/country-fill.test.cjs tests/uk-nations.test.cjs tests/country-anchors.test.cjs tests/username.test.cjs tests/country-grid.test.cjs tests/plan-geography.test.cjs tests/plan-route.test.cjs tests/plan-routing.test.cjs tests/plan-isochrone.test.cjs tests/globe-satellite-errors.test.cjs"
   },
   "dependencies": {
     "@expo-google-fonts/poppins": "^0.4.1",
@@ -54,6 +54,7 @@
   "devDependencies": {
     "@types/react": "~19.2.10",
     "babel-preset-expo": "~55.0.24",
+    "mapshaper": "^0.7.61",
     "typescript": "~5.9.2"
   }
 }

@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { API_CONFIG } from '../utils/constants';
-import { getAlpha2, getAlpha3 } from '../utils/countryUtils';
+import { getAlpha2, getAlpha3, toStorableCountryCode } from '../utils/countryUtils';
 import { normalizeUsername } from '../utils/username';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -300,7 +300,21 @@ export async function getVisitedCountries(userId) {
 // Função para marcar país como visitado
 export async function markCountryAsVisited(userId, countryCode, countryName) {
   try {
-    const normalizedCountryCode = getAlpha3(countryCode)?.toUpperCase() || countryCode?.toUpperCase();
+    // Mesma correção do PhotoUploader: `getAlpha3` não falha nunca — ela devolve
+    // o código cru em maiúsculas quando não reconhece —, então o
+    // `|| countryCode?.toUpperCase()` que estava aqui era só a segunda camada de
+    // um problema que já tinha acontecido. Quem gravava alpha-2 em
+    // visited_countries era a própria getAlpha3.
+    //
+    // `toStorableCountryCode` devolve null quando não reconhece, e aí a função
+    // recusa em vez de gravar um formato desconhecido. Códigos de nação do Reino
+    // Unido ('GB-ENG' e irmãos) passam: eles são países para o app, e exigir
+    // alpha-3 aqui quebraria a marcação da Inglaterra.
+    const normalizedCountryCode = toStorableCountryCode(countryCode);
+    if (!normalizedCountryCode) {
+      return { success: false, error: `País não reconhecido: ${countryCode}` };
+    }
+
     const { data, error } = await supabase
       .from('visited_countries')
       .upsert([

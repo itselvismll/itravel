@@ -222,49 +222,36 @@ export default function CountryDetailModal({
                     </View>
                   </View>
 
-                  <TouchableOpacity style={styles.visitedBtn} onPress={toggleVisited}>
-                    <Ionicons
-                      name={isVisited ? 'checkmark-circle' : 'add-circle-outline'}
-                      size={16}
-                      color={isVisited ? '#4ade80' : 'rgba(255,255,255,0.6)'}
-                    />
+                  <TouchableOpacity
+                    style={[styles.actionBtn, isVisited ? styles.actionBtnVisitedOn : styles.actionBtnVisitedOff]}
+                    onPress={toggleVisited}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isVisited }}
+                  >
                     <Text
                       style={[
-                        styles.visitedBtnText,
-                        { color: isVisited ? '#4ade80' : 'rgba(255,255,255,0.6)' },
+                        styles.actionBtnText,
+                        isVisited ? styles.actionBtnTextOnPrimary : styles.actionBtnTextVisited,
                       ]}
                     >
-                      {isVisited ? 'Já visitei ✓' : 'Marcar como visitado'}
+                      {isVisited ? 'Já visitei' : 'Marcar como visitado'}
                     </Text>
                   </TouchableOpacity>
 
                   {!isVisited && (
                     <TouchableOpacity
+                      style={[styles.actionBtn, isWishlisted ? styles.actionBtnWishOn : styles.actionBtnWishOff]}
                       onPress={toggleWishlist}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 8,
-                        marginTop: 12,
-                        paddingVertical: 12,
-                        paddingHorizontal: 20,
-                        borderRadius: 12,
-                        backgroundColor: '#1b1f3a',
-                        borderWidth: 1.5,
-                        borderColor: isWishlisted ? '#FFFFFF' : '#6C2BD9',
-                      }}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: isWishlisted }}
                     >
-                      <Text style={{ fontSize: 16 }}>🗺️</Text>
                       <Text
-                        style={{
-                          fontSize: 14,
-                          fontWeight: '700',
-                          color: isWishlisted ? '#FFFFFF' : '#6C2BD9',
-                          letterSpacing: 0.5,
-                        }}
+                        style={[
+                          styles.actionBtnText,
+                          isWishlisted ? styles.actionBtnTextOnWish : styles.actionBtnTextWish,
+                        ]}
                       >
-                        {isWishlisted ? 'Na wishlist ✓' : 'Quero visitar'}
+                        {isWishlisted ? 'Na wishlist' : 'Quero visitar'}
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -587,22 +574,61 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.4)',
     marginTop: 1,
   },
-  visitedBtn: {
+  // ── Os dois botões de marcação ──────────────────────────────────────────
+  //
+  // "Marcar como visitado" e "Quero visitar" dividem UMA forma só: mesmo
+  // tamanho, mesmo raio, mesmo padding, mesma tipografia, sem ícone nem emoji.
+  // A única coisa que os separa é a cor — roxo para visitado, branco para
+  // wishlist. Antes eles eram dois botões desenhados por caminhos diferentes
+  // (um com estilo nomeado, outro com estilo inline), com ícone, emoji e alturas
+  // diferentes, e liam como dois componentes que não se conheciam.
+  //
+  // A LÓGICA DE ESTADO É A MESMA NOS DOIS, e é o que dá a leitura sem precisar
+  // de "✓" no texto:
+  //   não marcado -> contorno, fundo transparente, texto na cor
+  //   marcado     -> preenchido na cor, texto contrastando com ela
+  actionBtn: {
     marginTop: 10,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 10,
-    paddingVertical: 8,
+    borderRadius: 12,
+    paddingVertical: 12,
     paddingHorizontal: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    borderWidth: 1.5,
     alignSelf: 'stretch',
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  visitedBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
+  actionBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
+
+  // Visitado: roxo. O contorno usa o roxo CLARO, não o #6C2BD9 da marca — sobre
+  // o #0D1326 do header o roxo escuro fica quase ilegível. O #6C2BD9 entra
+  // quando o botão é preenchido, aí com texto branco por cima.
+  actionBtnVisitedOff: {
+    backgroundColor: 'transparent',
+    borderColor: '#A78BFA',
+  },
+  actionBtnVisitedOn: {
+    backgroundColor: '#6C2BD9',
+    borderColor: '#6C2BD9',
+  },
+  actionBtnTextVisited: { color: '#A78BFA' },
+  actionBtnTextOnPrimary: { color: '#FFFFFF' },
+
+  // Wishlist: branco. Neutro de propósito — diferencia do visitado sem disputar
+  // atenção com ele, que é o estado que o app quer comemorar.
+  actionBtnWishOff: {
+    backgroundColor: 'transparent',
+    borderColor: 'rgba(255,255,255,0.65)',
+  },
+  actionBtnWishOn: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FFFFFF',
+  },
+  actionBtnTextWish: { color: '#FFFFFF' },
+  actionBtnTextOnWish: { color: '#0D1326' },
   modalScroll: {
     backgroundColor: '#f0f0f0',
   },

@@ -214,6 +214,15 @@ export default function GlobeMap({
         // mantém a densidade original.
         pixelRatio: performanceMode ? 1 : undefined,
         maxTileCacheSize: performanceMode ? 48 : null,
+        // A style da Stadia tem 26 symbol layers. Com o default de 300ms, cada
+        // uma mantém interpolação de opacidade e re-upload de buffer de símbolo
+        // durante TODO o movimento da câmera — trabalho por quadro pago no
+        // gesto, que é justamente onde não há folga.
+        //
+        // O custo é cosmético e restrito: rótulo que entra em cena aparece de
+        // uma vez em vez de esmaecer. No globo isso quase não se nota, porque o
+        // que mais muda de rótulo é a rotação, e ali eles já entram pela borda.
+        fadeDuration: 0,
         // Desligado aqui para adicionar o controle com a atribuição do provedor.
         attributionControl: false,
       });

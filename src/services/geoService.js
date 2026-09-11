@@ -1,7 +1,21 @@
 import ukNationsGeoData from '../data/geo/uk-nations.json';
 import { getGeoCountryAlpha3 } from '../utils/geo-country-utils';
 
-const GEOJSON_URL = 'https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson';
+// Fronteiras do mundo, servidas pelo próprio app a partir de public/geo.
+//
+// Antes isto apontava para raw.githubusercontent.com. O arquivo de lá tem 14,6 MB
+// (4,4 MB gzip) e 548.472 vértices, e vem com `cache-control: max-age=300` — cinco
+// minutos, ou seja, baixado de novo a cada sessão. A versão simplificada tem
+// 0,64 MB e 38.181 vértices (-93%), e sai do mesmo host do app, com o cache dele.
+//
+// O arquivo é gerado por scripts/build-country-geojson.cjs e versionado no git.
+//
+// O prefixo é o mesmo truque de GlobeMap.web.js: no web `EXPO_BASE_URL` é vazio e
+// a URL resolve na raiz do site; dentro do DOM Component nativo o documento é
+// servido por uma URL interna do Expo, e sem o prefixo o arquivo seria procurado
+// em `file:///geo/...` e não existiria.
+const publicBaseUrl = (process.env.EXPO_BASE_URL || '/').replace(/\/?$/, '/');
+const GEOJSON_URL = `${publicBaseUrl}geo/countries.json`;
 
 let countriesPromise;
 

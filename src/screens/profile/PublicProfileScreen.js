@@ -21,19 +21,19 @@ import { getPhotoCommentCounts } from '../../services/photoService';
 import CountryFlag from '../../components/CountryFlag';
 import CountryGridSection from '../../components/profile/CountryGridSection';
 import Avatar from '../../components/Avatar';
+import { normalizeBio } from '../../utils/bio';
+import { getLevelInfo } from '../../utils/travelerLevels';
+import TravelerLevelCard from '../../components/profile/TravelerLevelCard';
 import StarRating from '../../components/StarRating';
 import { getOrCreateConversation } from '../../services/messageService';
 
-const LEVELS = [
-  { min: 0, max: 2, name: 'Iniciante', emoji: '🌱' },
-  { min: 3, max: 5, name: 'Viajante', emoji: '🧳' },
-  { min: 6, max: 10, name: 'Explorador', emoji: '🧭' },
-  { min: 11, max: 20, name: 'Globetrotter', emoji: '🌍' },
-  { min: 21, max: Number.POSITIVE_INFINITY, name: 'Lenda Viajante', emoji: '👑' },
-];
-
-const getLevel = (count) =>
-  LEVELS.find((level) => count >= level.min && count <= level.max) || LEVELS[0];
+// A lista de níveis que vivia AQUI foi removida.
+//
+// Ela era uma cópia divergente de utils/travelerLevels.js: nesta tela o
+// Explorador começava em 6 países, lá começa em 5 — e o Viajante em 3 contra 2.
+// Resultado: o mesmo usuário com 5 países aparecia como "Explorador" no próprio
+// perfil e como "Viajante" no público. Agora as duas telas leem getLevelInfo, que
+// é a única fonte, e o TravelerLevelCard desenha as duas.
 
 export default function PublicProfileScreen({ route, navigation }) {
   const { userId } = route.params;
@@ -186,7 +186,7 @@ export default function PublicProfileScreen({ route, navigation }) {
     );
   }
 
-  const level = getLevel(visitedCountries.length);
+  const levelInfo = getLevelInfo(visitedCountries.length);
   const isOwnProfile = currentUserId === userId;
 
   return (
@@ -217,6 +217,10 @@ export default function PublicProfileScreen({ route, navigation }) {
           </View>
           <Text style={styles.displayName}>{profile.display_name || profile.username}</Text>
           <Text style={styles.username}>@{profile.username}</Text>
+          {/* Opcional: sem bio, nada ocupa o lugar. O normalizeBio é a mesma
+              defesa do ProfileScreen — bio antiga com muitas linhas em branco
+              não abre vão vertical aqui. */}
+          {profile.bio ? <Text style={styles.bio}>{normalizeBio(profile.bio)}</Text> : null}
 
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
@@ -266,13 +270,10 @@ export default function PublicProfileScreen({ route, navigation }) {
 
         <View style={styles.section}>
           <View style={styles.levelCard}>
-            <Text style={styles.levelEmoji}>{level.emoji}</Text>
-            <View style={styles.levelText}>
-              <Text style={styles.levelName}>{level.name}</Text>
-              <Text style={styles.levelSub}>
-                {visitedCountries.length} países visitados
-              </Text>
-            </View>
+            <TravelerLevelCard
+              countryCount={visitedCountries.length}
+              levelInfo={levelInfo}
+            />
           </View>
         </View>
 
@@ -401,6 +402,23 @@ const styles = StyleSheet.create({
   avatarRingActive: { borderColor: '#6C2BD9' },
   displayName: { fontSize: 20, fontWeight: '700', color: '#F7F7F2', marginBottom: 4 },
   username: { fontSize: 13, color: '#9aa0c6', marginBottom: 16 },
+  // Sem numberOfLines: a bio guarda as quebras de linha que a pessoa escreveu.
+  bio: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#c8cde8',
+    textAlign: 'center',
+    paddingHorizontal: 24,
+    marginTop: -8,
+    marginBottom: 16,
+
+    // Mesma correção do ProfileScreen, e pela mesma razão: o `styles.header`
+    // daqui também tem `alignItems: 'center'`, então sem o `stretch` o Text é
+    // dimensionado pelo conteúdo e uma sequência sem espaço vaza do card em vez
+    // de quebrar. Ver o comentário longo em ProfileScreen.
+    alignSelf: 'stretch',
+    maxWidth: '100%',
+  },
   statsRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 20 },
   statItem: { alignItems: 'center' },
   statValue: { fontSize: 19, fontWeight: '700', color: '#FF9A00' },
@@ -426,20 +444,16 @@ const styles = StyleSheet.create({
     letterSpacing: 1.6,
     marginBottom: 12,
   },
+  // Deixou de ser `flexDirection: 'row'`: era o container do emoji ao lado do
+  // texto. O TravelerLevelCard é um bloco (medalha, barra, trilha, rodapé), e um
+  // container em linha espremeria a trilha numa coluna.
   levelCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
     backgroundColor: '#1b1f3a',
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
   },
-  levelEmoji: { fontSize: 28 },
-  levelText: { flex: 1 },
-  levelName: { fontSize: 15, fontWeight: '700', color: '#F7F7F2' },
-  levelSub: { fontSize: 11, color: '#9aa0c6', marginTop: 2 },
   photoGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

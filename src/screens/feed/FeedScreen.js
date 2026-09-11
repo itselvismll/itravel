@@ -19,6 +19,8 @@ import CountryFlag from '../../components/CountryFlag';
 import ShareToJourniModal from '../../components/ShareToJourniModal';
 import { confirm, notify } from '../../utils/dialogs';
 import { SOCIAL_NOTIFICATION_TYPES, isSocialNotification } from '../../utils/socialNotifications';
+import { openPostgresChangesChannel } from '../../services/realtimeChannel';
+import useTabBarContentPadding from '../../hooks/useTabBarContentPadding';
 
 const timeAgo = (dateStr) => {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -75,6 +77,8 @@ function FeedHeader({ navigation, unreadMessages, unreadNotifications }) {
 }
 
 export default function FeedScreen({ navigation }) {
+  // Folga para o último post não terminar atrás da tab bar flutuante.
+  const tabBarPadding = useTabBarContentPadding();
   const [currentUser, setCurrentUser] = useState(null);
   const [feed, setFeed] = useState([]);
   const [unreadMessages, setUnreadMessages] = useState(0);
@@ -172,17 +176,28 @@ export default function FeedScreen({ navigation }) {
 
   useEffect(() => {
     if (!currentUser?.id) return undefined;
-    const channel = supabase
-      .channel(`feed-header-counts-${currentUser.id}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${currentUser.id}` },
-        payload => {
-          if (isSocialNotification(payload.new)) refreshPendingCounts(currentUser.id);
-        }
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+
+    // A inscrição passa por openPostgresChangesChannel e não por
+    // supabase.channel() direto: voltar para o Feed vindo de outra tela
+    // remonta este componente, e o canal anterior ainda está saindo quando o
+    // efeito novo roda. Ver o cabeçalho de services/realtimeChannel.js — era
+    // esse encontro que derrubava a tela inteira.
+    return openPostgresChangesChannel({
+      topic: `feed-header-counts-${currentUser.id}`,
+      listeners: [
+        {
+          filter: {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${currentUser.id}`,
+          },
+          handler: payload => {
+            if (isSocialNotification(payload.new)) refreshPendingCounts(currentUser.id);
+          },
+        },
+      ],
+    });
   }, [currentUser?.id, refreshPendingCounts]);
 
   const handleLike = async photoId => {
@@ -321,7 +336,7 @@ export default function FeedScreen({ navigation }) {
         <FlatList
           data={feed}
           keyExtractor={post => post.id}
-          contentContainerStyle={styles.body}
+          contentContainerStyle={[styles.body, { paddingBottom: tabBarPadding }]}
           showsVerticalScrollIndicator={false}
           initialNumToRender={4}
           maxToRenderPerBatch={4}
@@ -453,9 +468,14 @@ export default function FeedScreen({ navigation }) {
                 </View>
               );
             }}
+          // A folga da tab bar vive no contentContainerStyle, e não num
+          // ListFooterComponent: como footer, ela desaparecia exatamente quando
+          // `loadingMore` trocava o espaçador pelo spinner — e aí o indicador de
+          // "carregando mais" ficava atrás da barra, no momento em que ele é a
+          // única coisa que o usuário está esperando ver.
           ListFooterComponent={loadingMore ? (
             <ActivityIndicator color="#6C2BD9" style={styles.feedFooterLoader} />
-          ) : <View style={{ height: 96 }} />}
+          ) : null}
         />
       )}
 

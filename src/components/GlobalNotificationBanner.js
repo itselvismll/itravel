@@ -4,6 +4,7 @@ import { navigateFromOutside } from '../navigation/navigationRef';
 import { getRoute, isRouteRegistered } from '../utils/notificationRouting';
 import NotificationBanner from './NotificationBanner';
 import { isSocialNotification } from '../utils/socialNotifications';
+import { openPostgresChangesChannel } from '../services/realtimeChannel';
 
 const VISIBLE_FOR_MS = 2500;
 // Respiro entre um banner e o próximo, para a saída de um não colidir com a entrada do
@@ -54,23 +55,34 @@ export default function GlobalNotificationBanner({ userId, suppressed = false })
       ));
     };
 
-    const channel = supabase
-      .channel(`notifications:${userId}`)
-      .on(
-        'postgres_changes',
+    // Pelo helper, e não por supabase.channel() direto: trocar de conta (ou
+    // sair e entrar) refaz esta inscrição no mesmo tópico enquanto a saída da
+    // anterior ainda está em curso, e aí `channel()` devolveria o canal já
+    // inscrito e o `.on()` lançaria. Ver services/realtimeChannel.js.
+    //
+    // O erro aqui seria pior do que no Feed: este componente é irmão do
+    // NavigationContainer, então a árvore que ele derrubaria é o app inteiro —
+    // e não há boundary de tela que o alcance.
+    const closeChannel = openPostgresChangesChannel({
+      topic: `notifications:${userId}`,
+      listeners: [
         {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${userId}`,
+          filter: {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${userId}`,
+          },
+          handler: (payload) => { enqueue(payload.new); },
         },
-        (payload) => { enqueue(payload.new); }
-      )
-      .subscribe();
+      ],
+    });
 
     return () => {
+      // O `cancelled` continua sendo desta limpeza: ele barra o setQueue de um
+      // enqueue que já estava buscando o perfil do autor quando o efeito caiu.
       cancelled = true;
-      supabase.removeChannel(channel);
+      closeChannel();
     };
   }, [userId]);
 

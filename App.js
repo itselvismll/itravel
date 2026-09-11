@@ -1,6 +1,12 @@
 import React from 'react';
 import { LogBox, View, ActivityIndicator } from 'react-native';
-import { useFonts, Poppins_700Bold, Poppins_400Regular, Poppins_300Light } from '@expo-google-fonts/poppins';
+import {
+  useFonts,
+  Poppins_700Bold,
+  Poppins_600SemiBold,
+  Poppins_400Regular,
+  Poppins_300Light,
+} from '@expo-google-fonts/poppins';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { UploadProvider } from './src/context/UploadContext';
 import { ActivePlanProvider } from './src/context/ActivePlanContext';
@@ -19,7 +25,19 @@ import { SATELLITE_TILE_LOG_PATTERN } from './src/components/map/globeConfig';
 LogBox.ignoreLogs([SATELLITE_TILE_LOG_PATTERN]);
 
 export default function App() {
-  const [fontsLoaded] = useFonts({ Poppins_700Bold, Poppins_400Regular, Poppins_300Light });
+  // Todo peso referenciado em algum `fontFamily` do app precisa estar AQUI.
+  //
+  // Peso que não é carregado não avisa: o RN não acha a família, cai no sistema
+  // sem erro nenhum, e o texto fica com um peso parecido o bastante para passar
+  // despercebido. Foi o que aconteceu com o 600SemiBold, usado em 5 lugares
+  // (badge de país, popup de ponto do roteiro, contador do globo, botão do
+  // ChooseUsername) e ausente desta lista.
+  const [fontsLoaded] = useFonts({
+    Poppins_700Bold,
+    Poppins_600SemiBold,
+    Poppins_400Regular,
+    Poppins_300Light,
+  });
 
   if (!fontsLoaded) {
     return (

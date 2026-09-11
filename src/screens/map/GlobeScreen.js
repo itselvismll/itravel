@@ -59,6 +59,15 @@ export default function GlobeScreen({ navigation }) {
   // (o react-navigation zera o bottom no contexto da tela), então isto some
   // quando a tab bar está presente e volta a valer se a tela for aberta sem ela.
   const insets = useSafeAreaInsets();
+
+  // No web o mapa entrega a instância diretamente para as camadas React. No
+  // nativo, NativeGlobe reconstrói essas camadas em sua WebView e conversa com
+  // esta tela por props serializáveis e ações assíncronas.
+  const isWeb = process.env.EXPO_OS === 'web';
+
+  // A geometria só é carregada aqui no web. No nativo quem faz isso é a WebView
+  // do NativeGlobe, que devolve a lista pronta por `onCountriesResolved` — ver o
+  // cabeçalho de useGlobeCountries.
   const {
     countries,
     geoData,
@@ -67,9 +76,10 @@ export default function GlobeScreen({ navigation }) {
     user,
     applyVisitedChange,
     applyWishlistChange,
+    adoptCountryAnchors,
     loading,
     error,
-  } = useGlobeCountries();
+  } = useGlobeCountries({ loadGeometry: isWeb });
 
   const [selectedCountry, setSelectedCountry] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -223,10 +233,22 @@ export default function GlobeScreen({ navigation }) {
     setNativeMapError(message || 'Não foi possível carregar o globo');
   }, []);
 
-  // No web o mapa entrega a instância diretamente para as camadas React. No
-  // nativo, NativeGlobe reconstrói essas camadas em sua WebView e conversa com
-  // esta tela por props serializáveis e ações assíncronas.
-  const isWeb = process.env.EXPO_OS === 'web';
+  // A lista de países calculada dentro da WebView. Chega uma vez por sessão e
+  // alimenta a busca e o "x de y" — o mesmo papel que, no web, as âncoras
+  // calculadas pelo próprio hook cumprem.
+  const handleNativeCountriesResolved = useCallback(
+    async (list) => {
+      adoptCountryAnchors(list);
+    },
+    [adoptCountryAnchors]
+  );
+
+  // Props do NativeGlobe: referências estáveis, porque TUDO que é passado para um
+  // DOM Component atravessa a ponte serializado a cada render do pai. Um
+  // `[...visited]` escrito no JSX seria um array novo — e uma serialização nova —
+  // a cada tecla digitada na busca ou a cada abertura de modal.
+  const visitedCodes = useMemo(() => [...visited], [visited]);
+  const wishlistCodes = useMemo(() => [...wishlist], [wishlist]);
 
   return (
     <View style={styles.container}>
@@ -251,11 +273,11 @@ export default function GlobeScreen({ navigation }) {
       ) : isFocused ? (
         <View style={styles.mapWrapper}>
           <NativeGlobe
-            countries={countries}
-            visitedCodes={[...visited]}
-            wishlistCodes={[...wishlist]}
+            visitedCodes={visitedCodes}
+            wishlistCodes={wishlistCodes}
             focusCountry={nativeFocusCountry}
             onSelectCountry={handleNativeCountrySelect}
+            onCountriesResolved={handleNativeCountriesResolved}
             onMapFailure={handleNativeMapFailure}
             dom={{
               scrollEnabled: false,

@@ -3,9 +3,10 @@ import { supabase } from './supabase';
 // cadastro. Antes daqui saía um `trim().toLowerCase()` próprio, que não tirava
 // acento nem caractere inválido e deixava passar username que o banco recusava.
 import { normalizeUsername } from '../utils/username';
+import { validateBio } from '../utils/bio';
 
 const sanitizeProfileUpdates = (updates = {}) => {
-  const allowedFields = ['username', 'display_name', 'avatar_url'];
+  const allowedFields = ['username', 'display_name', 'avatar_url', 'bio'];
   const sanitized = Object.fromEntries(
     Object.entries(updates).filter(([key]) => allowedFields.includes(key))
   );
@@ -53,6 +54,16 @@ export const updateProfile = async (userId, updates) => {
     && !sanitizedUpdates.username
   ) {
     return { success: false, error: 'O nome de usuário não pode ficar vazio.' };
+  }
+
+  // A bio é validada AQUI, e não só na tela: link e palavrão são regra do
+  // produto, não detalhe de formulário. Qualquer caminho que chegue ao
+  // updateProfile passa por esta checagem — e o `value` normalizado é o que vai
+  // para o banco (bio vazia vira null).
+  if (Object.hasOwn(sanitizedUpdates, 'bio')) {
+    const bio = validateBio(sanitizedUpdates.bio);
+    if (!bio.valid) return { success: false, error: bio.error };
+    sanitizedUpdates.bio = bio.value;
   }
 
   // Some legacy auth accounts were created before profiles were generated

@@ -41,18 +41,22 @@ const ajaxError = (status, url) => ({
 // Caminho atual da imagem (Mapbox) e o antigo (Stadia): os dois são cobertos,
 // porque a config antiga segue comentada em globeConfig para reverter rápido.
 const MAPBOX_IMAGERY_URL =
-  'https://api.mapbox.com/v4/mapbox.satellite/6/33/24.jpg90?access_token=pk.test';
+  'https://api.mapbox.com/v4/mapbox.satellite/6/33/24@2x.jpg90?access_token=pk.test';
 const IMAGERY_URL = 'https://tiles.stadiamaps.com/data/imagery/6/33/24.jpg?api_key=abc';
 const VECTOR_URL = 'https://tiles.stadiamaps.com/data/openmaptiles/6/33/24.pbf?api_key=abc';
 
-test('a source de satélite aponta para o tileset do Mapbox, com tile de 256', () => {
+test('a source de satélite aponta para o tileset do Mapbox, com tile de 512 (@2x)', () => {
   assert.equal(MAPBOX_SATELLITE_SOURCE.type, 'raster');
   assert.deepEqual(MAPBOX_SATELLITE_SOURCE.tiles, [
-    `https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}.jpg90?access_token=${MAPBOX_TOKEN}`,
+    `https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}@2x.jpg90?access_token=${MAPBOX_TOKEN}`,
   ]);
-  // 256 é o que o endpoint sem @2x devolve; 512 esticaria a imagem e borraria o
-  // globo. O maxzoom é o do tileset — acima do GLOBE_MAX_ZOOM, então nunca falta.
-  assert.equal(MAPBOX_SATELLITE_SOURCE.tileSize, 256);
+  // O `@2x` e o 512 são um par: o @2x é a variante que devolve um tile de 512 de
+  // verdade. Um tile de 512 cobre o mesmo chão que quatro de 256, com ~30% menos
+  // bytes por pixel e — o que importa no gesto — 1/4 das requisições, decodes de
+  // JPEG e uploads de textura. Declarar 512 sem o @2x borraria o globo.
+  //
+  // O maxzoom é o do tileset — acima do GLOBE_MAX_ZOOM, então nunca falta.
+  assert.equal(MAPBOX_SATELLITE_SOURCE.tileSize, 512);
   assert.equal(MAPBOX_SATELLITE_SOURCE.maxzoom, 22);
 });
 

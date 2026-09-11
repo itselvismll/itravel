@@ -72,12 +72,27 @@ const MAPBOX_SATELLITE_TILESET = 'mapbox.satellite';
  * Source raster do satélite do Mapbox (Raster Tiles API).
  * https://docs.mapbox.com/api/maps/raster-tiles/
  *
- * `tileSize: 256` porque é esse o tamanho que o endpoint devolve na variante
- * usada aqui, a sem sufixo de densidade; é a variante com `2x` antes da extensão
- * que dá 512. Declarar 512 aqui faria o MapLibre esticar um tile de 256 no
- * espaço de 512 e o globo sairia borrado; e como o tile de 512 pesa ~2,7× mais
- * (39 KB contra 14 KB, medido no zoom 2), o 256 é também a escolha mais barata
- * para uma esfera que carrega o mundo inteiro.
+ * `@2x` + `tileSize: 512`, e não a variante sem sufixo com 256.
+ *
+ * A comparação "39 KB (512) contra 14 KB (256), medido no zoom 2" que justificava
+ * o 256 aqui media os dois no MESMO zoom — e nesse zoom eles não cobrem a mesma
+ * coisa. Um tile de 512 cobre o mesmo chão que QUATRO tiles de 256 do nível
+ * seguinte. Para a mesma área e a mesma resolução na tela:
+ *
+ *   256 -> 4 requisições x 14 KB = 56 KB
+ *   512 -> 1 requisição  x 39 KB = 39 KB
+ *
+ * Ou seja, por pixel o 512 é ~30% mais BARATO (0,149 B/px contra 0,214 B/px), e
+ * não mais caro. É o esperado: JPEG comprime melhor em área maior, porque o
+ * overhead de cabeçalho e de blocos de borda se dilui.
+ *
+ * O ganho maior nem é o byte: é 4× menos requisições, decodificações de JPEG e
+ * uploads de textura para a GPU — trabalho que acontece durante o movimento da
+ * câmera, que é onde o gesto engasga.
+ *
+ * O `@2x` é o que torna isso possível sem borrar: ele devolve um tile de 512 de
+ * verdade. Declarar 512 na variante sem sufixo é que faria o MapLibre esticar
+ * uma imagem de 256 e o globo sairia borrado.
  *
  * `.jpg90` é JPEG com qualidade 90, o formato mais leve para foto. Tiles que
  * incluem mapbox.satellite voltam como JPEG de qualquer jeito, mesmo se a URL
@@ -92,9 +107,9 @@ export const MAPBOX_SATELLITE_SOURCE = API_CONFIG.MAPBOX_TOKEN
   ? {
       type: 'raster',
       tiles: [
-        `${MAPBOX_ORIGIN}/v4/${MAPBOX_SATELLITE_TILESET}/{z}/{x}/{y}.jpg90?access_token=${API_CONFIG.MAPBOX_TOKEN}`,
+        `${MAPBOX_ORIGIN}/v4/${MAPBOX_SATELLITE_TILESET}/{z}/{x}/{y}@2x.jpg90?access_token=${API_CONFIG.MAPBOX_TOKEN}`,
       ],
-      tileSize: 256,
+      tileSize: 512,
       minzoom: 0,
       maxzoom: 22,
       scheme: 'xyz',

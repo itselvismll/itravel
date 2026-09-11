@@ -344,11 +344,20 @@ test('client source is free of console calls and centralizes remote flag images'
   const filesWithConsole = files
     .filter(file => /console\.(log|debug|info|warn|error)\s*\(/.test(stripComments(fs.readFileSync(file, 'utf8'))))
     .map(file => path.relative(root, file).split(path.sep).join('/'));
-  assert.deepEqual(filesWithConsole, ['src/navigation/AppNavigator.js']);
-  assert.doesNotMatch(
-    stripComments(read('src/navigation/AppNavigator.js')),
-    /console\.(log|debug|info|warn)\s*\(/
-  );
+  // Os ÚNICOS dois arquivos com direito a console — e, nos dois, só `console.error`.
+  //
+  // O ScreenErrorBoundary está aqui porque é a última parada de um erro que já
+  // derrubou uma tela: sem o console, a mensagem de erro morreria com ele e o
+  // que sobraria seria uma tela de "algo deu errado" sem rastro nenhum para
+  // diagnosticar — pior do que a tela em branco que ele veio substituir.
+  const CONSOLE_ALLOWLIST = [
+    'src/components/ScreenErrorBoundary.js',
+    'src/navigation/AppNavigator.js',
+  ];
+  assert.deepEqual(filesWithConsole, CONSOLE_ALLOWLIST);
+  for (const file of CONSOLE_ALLOWLIST) {
+    assert.doesNotMatch(stripComments(read(file)), /console\.(log|debug|info|warn)\s*\(/, file);
+  }
   assert.match(countryFlag, /https:\/\/flagcdn\.com\//);
   assert.match(countryFlag, /cache: 'force-cache'/);
 
@@ -545,7 +554,13 @@ test('in-app notification banner is global, queued, and deep-linked', () => {
   assert.match(banner, /event: 'INSERT'/);
   assert.match(banner, /filter: `user_id=eq\.\$\{userId\}`/);
   assert.match(banner, /\.update\(\{ read: true \}\)/);
-  assert.match(banner, /removeChannel/);
+  // A inscrição é desfeita na limpeza do efeito. O `removeChannel` direto saiu
+  // daqui quando o canal passou a ser aberto por openPostgresChangesChannel
+  // (services/realtimeChannel.js), que devolve a própria função de limpeza — é
+  // ela que precisa ser chamada, junto com o `cancelled` que barra o enqueue em
+  // voo.
+  assert.match(banner, /const closeChannel = openPostgresChangesChannel\(\{/);
+  assert.match(banner, /cancelled = true;\s*\n\s*closeChannel\(\);/);
 
   // Rotas ainda inexistentes (DMs/passaporte) não podem ser navegadas às cegas.
   assert.match(banner, /isRouteRegistered\(route\.name\)/);
@@ -604,7 +619,13 @@ test('result details, exact maps, realtime chat, passport share, and follow-back
   assert.match(result, /query_place_id/);
   assert.match(assistant, /placeId/);
   assert.match(assistant, /'hotel', 5\),/);
-  assert.match(conversation, /postgres_changes/);
+  // O chat continua ouvindo INSERT em `messages` em tempo real. O literal
+  // 'postgres_changes' saiu daqui quando a inscrição passou a ir por
+  // openPostgresChangesChannel (services/realtimeChannel.js) — o que se checa
+  // agora é a inscrição pelo helper e a tabela que ela escuta.
+  assert.match(conversation, /openPostgresChangesChannel\(\{/);
+  assert.match(conversation, /table: 'messages'/);
+  assert.match(conversation, /conversation_id=eq\.\$\{conversationId\}/);
   assert.match(realtime, /supabase_realtime add table public\.messages/);
   assert.match(passport, /<ShareCard/);
   assert.match(profile, /Seguir de volta/);
@@ -633,10 +654,17 @@ test('map, currencies, and social notifications do not depend on partial provide
   // sem imagem nenhuma. A style continua a da Stadia; só a source `imagery` é
   // trocada, dentro do loadGlobeStyle.
   assert.match(globeConfig, /MAPBOX_ORIGIN = .https:\/\/api\.mapbox\.com./);
-  assert.match(globeConfig, /\$\{MAPBOX_ORIGIN\}\/v4\/\$\{MAPBOX_SATELLITE_TILESET\}\/\{z\}\/\{x\}\/\{y\}\.jpg90/);
+  assert.match(
+    globeConfig,
+    /\$\{MAPBOX_ORIGIN\}\/v4\/\$\{MAPBOX_SATELLITE_TILESET\}\/\{z\}\/\{x\}\/\{y\}@2x\.jpg90/
+  );
   assert.match(globeConfig, /MAPBOX_SATELLITE_TILESET = 'mapbox\.satellite'/);
-  // 256 é o tamanho do tile do endpoint sem @2x. Declarar 512 esticaria a imagem.
-  assert.match(globeConfig, /tileSize: 256/);
+  // O `@2x` e o `tileSize: 512` são um PAR, e é isso que este teste trava: o @2x
+  // é a variante do endpoint que devolve um tile de 512 de verdade. Declarar 512
+  // sem o @2x faz o MapLibre esticar uma imagem de 256 e o globo sai borrado;
+  // usar @2x declarando 256 desperdiça metade dos pixels baixados. Mexer em um
+  // sem o outro é o erro que dá para cometer sem perceber.
+  assert.match(globeConfig, /tileSize: 512/);
   // A troca acontece ANTES de o mapa nascer: depois do style.load os tiles da
   // Stadia já teriam saído, e com eles os 403 que a migração veio resolver.
   assert.match(globeConfig, /copy\.sources\[IMAGERY_SOURCE_ID\] = \{ \.\.\.MAPBOX_SATELLITE_SOURCE \}/);
@@ -925,4 +953,124 @@ test('only one itinerary can be applied to the globe at a time', () => {
   assert.match(screen, /Remover do mapa/);
   assert.match(screen, /Ativo no mapa/);
   assert.match(screen, /plan\.id === activePlanId/);
+});
+
+test('todo peso de Poppins usado no app está carregado no useFonts', () => {
+  // Peso ausente do useFonts não dá erro: o React Native não acha a família,
+  // cai na fonte do sistema e o texto sai com um peso parecido o bastante para
+  // ninguém notar. Foi assim que o Poppins_600SemiBold ficou em 5 arquivos sem
+  // nunca ser carregado.
+  const app = read('App.js');
+
+  // Só o que está DENTRO do useFonts({...}) conta. Varrer o arquivo inteiro
+  // deixaria passar o peso que foi importado mas esquecido na chamada — que é
+  // o mesmo bug, só que mais difícil de ver.
+  const useFontsCall = app.match(/useFonts\(\{([\s\S]*?)\}\)/);
+  assert.ok(useFontsCall, 'não achei a chamada de useFonts no App.js');
+  const loaded = new Set(
+    [...useFontsCall[1].matchAll(/\bPoppins_(\w+)\b/g)].map(match => `Poppins_${match[1]}`)
+  );
+
+  const sourceRoot = path.join(root, 'src');
+  const files = [];
+  const visit = (directory) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(absolute);
+      else if (/\.[jt]sx?$/.test(entry.name)) files.push(absolute);
+    }
+  };
+  visit(sourceRoot);
+
+  const missing = new Map();
+  for (const file of files) {
+    const source = stripComments(fs.readFileSync(file, 'utf8'));
+    for (const match of source.matchAll(/fontFamily:\s*'(Poppins_\w+)'/g)) {
+      if (loaded.has(match[1])) continue;
+      const relative = path.relative(root, file).split(path.sep).join('/');
+      missing.set(match[1], [...(missing.get(match[1]) ?? []), relative]);
+    }
+  }
+
+  assert.deepEqual(
+    [...missing.entries()],
+    [],
+    'pesos usados mas não carregados no useFonts do App.js'
+  );
+});
+
+test('os dois botões de marcação do país têm a mesma forma e diferem só na cor', () => {
+  const modal = read('src/components/map/CountryDetailModal.js');
+
+  // Os dois saem da MESMA base de forma. Se um deles voltar a ter estilo inline
+  // ou estilo próprio, é aqui que quebra.
+  const usesSharedShape = [...modal.matchAll(/style=\{\[styles\.actionBtn, /g)];
+  assert.equal(usesSharedShape.length, 2, 'os dois botões precisam partir de styles.actionBtn');
+
+  // A forma mora num lugar só, e as variações são apenas de cor: nada de
+  // padding, raio ou borda dentro dos modificadores.
+  const shapeKeys = ['borderRadius', 'paddingVertical', 'paddingHorizontal', 'borderWidth'];
+  const modifiers = [
+    'actionBtnVisitedOff',
+    'actionBtnVisitedOn',
+    'actionBtnWishOff',
+    'actionBtnWishOn',
+  ];
+  for (const name of modifiers) {
+    const block = modal.match(new RegExp(name + ':\\s*\\{([^}]*)\\}'));
+    assert.ok(block, `não achei o estilo ${name}`);
+    for (const key of shapeKeys) {
+      assert.doesNotMatch(block[1], new RegExp(key), `${name} não pode redefinir ${key}`);
+    }
+    // Só cor: fundo e borda.
+    assert.match(block[1], /backgroundColor|borderColor/, `${name} deveria definir cor`);
+  }
+
+  // Sem ícone nem emoji em nenhum dos dois: o estado é comunicado pelo
+  // preenchimento, não por um "✓" nem por um Ionicons dentro do botão.
+  assert.doesNotMatch(modal, /Já visitei ✓/);
+  assert.doesNotMatch(modal, /Na wishlist ✓/);
+  assert.match(modal, /\{isVisited \? 'Já visitei' : 'Marcar como visitado'\}/);
+  assert.match(modal, /\{isWishlisted \? 'Na wishlist' : 'Quero visitar'\}/);
+});
+
+test('toda tela sob a tab bar reserva folga no fim do conteúdo', () => {
+  // A tab bar é `position: absolute` e flutua SOBRE o conteúdo, sem reservar
+  // espaço no layout (ver utils/tabBarLayout). Uma lista que termina no fim da
+  // tela termina atrás dela, e o último item fica invisível e sem receber toque
+  // — era o caso do botão "Seguir" no fim da tela Explorar.
+  //
+  // Antes desta correção cada tela chutava um número: 96 no Feed, 56 no Support,
+  // 50 nos roteiros salvos, 32 no Perfil, 20 no Explorar. Só o 96 chegava perto.
+  const hook = read('src/hooks/useTabBarContentPadding.js');
+  assert.match(hook, /TAB_BAR_CLEARANCE \+ insets\.bottom/);
+  // Devolve 0 fora das tabs: a SupportScreen também vive no AuthStack, onde não
+  // há barra e a folga viraria um vão morto.
+  assert.match(hook, /if \(!hasTabBar\) return 0;/);
+  assert.match(hook, /getParent\(TAB_NAVIGATOR_ID\)/);
+  // O id precisa bater com o do Tab.Navigator, senão o hook devolve 0 em todo lugar.
+  assert.match(hook, /TAB_NAVIGATOR_ID = 'MainTabs'/);
+  assert.match(read('src/navigation/AppNavigator.js'), /<Tab\.Navigator\s*\n\s*id="MainTabs"/);
+
+  // As telas que ficam DENTRO do TabNavigator e têm conteúdo rolável. O globo
+  // não entra: ele não rola, e os controles ancorados no rodapé dele já somam
+  // TAB_BAR_CLEARANCE por conta própria.
+  const screensUnderTabs = [
+    'src/screens/explore/ExploreScreen.js',
+    'src/screens/feed/FeedScreen.js',
+    'src/screens/profile/ProfileScreen.js',
+    'src/screens/profile/EditProfileScreen.js',
+    'src/screens/assistant/SavedTripsScreen.js',
+    'src/screens/support/SupportScreen.js',
+  ];
+  for (const screen of screensUnderTabs) {
+    assert.match(read(screen), /useTabBarContentPadding/, `${screen} não reserva folga da tab bar`);
+  }
+
+  // A folga do Feed NÃO pode voltar para o ListFooterComponent: como footer ela
+  // sumia quando `loadingMore` trocava o espaçador pelo spinner, e o indicador
+  // de "carregando mais" ficava atrás da barra.
+  const feed = read('src/screens/feed/FeedScreen.js');
+  assert.match(feed, /contentContainerStyle=\{\[styles\.body, \{ paddingBottom: tabBarPadding \}\]\}/);
+  assert.doesNotMatch(stripComments(feed), /<View style=\{\{ height: 96 \}\} \/>/);
 });

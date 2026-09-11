@@ -15,6 +15,7 @@ import { completeWebOAuthSession, getCurrentUser, supabase } from '../services/s
 import { useUpload } from '../context/UploadContext';
 import { navigationRef } from './navigationRef';
 import GlobalNotificationBanner from '../components/GlobalNotificationBanner';
+import ScreenErrorBoundary from '../components/ScreenErrorBoundary';
 import { OnboardingProvider, useOnboardingFlow } from '../context/OnboardingContext';
 import OnboardingScreen from '../screens/onboarding/OnboardingScreen';
 import ChooseUsernameScreen from '../screens/onboarding/ChooseUsernameScreen';
@@ -47,6 +48,32 @@ import PassportDetailScreen from '../screens/profile/PassportDetailScreen';
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
+/**
+ * Envolve uma tela num ScreenErrorBoundary.
+ *
+ * Um erro de render ou de efeito desmonta a árvore inteira acima de onde
+ * estourou, e sem um boundary no caminho o que sobra é uma tela em branco — foi
+ * assim que o erro de canal Realtime do Feed apagou o app (ver
+ * services/realtimeChannel.js).
+ *
+ * O boundary entra AQUI, entre o navegador e a tela, e não dentro de cada tela:
+ * assim a tab bar fica de fora do que pode quebrar, e quem cair na mensagem de
+ * erro ainda consegue navegar para outro lugar em vez de ficar preso.
+ *
+ * O `useMemo` de quem chama não é necessário porque isto roda uma vez, no
+ * módulo: o componente devolvido é estável, e um componente novo a cada render
+ * remontaria a tela inteira sem parar.
+ */
+const withErrorBoundary = (Screen, name) => {
+  const Wrapped = (props) => (
+    <ScreenErrorBoundary name={name}>
+      <Screen {...props} />
+    </ScreenErrorBoundary>
+  );
+  Wrapped.displayName = `WithErrorBoundary(${name})`;
+  return Wrapped;
+};
+
 function ProfileStack() {
   return (
     <Stack.Navigator id="ProfileStack" screenOptions={{ headerShown: false }}>
@@ -57,6 +84,13 @@ function ProfileStack() {
     </Stack.Navigator>
   );
 }
+
+// As telas das tabs, cada uma com sua rede de segurança. Montadas no módulo, uma
+// vez só — ver o comentário acima.
+const FeedScreenSafe = withErrorBoundary(FeedScreen, 'Feed');
+const GlobeScreenSafe = withErrorBoundary(GlobeScreen, 'Mapa');
+const ExploreScreenSafe = withErrorBoundary(ExploreScreen, 'Explorar');
+const ProfileStackSafe = withErrorBoundary(ProfileStack, 'Perfil');
 
 // Raio da pílula do item ativo. Fecha a cápsula do item sem competir com o raio
 // da barra, que é maior.
@@ -166,7 +200,7 @@ function TabNavigator() {
     >
       <Tab.Screen
         name="Feed"
-        component={FeedScreen}
+        component={FeedScreenSafe}
         options={{
           tabBarLabel: 'Início',
           tabBarIcon: ({ size, color, focused }) => (
@@ -177,7 +211,7 @@ function TabNavigator() {
 
       <Tab.Screen
         name="Map"
-        component={GlobeScreen}
+        component={GlobeScreenSafe}
         options={{
           tabBarLabel: 'Mapa',
           tabBarIcon: ({ color, size, focused }) => (
@@ -234,7 +268,7 @@ function TabNavigator() {
 
       <Tab.Screen
         name="Explore"
-        component={ExploreScreen}
+        component={ExploreScreenSafe}
         options={{
           tabBarLabel: 'Explorar',
           tabBarIcon: ({ color, size, focused }) => (
@@ -245,7 +279,7 @@ function TabNavigator() {
 
       <Tab.Screen
         name="Profile"
-        component={ProfileStack}
+        component={ProfileStackSafe}
         options={{
           tabBarLabel: 'Perfil',
           tabBarIcon: ({ color, size, focused }) => (

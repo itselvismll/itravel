@@ -15,6 +15,22 @@ import * as ImagePicker from 'expo-image-picker';
 import { updateProfile, checkUsernameAvailable, uploadAvatar } from '../../services/profileService';
 import { getCurrentUser } from '../../services/supabase';
 import { USERNAME_MAX_LENGTH, normalizeUsername, validateUsername } from '../../utils/username';
+import useTabBarContentPadding from '../../hooks/useTabBarContentPadding';
+import {
+  BIO_MAX_LENGTH,
+  BIO_MAX_LINES,
+  BIO_MAX_LINE_BREAKS,
+  bioLength,
+  countLineBreaks,
+  normalizeBio,
+  validateBio,
+} from '../../utils/bio';
+
+// Teto bruto do TextInput. Fica ACIMA do limite real para o excedente poder ser
+// digitado, contado e mostrado em vermelho — o corte seco no limite esconderia
+// do usuário o motivo de o botão recusar. O maxLength existe só para não deixar
+// alguém colar um texto gigantesco no campo.
+const BIO_HARD_INPUT_LIMIT = BIO_MAX_LENGTH * 2;
 
 const PALAVRAS_PROIBIDAS = [
   'puta', 'puto', 'viado', 'buceta', 'cu', 'merda', 'caralho', 'porra',
@@ -38,10 +54,14 @@ const contemPalavraProibida = (texto) => {
 };
 
 export default function EditProfileScreen({ navigation, route }) {
+  // Esta tela vive dentro do ProfileStack, que fica sob as tabs: a barra flutua
+  // sobre o formulário e cobriria o último campo.
+  const tabBarPadding = useTabBarContentPadding();
   const { profile } = route.params || {};
 
   const [displayName, setDisplayName] = useState(profile?.display_name || '');
   const [username, setUsername] = useState(profile?.username || '');
+  const [bio, setBio] = useState(profile?.bio || '');
   const [avatarUri, setAvatarUri] = useState(profile?.avatar_url || null);
   const [avatarFile, setAvatarFile] = useState(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -54,8 +74,21 @@ export default function EditProfileScreen({ navigation, route }) {
     if (profile) {
       setDisplayName(profile.display_name || '');
       setUsername(profile.username || '');
+      setBio(profile.bio || '');
     }
   }, [profile]);
+
+  // Tudo medido sobre o texto NORMALIZADO — é o que validateBio mede e o que vai
+  // para o banco. Contar o texto cru faria o contador acusar 170/160 em vermelho
+  // numa bio que salva sem problema, porque as quebras excedentes são
+  // compactadas antes de medir.
+  const bioNormalized = normalizeBio(bio);
+  const bioCount = bioLength(bioNormalized);
+  const bioOverLength = bioCount > BIO_MAX_LENGTH;
+  // O limite de linhas BLOQUEIA o salvamento, então ele precisa aparecer
+  // enquanto a pessoa digita — descobrir só ao apertar "Salvar" é pior.
+  const bioOverLines = countLineBreaks(bioNormalized) > BIO_MAX_LINE_BREAKS;
+  const bioInvalid = bioOverLength || bioOverLines;
 
   const handlePickAvatar = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -99,6 +132,16 @@ export default function EditProfileScreen({ navigation, route }) {
       setErrorMessage('⚠️ Nome inadequado. Por favor escolha outro nome.');
       return;
     }
+
+    // A bio passa pela MESMA validação que o profileService aplica antes de
+    // gravar (utils/bio.js). Aqui é só para a mensagem aparecer sem uma ida ao
+    // servidor — a regra que vale continua sendo a de lá.
+    const bioCheck = validateBio(bio);
+    if (!bioCheck.valid) {
+      setErrorMessage(bioCheck.error);
+      return;
+    }
+
     setErrorMessage('');
     setSaving(true);
     try {
@@ -133,6 +176,7 @@ export default function EditProfileScreen({ navigation, route }) {
       const result = await updateProfile(user.id, {
         display_name: displayName.trim(),
         username: normalizedUsername,
+        bio: bioCheck.value,
         ...(avatarFile && { avatar_url: finalAvatarUrl }),
       });
 
@@ -150,7 +194,10 @@ export default function EditProfileScreen({ navigation, route }) {
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={{ paddingBottom: tabBarPadding }}
+    >
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color="white" />
@@ -249,6 +296,47 @@ export default function EditProfileScreen({ navigation, route }) {
               {username.length}/{USERNAME_MAX_LENGTH}
             </Text>
           </View>
+
+          <View style={styles.divider} />
+
+          <Text style={styles.label}>Bio</Text>
+          <TextInput
+            style={[styles.input, styles.bioInput, bioInvalid && { borderBottomColor: '#ef4444' }]}
+            value={bio}
+            // Sem corte no onChangeText, diferente do Nome e do Username: cortar
+            // no meio de um emoji composto (uma bandeira, uma família) quebraria
+            // o caractere na cara de quem está digitando. Aqui o excedente é
+            // mostrado em vermelho e barrado no salvar.
+            onChangeText={(text) => {
+              setBio(text);
+              setErrorMessage('');
+            }}
+            placeholder="Conte algo sobre suas viagens"
+            placeholderTextColor="#bbb"
+            multiline
+            // A bio aceita quebra de linha, então o teclado precisa oferecer o
+            // Enter em vez de um "OK" que fecha o campo.
+            textAlignVertical="top"
+            maxLength={BIO_HARD_INPUT_LIMIT}
+            accessibilityLabel="Bio do perfil"
+          />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
+            <Text
+              style={{ fontSize: 10, color: bioOverLines ? '#ef4444' : '#bbb', flex: 1 }}
+            >
+              {bioOverLines
+                ? `A bio pode ter no máximo ${BIO_MAX_LINES} linhas.`
+                : `Opcional. Sem links. Máximo ${BIO_MAX_LINES} linhas.`}
+            </Text>
+            <Text
+              style={{
+                fontSize: 10,
+                color: bioOverLength ? '#ef4444' : bioCount >= BIO_MAX_LENGTH - 20 ? '#6C2BD9' : '#bbb',
+              }}
+            >
+              {bioCount}/{BIO_MAX_LENGTH}
+            </Text>
+          </View>
         </View>
 
         {errorMessage ? (
@@ -265,6 +353,7 @@ export default function EditProfileScreen({ navigation, route }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f0f0f0' },
+  bioInput: { minHeight: 74, paddingTop: 8, lineHeight: 20 },
   header: {
     backgroundColor: '#0D1326',
     padding: 16,

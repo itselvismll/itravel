@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { getAlpha2, getAlpha3 } from '../utils/countryUtils';
+import { getAlpha2, getAlpha3, toStorableCountryCode } from '../utils/countryUtils';
 
 const countryCodeVariants = (code) => [...new Set([
   getAlpha3(code)?.toUpperCase(),
@@ -75,7 +75,11 @@ export const getTravelersByCountry = async (countryCode, currentUserId) => {
   return { success: true, data: travelers };
 };
 
-const normalizeToAlpha3 = (code) => getAlpha3(code)?.toUpperCase() || code?.toUpperCase();
+// `normalizeToAlpha3` foi removida daqui: ela era
+// `getAlpha3(code)?.toUpperCase() || code?.toUpperCase()`, e como getAlpha3 não
+// falha, devolvia o código cru achando que tinha normalizado. Quem precisa de um
+// código para GRAVAR usa toStorableCountryCode (utils/countryUtils), que devolve
+// null quando não reconhece. Deixá-la aqui só convidaria a reaproveitar o defeito.
 
 export const getSuggestedTravelers = async (userId) => {
   if (!userId) return { success: false, data: [] };
@@ -115,7 +119,16 @@ export const addToWishlist = async (countryCode, countryName) => {
   const { data: authData } = await supabase.auth.getUser();
   const user = authData?.user;
   if (!user) return { success: false, error: 'Não autenticado' };
-  const normalizedCountryCode = normalizeToAlpha3(countryCode);
+  // Terceira ocorrência do mesmo defeito (as outras estavam em PhotoUploader e
+  // em markCountryAsVisited): `normalizeToAlpha3` era
+  // `getAlpha3(code) || code.toUpperCase()`, e como getAlpha3 nunca falha, o
+  // código cru entrava na wishlist. Sem esta correção, a migração de
+  // normalização limparia a tabela e o app a sujaria de novo no próximo toque.
+  const normalizedCountryCode = toStorableCountryCode(countryCode);
+  if (!normalizedCountryCode) {
+    return { success: false, error: `País não reconhecido: ${countryCode}` };
+  }
+
   const { error } = await supabase
     .from('wishlist')
     .upsert(
