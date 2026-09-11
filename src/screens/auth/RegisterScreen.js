@@ -1,8 +1,8 @@
 ﻿import React, { useRef, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, Linking } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SIZES } from '../../utils/constants';
+import { API_CONFIG, COLORS, SIZES } from '../../utils/constants';
 import { signUp } from '../../services/supabase';
 import { checkUsernameAvailable } from '../../services/profileService';
 import { USERNAME_MAX_LENGTH, normalizeUsername, validateUsername } from '../../utils/username';
@@ -10,6 +10,11 @@ import Logo from '../../components/Logo';
 import { notify } from '../../utils/dialogs';
 import HCaptchaWidget from '../../components/auth/HCaptchaWidget';
 import { HCAPTCHA_ENABLED, HCAPTCHA_ERROR_MESSAGE } from '../../components/auth/hcaptchaConfig';
+
+// Os documentos legais saem do mesmo host do app web (journi.expo.app por
+// padrão, sobrescrito por EXPO_PUBLIC_WEB_APP_URL). Reaproveitar a constante
+// evita que a URL das lojas e a do app divirjam.
+const LEGAL_DOCS_BASE_URL = API_CONFIG.WEB_APP_URL.replace(/\/+$/, '');
 
 export default function RegisterScreen({ navigation, onRegisterSuccess }) {
   const [fullName, setFullName] = useState('');
@@ -49,18 +54,23 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
     };
   };
 
-  const showTerms = () => {
-    notify(
-      'Termos de Uso',
-      'Ao usar o Journi, você concorda em:\n\n• Fornecer informações verdadeiras\n• Não usar o app para fins ilegais\n• Respeitar outros usuários\n• Não compartilhar conteúdo ofensivo\n• Seguir as leis locais e internacionais\n\nO Journi se reserva o direito de suspender contas que violem estes termos.'
-    );
-  };
-
-  const showPrivacy = () => {
-    notify(
-      'Política de Privacidade',
-      'Suas informações são protegidas:\n\n• Seus dados são criptografados\n• Não vendemos suas informações\n• Você controla sua privacidade\n• Fotos e posts seguem suas configurações\n• Coletamos apenas dados necessários\n• Você pode deletar sua conta a qualquer momento\n\nUsamos cookies para melhorar sua experiência.'
-    );
+  // Os documentos moram em public/termos.html e public/privacidade.html e são
+  // servidos pelo próprio host do app. Antes isto eram dois Alert com texto
+  // resumido escrito na mão — que não servem para as lojas (elas exigem uma URL
+  // pública, acessível sem instalar o app) e, no caso da privacidade, prometiam
+  // exclusão de conta que ainda não existia.
+  //
+  // A extensão .html é DELIBERADA e não deve virar rota limpa: o EAS Hosting faz
+  // fallback de SPA e devolve HTTP 200 com o app para qualquer caminho
+  // desconhecido. `/termos` responderia 200 mostrando o aplicativo, e nem um
+  // monitoramento de status perceberia que a página não existe.
+  const openLegalDoc = async (path) => {
+    const url = `${LEGAL_DOCS_BASE_URL}/${path}`;
+    try {
+      await Linking.openURL(url);
+    } catch {
+      notify('Não foi possível abrir', `Acesse ${url} pelo navegador.`);
+    }
   };
 
   const handleRegister = async () => {
@@ -379,13 +389,21 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
             <View style={{ flex: 1, pointerEvents: 'box-none' }}>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' }}>
                 <Text style={{ fontSize: 13, color: COLORS.text }}>Aceito os </Text>
-                <TouchableOpacity onPress={showTerms}>
+                <TouchableOpacity
+                  onPress={() => openLegalDoc('termos.html')}
+                  accessibilityRole="link"
+                  accessibilityLabel="Abrir os Termos de Uso"
+                >
                   <Text style={{ fontSize: 13, color: COLORS.primary, fontWeight: '600', textDecorationLine: 'underline' }}>
                     Termos de Uso
                   </Text>
                 </TouchableOpacity>
                 <Text style={{ fontSize: 13, color: COLORS.text }}> e </Text>
-                <TouchableOpacity onPress={showPrivacy}>
+                <TouchableOpacity
+                  onPress={() => openLegalDoc('privacidade.html')}
+                  accessibilityRole="link"
+                  accessibilityLabel="Abrir a Política de Privacidade"
+                >
                   <Text style={{ fontSize: 13, color: COLORS.primary, fontWeight: '600', textDecorationLine: 'underline' }}>
                     Política de Privacidade
                   </Text>
