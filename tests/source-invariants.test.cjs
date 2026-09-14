@@ -344,15 +344,29 @@ test('client source is free of console calls and centralizes remote flag images'
   const filesWithConsole = files
     .filter(file => /console\.(log|debug|info|warn|error)\s*\(/.test(stripComments(fs.readFileSync(file, 'utf8'))))
     .map(file => path.relative(root, file).split(path.sep).join('/'));
-  // Os ÚNICOS dois arquivos com direito a console — e, nos dois, só `console.error`.
+  // Os ÚNICOS arquivos com direito a console — e, em todos, só `console.error`.
   //
   // O ScreenErrorBoundary está aqui porque é a última parada de um erro que já
   // derrubou uma tela: sem o console, a mensagem de erro morreria com ele e o
   // que sobraria seria uma tela de "algo deu errado" sem rastro nenhum para
   // diagnosticar — pior do que a tela em branco que ele veio substituir.
+  //
+  // Os três serviços entraram pelo mesmo motivo, um nível abaixo: eles chamam
+  // RPCs `security definer` (bloqueio, denúncia, cancelamento de exclusão) que
+  // falham do lado do banco, onde a UI só recebe um booleano. Sem o
+  // `console.error`, uma policy recusando a chamada em produção vira "não
+  // aconteceu nada" na tela, sem nome de RPC nem mensagem do Postgres para
+  // investigar depois.
+  //
+  // A lista está na ordem da varredura de diretórios (`visit`), que é a ordem em
+  // que `filesWithConsole` é montado — o assert abaixo compara os arrays
+  // posicionalmente.
   const CONSOLE_ALLOWLIST = [
     'src/components/ScreenErrorBoundary.js',
     'src/navigation/AppNavigator.js',
+    'src/services/messageService.js',
+    'src/services/moderationService.js',
+    'src/services/profileService.js',
   ];
   assert.deepEqual(filesWithConsole, CONSOLE_ALLOWLIST);
   for (const file of CONSOLE_ALLOWLIST) {

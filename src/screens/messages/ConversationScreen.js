@@ -3,7 +3,13 @@ import { ActivityIndicator, FlatList, Image, StyleSheet, Text, TextInput, Toucha
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../../components/Avatar';
 import { getCurrentUser } from '../../services/supabase';
-import { getConversationMessages, markConversationRead, sendMessage } from '../../services/messageService';
+import {
+  getConversationMessages,
+  isConversationAvailable,
+  markConversationRead,
+  sendMessage,
+} from '../../services/messageService';
+import ReportSheet from '../../components/ReportSheet';
 import { openPostgresChangesChannel } from '../../services/realtimeChannel';
 
 export default function ConversationScreen({ route, navigation }) {
@@ -13,12 +19,21 @@ export default function ConversationScreen({ route, navigation }) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [indisponivel, setIndisponivel] = useState(false);
+  const [reportTarget, setReportTarget] = useState(null);
 
   const load = useCallback(async () => {
-    const [user, result] = await Promise.all([getCurrentUser(), getConversationMessages(conversationId)]);
+    // A conversa é checada à parte das mensagens: lista vazia sozinha não diz se
+    // a conversa é nova ou se sumiu por bloqueio. Ver isConversationAvailable.
+    const [user, result, disponivel] = await Promise.all([
+      getCurrentUser(),
+      getConversationMessages(conversationId),
+      isConversationAvailable(conversationId),
+    ]);
     setUserId(user?.id || null);
     setMessages(result.data || []);
-    await markConversationRead(conversationId);
+    setIndisponivel(!disponivel);
+    if (disponivel) await markConversationRead(conversationId);
     setLoading(false);
   }, [conversationId]);
   useEffect(() => { load(); }, [load]);
@@ -82,8 +97,33 @@ export default function ConversationScreen({ route, navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.back}><Ionicons name="arrow-back" size={22} color="#fff" /></TouchableOpacity>
         <Avatar profile={profile} size={38} />
         <View style={{ flex: 1 }}><Text style={styles.name}>{profile?.display_name || profile?.username || 'Viajante'}</Text><Text style={styles.handle}>@{profile?.username || 'viajante'}</Text></View>
+        {/* Denunciar o perfil fica no cabeçalho, visível; denunciar UMA mensagem
+            fica no toque longo da bolha, que é a convenção de todo app de
+            mensagem. Os dois caminhos existem porque são denúncias diferentes:
+            uma é sobre a pessoa, a outra sobre o que ela escreveu. */}
+        {!!profile?.id && !indisponivel && (
+          <TouchableOpacity
+            style={styles.back}
+            onPress={() => setReportTarget({ type: 'profile', id: profile.id })}
+            accessibilityRole="button"
+            accessibilityLabel="Denunciar perfil"
+          >
+            <Ionicons name="flag-outline" size={19} color="#8A90A6" />
+          </TouchableOpacity>
+        )}
       </View>
-      {loading ? <ActivityIndicator color="#A78BFA" style={{ marginTop: 50 }} /> : (
+      {loading ? <ActivityIndicator color="#A78BFA" style={{ marginTop: 50 }} /> : indisponivel ? (
+        <View style={styles.unavailable}>
+          <Ionicons name="chatbubble-ellipses-outline" size={40} color="#3A4166" />
+          <Text style={styles.unavailableTitle}>Esta conversa não está disponível</Text>
+          <Text style={styles.unavailableText}>
+            Ela pode ter sido encerrada ou não estar mais acessível para você.
+          </Text>
+          <TouchableOpacity style={styles.unavailableBtn} onPress={() => navigation.goBack()}>
+            <Text style={styles.unavailableBtnText}>Voltar</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
         <FlatList
           data={messages}
           keyExtractor={item => item.id}
@@ -91,17 +131,30 @@ export default function ConversationScreen({ route, navigation }) {
           renderItem={({ item }) => {
             const mine = item.sender_id === userId;
             return (
-              <View style={[styles.bubble, mine ? styles.mine : styles.theirs]}>
+              <TouchableOpacity
+                activeOpacity={mine ? 1 : 0.85}
+                onLongPress={mine ? undefined : () => setReportTarget({ type: 'message', id: item.id })}
+                delayLongPress={350}
+                accessibilityLabel={mine ? undefined : 'Segure para denunciar esta mensagem'}
+                style={[styles.bubble, mine ? styles.mine : styles.theirs]}
+              >
                 {!!item.body && <Text style={styles.body}>{item.body}</Text>}
                 {!!item.shared_photo && <TouchableOpacity onPress={() => openShared(item)}><Image source={{ uri: item.shared_photo.photo_url }} style={styles.sharedImage} /><Text style={styles.sharedTitle}>Ver publicação</Text></TouchableOpacity>}
                 {!!item.shared_plan && <TouchableOpacity style={styles.planCard} onPress={() => openShared(item)}><Ionicons name="map-outline" size={23} color="#A78BFA" /><View style={{ flex: 1 }}><Text style={styles.planTitle}>{item.shared_plan.plan?.title || 'Roteiro Journi'}</Text><Text style={styles.planSub}>Abrir roteiro compartilhado</Text></View></TouchableOpacity>}
                 {!!item.shared_passport && <TouchableOpacity style={styles.planCard} onPress={() => openShared(item)}><Ionicons name="book-outline" size={23} color="#00D1C1" /><View style={{ flex: 1 }}><Text style={styles.planTitle}>Passaporte Journi</Text><Text style={styles.passportSub}>Abrir passaporte compartilhado</Text></View></TouchableOpacity>}
-              </View>
+              </TouchableOpacity>
             );
           }}
         />
       )}
-      <View style={styles.composer}><TextInput value={text} onChangeText={setText} placeholder="Mensagem..." placeholderTextColor="#6E7694" style={styles.input} multiline /><TouchableOpacity style={styles.send} onPress={submit}>{sending ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="send" size={19} color="#fff" />}</TouchableOpacity></View>
+      {!indisponivel && <View style={styles.composer}><TextInput value={text} onChangeText={setText} placeholder="Mensagem..." placeholderTextColor="#6E7694" style={styles.input} multiline /><TouchableOpacity style={styles.send} onPress={submit}>{sending ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="send" size={19} color="#fff" />}</TouchableOpacity></View>}
+
+      <ReportSheet
+        visible={!!reportTarget}
+        onClose={() => setReportTarget(null)}
+        targetType={reportTarget?.type || 'message'}
+        targetId={reportTarget?.id}
+      />
     </View>
   );
 }
@@ -123,6 +176,11 @@ const styles = StyleSheet.create({
   planTitle: { color: '#fff', fontSize: 12, fontWeight: '800' },
   planSub: { color: '#C7B8FA', fontSize: 9, marginTop: 2 },
   passportSub: { color: '#66E6DC', fontSize: 9, marginTop: 2 },
+  unavailable: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 9 },
+  unavailableTitle: { color: '#D6DAEA', fontSize: 15, fontWeight: '600', marginTop: 4 },
+  unavailableText: { color: '#5A6180', fontSize: 12.5, lineHeight: 18, textAlign: 'center' },
+  unavailableBtn: { marginTop: 10, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#A78BFA' },
+  unavailableBtnText: { color: '#A78BFA', fontSize: 13, fontWeight: '600' },
   composer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, padding: 11, borderTopWidth: 1, borderTopColor: '#202744' },
   input: { flex: 1, minHeight: 44, maxHeight: 110, backgroundColor: '#202744', color: '#fff', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 11 },
   send: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#6C2BD9', alignItems: 'center', justifyContent: 'center' },

@@ -15,19 +15,57 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import LegalSheet from './LegalSheet';
 
 const APP_VERSION = '1.0.0';
+const MEDAL_SIZE = 20;
 const DRAWER_WIDTH = Math.min(320, Math.round(Dimensions.get('window').width * 0.84));
 
-function DrawerItem({ icon, label, color = '#F7F7F2', iconColor = '#C4B5FD', onPress }) {
+// A mesma medalha da trilha de níveis do card Globetrotter, em miniatura: mesmo
+// gradiente radial (foco acima e à esquerda, que é o que dá volume), mesmo halo
+// roxo por baixo. Antes o selo era um globo em pílula gradiente ciano — bonito
+// sozinho, mas sem parentesco com a trilha onde o nível é conquistado, então o
+// "nível 4" lia como enfeite em vez de progresso.
+//
+// A estrela vem do Ionicons, e não de um path escrito à mão, pelo mesmo motivo
+// que no card: um desenho na unha ficaria pior e mais difícil de manter.
+function LevelMedalMini() {
+  const center = MEDAL_SIZE / 2;
+
+  return (
+    <View style={styles.medal}>
+      <Svg width={MEDAL_SIZE} height={MEDAL_SIZE}>
+        <Defs>
+          <RadialGradient id="drawerMedalFill" cx="32%" cy="28%" r="78%">
+            <Stop offset="0" stopColor="#B79CF0" />
+            <Stop offset="1" stopColor="#5B1FB8" />
+          </RadialGradient>
+        </Defs>
+        <Circle cx={center} cy={center} r={center - 1} fill="url(#drawerMedalFill)" />
+      </Svg>
+
+      <View style={styles.medalIcon} pointerEvents="none">
+        <Ionicons name="star" size={11} color="#FFFFFF" />
+      </View>
+    </View>
+  );
+}
+
+// O ícone perdeu a cápsula roxa e ficou só o traço. A cápsula empurrava o peso
+// visual de cada linha para o lado do ícone, o que numa lista de CONFIGURAÇÕES
+// (onde o que importa é o texto da ação) lia como app infantil.
+//
+// `labelStyle` existe para o "Sair" cair meio passo de peso em vez de acompanhar
+// os outros: continua sendo o item de destaque da lista, sem gritar.
+function DrawerItem({ icon, label, color = '#F7F7F2', iconColor = '#A78BFA', labelStyle, onPress }) {
   return (
     <TouchableOpacity style={styles.item} onPress={onPress} accessibilityRole="button" accessibilityLabel={label}>
       <View style={styles.itemIcon}>
-        <Ionicons name={icon} size={19} color={iconColor} />
+        <Ionicons name={icon} size={20} color={iconColor} />
       </View>
-      <Text style={[styles.itemLabel, { color }]}>{label}</Text>
-      <Ionicons name="chevron-forward" size={17} color="#4A5273" />
+      <Text style={[styles.itemLabel, labelStyle, { color }]}>{label}</Text>
+      <Ionicons name="chevron-forward" size={16} color="#4A5273" />
     </TouchableOpacity>
   );
 }
@@ -40,6 +78,7 @@ export default function SettingsDrawer({
   levelInfo,
   onEditProfile,
   onSupport,
+  onBlockedUsers,
   onLogout,
 }) {
   // A folha legal e' irma do drawer, nao filha: um Modal dentro de outro Modal
@@ -129,8 +168,10 @@ export default function SettingsDrawer({
               {!!profile?.username && <Text style={styles.username}>@{profile.username}</Text>}
               {!!level && (
                 <View style={styles.levelBadge}>
+                  <LevelMedalMini />
                   <Text style={styles.levelBadgeText}>
-                    {level.icon} {level.name} nível {level.level}
+                    <Text style={styles.levelBadgeName}>{level.name}</Text>
+                    {` · nível ${level.level}`}
                   </Text>
                 </View>
               )}
@@ -139,21 +180,29 @@ export default function SettingsDrawer({
             <View style={styles.divider} />
 
             <View style={styles.section}>
-              <DrawerItem icon="person-circle-outline" label="Editar perfil" onPress={onEditProfile} />
+              <DrawerItem icon="person-outline" label="Editar perfil" onPress={onEditProfile} />
               <DrawerItem
-                icon="help-buoy-outline"
+                icon="help-circle-outline"
                 label="Ajuda e suporte"
-                iconColor="#00D1C1"
                 onPress={onSupport}
               />
               {/* Abre a LegalSheet, e não uma URL direto: são DOIS documentos com
                   nomes próprios, e um item só do menu precisa dar acesso aos dois.
-                  A mesma folha vai receber "Excluir minha conta". */}
+                  "Excluir minha conta" NÃO mora mais lá — foi para a tela de
+                  Editar perfil, junto do resto do que é da conta. */}
               <DrawerItem
                 icon="shield-checkmark-outline"
                 label="Política e Privacidade"
-                iconColor="#A78BFA"
                 onPress={() => setLegalVisible(true)}
+              />
+              {/* Fica ao lado de "Política e Privacidade" porque é do mesmo
+                  assunto — o que eu controlo sobre quem me alcança — e porque é
+                  o ÚNICO caminho de volta: quem foi bloqueado some de toda busca
+                  e do próprio perfil, então não há outro lugar onde desfazer. */}
+              <DrawerItem
+                icon="ban-outline"
+                label="Usuários bloqueados"
+                onPress={onBlockedUsers}
               />
               {/* Espaço reservado para novos itens (notificações, idioma...) */}
             </View>
@@ -161,7 +210,14 @@ export default function SettingsDrawer({
             <View style={styles.divider} />
 
             <View style={styles.section}>
-              <DrawerItem icon="log-out-outline" label="Sair" color="#FF4D6D" iconColor="#FF4D6D" onPress={onLogout} />
+              <DrawerItem
+                icon="log-out-outline"
+                label="Sair"
+                color="#FF4D6D"
+                iconColor="#FF4D6D"
+                labelStyle={styles.itemLabelSair}
+                onPress={onLogout}
+              />
             </View>
 
             <View style={styles.footer}>
@@ -223,16 +279,38 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_700Bold',
     color: '#F7F7F2',
   },
+  // A pílula recuou: era um gradiente roxo saturado que competia com o avatar
+  // logo acima. Agora é a superfície elevada do card com uma borda de um pixel —
+  // quem dá a cor é a medalha, que é o elemento com significado.
   levelBadge: {
     marginTop: 8,
-    paddingHorizontal: 11,
-    paddingVertical: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingLeft: 4,
+    paddingRight: 12,
+    paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: 'rgba(108,43,217,0.22)',
+    backgroundColor: '#1B2646',
     borderWidth: 1,
-    borderColor: 'rgba(196,181,253,0.3)',
+    borderColor: '#262F52',
   },
-  levelBadgeText: { fontSize: 11, fontWeight: '600', color: '#C4B5FD' },
+  levelBadgeText: { fontSize: 11.5, fontWeight: '600', color: '#EDEFF7', letterSpacing: 0.1 },
+  levelBadgeName: { color: '#A78BFA', fontWeight: '700' },
+  medal: {
+    width: MEDAL_SIZE,
+    height: MEDAL_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+    // Halo discreto, como no card de níveis: no web vira box-shadow, no nativo
+    // sombra de elevação.
+    shadowColor: '#A78BFA',
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 3,
+  },
+  medalIcon: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginHorizontal: 16 },
   section: { paddingVertical: 8, paddingHorizontal: 10 },
   item: {
@@ -246,12 +324,19 @@ const styles = StyleSheet.create({
   itemIcon: {
     width: 34,
     height: 34,
-    borderRadius: 11,
-    backgroundColor: 'rgba(255,255,255,0.05)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  itemLabel: { flex: 1, fontSize: 14, fontWeight: '700', fontFamily: 'Poppins_700Bold' },
+  // Peso 500 com um fio de letter-spacing: bold na lista inteira lia como quatro
+  // botões grandes empilhados, e isto é uma lista de opções.
+  itemLabel: {
+    flex: 1,
+    fontSize: 14.5,
+    fontWeight: '500',
+    fontFamily: 'Poppins_500Medium',
+    letterSpacing: 0.2,
+  },
+  itemLabelSair: { fontWeight: '600', fontFamily: 'Poppins_600SemiBold' },
   footer: { marginTop: 'auto', alignItems: 'center', paddingTop: 24 },
   footerText: { fontSize: 11, color: '#5A6180' },
 });

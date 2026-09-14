@@ -196,7 +196,13 @@ export const getPublicPhoto = async (photoId) => {
       .maybeSingle();
 
     if (error) return { success: false, data: null, error: error.message };
-    if (!photo) return { success: false, data: null, error: 'Foto não encontrada.' };
+    // `notFound` separado do `error`: desde o bloqueio, uma foto some da
+    // consulta sem nenhum erro (a policy simplesmente não devolve a linha), e a
+    // tela precisa distinguir isso de uma falha de rede — numa, "tentar
+    // novamente" resolve; na outra, nunca vai resolver.
+    if (!photo) {
+      return { success: false, data: null, notFound: true, error: 'Foto não encontrada.' };
+    }
 
     const { data: profile, error: profileError } = await supabase
       .from('profiles')

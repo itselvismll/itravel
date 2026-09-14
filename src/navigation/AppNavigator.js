@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -43,6 +43,7 @@ import NotificationsScreen from '../screens/NotificationsScreen';
 import ConnectionsScreen from '../screens/profile/ConnectionsScreen';
 import PhotoDetailScreen from '../screens/PhotoDetailScreen';
 import SupportScreen from '../screens/support/SupportScreen';
+import BlockedUsersScreen from '../screens/profile/BlockedUsersScreen';
 import MessagesScreen from '../screens/messages/MessagesScreen';
 import ConversationScreen from '../screens/messages/ConversationScreen';
 import PassportDetailScreen from '../screens/profile/PassportDetailScreen';
@@ -83,6 +84,7 @@ function ProfileStack() {
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="SavedTrips" component={SavedTripsScreen} />
       <Stack.Screen name="Support" component={SupportScreen} />
+      <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
     </Stack.Navigator>
   );
 }
@@ -295,6 +297,11 @@ function TabNavigator() {
 
 export default function AppNavigator() {
   const [user, setUser] = useState(null);
+  // Guarda de qual usuário já teve a reativação checada nesta execução do app.
+  // `useRef` e não `useState`: os dois eventos chegam no mesmo tick, e um
+  // `setState` só valeria no render seguinte — tarde demais para barrar a
+  // segunda chamada.
+  const reativacaoChecadaPara = useRef(null);
   const [loading, setLoading] = useState(true);
   const [passwordRecovery, setPasswordRecovery] = useState(() => (
     Platform.OS === 'web'
@@ -338,12 +345,43 @@ export default function AppNavigator() {
     // então chamar sempre resolve o caso comum e o de reativação com uma ida só
     // ao banco — ler o perfil antes, só para decidir se vale chamar, seria uma
     // consulta a mais em todo login.
-    const reactivateIfPending = async () => {
-      const reativou = await cancelAccountDeletion();
-      if (reativou) {
+    //
+    // POR QUE DOIS EVENTOS, E NÃO SÓ O SIGNED_IN
+    //
+    // No login com Google na WEB o SIGNED_IN é emitido de dentro do
+    // `_initialize()` do cliente Supabase, num `setTimeout(…, 0)` disparado
+    // quando `services/supabase.js` é importado — antes deste useEffect existir.
+    // O auth-js não repete eventos para quem chega depois: o listener atrasado
+    // recebe INITIAL_SESSION. Reagindo só ao SIGNED_IN, quem entrava pelo Google
+    // com a conta em carência continuava marcado para exclusão, sem alerta e sem
+    // erro nenhum no console.
+    //
+    // A trava `reativacaoChecadaPara` existe porque no caminho de e-mail/senha os
+    // DOIS eventos chegam legitimamente (INITIAL_SESSION no boot, SIGNED_IN no
+    // login) e a RPC não pode sair duas vezes para o mesmo usuário.
+    const reactivateIfPending = async (event, userId) => {
+      if (!userId || reativacaoChecadaPara.current === userId) return;
+      reativacaoChecadaPara.current = userId;
+
+      const resultado = await cancelAccountDeletion();
+
+      if (resultado.error) {
+        // Solta a trava: a checagem não chegou a acontecer de fato, e um erro de
+        // rede não pode ser o que impede a reativação até o app ser reiniciado.
+        // Não vira laço — o gatilho é evento de auth, não relógio.
+        reativacaoChecadaPara.current = null;
+        console.error(
+          '[auth] Reativação da conta falhou no login. A conta segue marcada para exclusão:',
+          resultado.error,
+          { code: resultado.code, status: resultado.status }
+        );
+        return;
+      }
+
+      if (resultado.reactivated) {
         notify(
-          'Sua conta está sendo reativada',
-          'Que bom que você voltou. Seu perfil, suas fotos e seu histórico continuam como estavam.'
+          'Que bom te ver de volta!',
+          'Sua conta foi reativada e está tudo como você deixou: seu perfil, suas fotos e seu histórico.'
         );
       }
     };
@@ -360,9 +398,18 @@ export default function AppNavigator() {
         // por onde passam os três caminhos de entrada — e-mail, Google e
         // restauração de sessão. Só no LoginScreen, quem entrasse pelo Google
         // continuaria com a conta marcada para apagar.
-        if (event === 'SIGNED_IN') reactivateIfPending();
+        // Sem `await` (o callback é síncrono), então o `catch` é o que impede
+        // que uma falha aqui suma como unhandled rejection.
+        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+          reactivateIfPending(event, session.user.id).catch((erro) => {
+            console.error('[auth] Erro inesperado na reativação da conta:', erro);
+          });
+        }
       } else {
         setUser(null);
+        // Sair zera a trava: a próxima entrada — dela ou de outra pessoa no
+        // mesmo aparelho — é um login novo e merece a checagem de novo.
+        reativacaoChecadaPara.current = null;
       }
       setLoading(false);
     });

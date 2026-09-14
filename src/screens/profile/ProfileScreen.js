@@ -467,6 +467,10 @@ export default function ProfileScreen({ navigation }) {
         setSettingsVisible(false);
         navigation.navigate('Support');
       }}
+      onBlockedUsers={() => {
+        setSettingsVisible(false);
+        navigation.navigate('BlockedUsers');
+      }}
       onLogout={handleLogout}
     />
 

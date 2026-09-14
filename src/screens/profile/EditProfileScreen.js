@@ -12,8 +12,15 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { updateProfile, checkUsernameAvailable, uploadAvatar } from '../../services/profileService';
-import { getCurrentUser } from '../../services/supabase';
+import {
+  updateProfile,
+  checkUsernameAvailable,
+  uploadAvatar,
+  requestAccountDeletion,
+  ACCOUNT_DELETION_GRACE_DAYS,
+} from '../../services/profileService';
+import { getCurrentUser, signOut } from '../../services/supabase';
+import { confirm, notify } from '../../utils/dialogs';
 import { USERNAME_MAX_LENGTH, normalizeUsername, validateUsername } from '../../utils/username';
 import useTabBarContentPadding from '../../hooks/useTabBarContentPadding';
 import {
@@ -69,6 +76,7 @@ export default function EditProfileScreen({ navigation, route }) {
   const [checkingUsername, setCheckingUsername] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [excluindo, setExcluindo] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -191,6 +199,48 @@ export default function EditProfileScreen({ navigation, route }) {
     } finally {
       setSaving(false);
     }
+  };
+
+
+  // Exclusão de conta. Vive nesta tela, no fim e atrás de um divisor, porque é a
+  // tela de "mexer na minha conta" — mas separada dos campos: um toque acidental
+  // aqui não pode parecer edição de perfil.
+  //
+  // A regra inteira é do banco (ver 20260911140000_account_deletion.sql). Aqui só
+  // se pede, se avisa e se sai.
+  const confirmarExclusao = async () => {
+    // O texto diz exatamente o que acontece, porque é a última tela antes de uma
+    // ação que apaga fotos e histórico. "Tem certeza?" sozinho não informa nada.
+    const aceitou = await confirm(
+      'Excluir minha conta',
+      `Sua conta sai do ar agora e ninguém mais consegue ver seu perfil, suas fotos ou seus comentários.
+
+`
+      + `Você tem ${ACCOUNT_DELETION_GRACE_DAYS} dias para mudar de ideia: é só entrar de novo com o mesmo e-mail e senha que tudo volta.
+
+`
+      + `Depois desse prazo, seus dados e suas fotos são apagados em definitivo, sem como recuperar.`
+    );
+    if (!aceitou) return;
+
+    setExcluindo(true);
+    const resultado = await requestAccountDeletion();
+
+    if (!resultado.success) {
+      setExcluindo(false);
+      notify('Não foi possível excluir', resultado.error || 'Tente novamente em instantes.');
+      return;
+    }
+
+    // Sair é parte da regra, não cortesia: a conta já está invisível, e continuar
+    // na sessão mostraria um app pela metade — feed vazio, perfil sem nada.
+    await signOut();
+    setExcluindo(false);
+
+    notify(
+      'Conta excluída',
+      `Sentiremos sua falta. Se mudar de ideia, entre de novo em até ${ACCOUNT_DELETION_GRACE_DAYS} dias e sua conta volta como estava.`
+    );
   };
 
   return (
@@ -346,6 +396,30 @@ export default function EditProfileScreen({ navigation, route }) {
           </View>
         ) : null}
 
+        {/* Zona destrutiva. Fora do card branco e atrás de um divisor com
+            rótulo: o olho precisa registrar que aqui não se edita nada, se
+            encerra. */}
+        <View style={styles.dangerDivider} />
+        <Text style={styles.dangerLabel}>Conta</Text>
+
+        <TouchableOpacity
+          style={styles.dangerButton}
+          onPress={confirmarExclusao}
+          disabled={excluindo}
+          accessibilityRole="button"
+          accessibilityLabel="Excluir minha conta"
+        >
+          {excluindo
+            ? <ActivityIndicator size="small" color="#ef4444" />
+            : <Ionicons name="trash-outline" size={18} color="#ef4444" />}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.dangerButtonText}>Excluir minha conta</Text>
+            <Text style={styles.dangerButtonHint}>
+              Reversível por {ACCOUNT_DELETION_GRACE_DAYS} dias
+            </Text>
+          </View>
+        </TouchableOpacity>
+
       </View>
     </ScrollView>
   );
@@ -432,6 +506,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginTop: 12,
   },
+  dangerDivider: {
+    height: 1,
+    backgroundColor: '#e2e2e2',
+    marginTop: 28,
+    marginBottom: 16,
+  },
+  dangerLabel: {
+    fontSize: 11,
+    color: '#999',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  dangerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#f3d0d0',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  dangerButtonText: { color: '#ef4444', fontSize: 14, fontWeight: '700' },
+  dangerButtonHint: { color: '#b0b0b0', fontSize: 11, marginTop: 2 },
   errorText: {
     color: '#ef4444',
     fontSize: 12,

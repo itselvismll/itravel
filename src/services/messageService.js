@@ -148,6 +148,37 @@ export const getConversationMessages = async (conversationId) => {
   return { success: !error, data: data || [], error: error?.message };
 };
 
+/**
+ * A conversa ainda existe PARA MIM?
+ *
+ * Precisa existir como pergunta própria porque `getConversationMessages` devolve
+ * lista vazia em duas situações opostas: conversa nova sem mensagem, e conversa
+ * que sumiu por bloqueio (a policy esconde, e o PostgREST responde 200 com zero
+ * linhas — não é erro). Sem distinguir as duas, a tela mostraria o convite a
+ * escrever numa conversa que não aceita mais mensagem nenhuma.
+ *
+ * @param {string} conversationId
+ * @returns {Promise<boolean>}
+ */
+export const isConversationAvailable = async conversationId => {
+  if (!conversationId) return false;
+  // As conversas locais são rascunhos do próprio aparelho: não estão no banco e
+  // não têm como estar bloqueadas.
+  if (conversationId.startsWith('local-conversation-')) return true;
+
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('id')
+    .eq('id', conversationId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[mensagens] checagem de conversa falhou:', error.message);
+    return false;
+  }
+  return !!data;
+};
+
 export const markConversationRead = async conversationId => {
   if (!conversationId || conversationId.startsWith('local-conversation-')) {
     return { success: true };

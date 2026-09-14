@@ -189,15 +189,46 @@ export const requestAccountDeletion = async () => {
 /**
  * Reverte a exclusão, se houver uma pendente.
  *
- * Chamada em TODO login, sem checar antes se há pedido: a função devolve `false`
+ * Chamada em TODO login, sem checar antes se há pedido: a RPC devolve `false`
  * quando não havia nada para cancelar, então uma ida ao banco resolve o caso
  * comum e o caso de reativação com a mesma chamada. Ler o perfil antes só para
  * decidir se vale chamar seria uma consulta a mais em todo login.
  *
- * @returns {Promise<boolean>} true quando uma exclusão pendente foi cancelada
+ * POR QUE O RETORNO NÃO É UM BOOLEANO
+ *
+ * Era `if (error) return false`, e isso escondeu um defeito real: uma conta
+ * marcada para exclusão logou de novo, a marca continuou no banco e NADA
+ * apareceu — nem alerta, nem erro. Falha e "não havia o que cancelar" produziam
+ * o mesmo `false`, e quem chama não tinha como distinguir um do outro.
+ *
+ * Agora os dois casos são distintos e toda falha é registrada no console com o
+ * código e o status da resposta — é por esse log que se descobre SE a chamada
+ * chega a sair do app e com que credencial ela sai.
+ *
+ * O `catch` não é decorativo: a chamada é disparada sem `await` de dentro do
+ * `onAuthStateChange`, então um erro de rede ou um TypeError viraria uma
+ * unhandled rejection — visível no máximo como um aviso amarelo, que foi
+ * exatamente o tipo de sinal que faltou da primeira vez.
+ *
+ * @returns {Promise<{ reactivated: boolean, error?: string, code?: string, status?: number }>}
  */
 export const cancelAccountDeletion = async () => {
-  const { data, error } = await supabase.rpc('cancel_account_deletion');
-  if (error) return false;
-  return data === true;
+  try {
+    const { data, error } = await supabase.rpc('cancel_account_deletion');
+
+    if (error) {
+      console.error(
+        '[conta] cancel_account_deletion falhou:',
+        { message: error.message, code: error.code, details: error.details, hint: error.hint, status: error.status }
+      );
+      return { reactivated: false, error: error.message, code: error.code, status: error.status };
+    }
+
+    return { reactivated: data === true };
+  } catch (erroInesperado) {
+    // Rede fora, timeout, resposta que não é JSON: nada disso chega como
+    // `error` do postgrest — chega como exceção.
+    console.error('[conta] cancel_account_deletion lançou exceção:', erroInesperado);
+    return { reactivated: false, error: erroInesperado?.message || String(erroInesperado) };
+  }
 };

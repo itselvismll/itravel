@@ -18,6 +18,8 @@ import Avatar from '../components/Avatar';
 import CountryFlag from '../components/CountryFlag';
 import StarRating from '../components/StarRating';
 import { notify } from '../utils/dialogs';
+import { supabase } from '../services/supabase';
+import ReportSheet from '../components/ReportSheet';
 
 export default function PhotoDetailScreen({ route, navigation }) {
   const photoId = route.params?.photoId;
@@ -27,6 +29,19 @@ export default function PhotoDetailScreen({ route, navigation }) {
   const [commentLoading, setCommentLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [error, setError] = useState('');
+  // Um alvo só de cada vez: a folha de denúncia é a mesma para a foto e para
+  // cada comentário, e guardar { tipo, id } evita um estado por superfície.
+  const [reportTarget, setReportTarget] = useState(null);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [indisponivel, setIndisponivel] = useState(false);
+
+  useEffect(() => {
+    let ativo = true;
+    supabase.auth.getUser().then(({ data }) => {
+      if (ativo) setCurrentUserId(data?.user?.id ?? null);
+    });
+    return () => { ativo = false; };
+  }, []);
 
   const loadPhoto = useCallback(async () => {
     setLoading(true);
@@ -39,8 +54,10 @@ export default function PhotoDetailScreen({ route, navigation }) {
 
     if (!photoResult.success) {
       setPhoto(null);
+      setIndisponivel(!!photoResult.notFound);
       setError(photoResult.error || 'Não foi possível carregar esta foto.');
     } else {
+      setIndisponivel(false);
       setPhoto(photoResult.data);
     }
 
@@ -99,17 +116,47 @@ export default function PhotoDetailScreen({ route, navigation }) {
           <Ionicons name="arrow-back" size={23} color="#F7F7F2" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Publicação</Text>
-        <TouchableOpacity
-          accessibilityLabel="Voltar ao menu"
-          onPress={() => navigation.navigate('Main')}
-        >
-          <Ionicons name="home-outline" size={22} color="#F7F7F2" />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          {/* Não aparece na própria foto: denunciar o próprio conteúdo não é
+              uma ação que signifique alguma coisa. */}
+          {!!photo && photo.user_id !== currentUserId && (
+            <TouchableOpacity
+              accessibilityLabel="Denunciar publicação"
+              accessibilityRole="button"
+              onPress={() => setReportTarget({ type: 'photo', id: photo.id })}
+            >
+              <Ionicons name="flag-outline" size={20} color="#F7F7F2" />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            accessibilityLabel="Voltar ao menu"
+            onPress={() => navigation.navigate('Main')}
+          >
+            <Ionicons name="home-outline" size={22} color="#F7F7F2" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator color="#6C2BD9" size="large" />
+        </View>
+      ) : indisponivel ? (
+        // Conteúdo que sumiu não ganha "tentar novamente": a foto pode ter sido
+        // apagada, estar num perfil em carência de exclusão ou ter sido
+        // bloqueada — em nenhum dos casos tentar de novo muda alguma coisa, e o
+        // botão só produziria uma sequência de tentativas frustradas. O texto
+        // também não diz qual é o caso: dizer "você foi bloqueado" entrega uma
+        // decisão privada de outra pessoa.
+        <View style={styles.center}>
+          <Ionicons name="image-outline" size={46} color="#3A4166" />
+          <Text style={styles.errorText}>Esta publicação não está disponível</Text>
+          <Text style={styles.errorHint}>
+            Ela pode ter sido removida ou não estar mais acessível para você.
+          </Text>
+          <TouchableOpacity style={styles.retryButton} onPress={() => navigation.goBack()}>
+            <Text style={styles.retryText}>Voltar</Text>
+          </TouchableOpacity>
         </View>
       ) : error || !photo ? (
         <View style={styles.center}>
@@ -189,10 +236,32 @@ export default function PhotoDetailScreen({ route, navigation }) {
                 </Text>
                 <Text style={styles.commentContent}>{item.content}</Text>
               </View>
+
+              {/* Ícone discreto por comentário, em vez de toque longo: o toque
+                  longo não se descobre sozinho, e um caminho de denúncia que
+                  ninguém acha não cumpre o requisito da loja. */}
+              {item.user_id !== currentUserId && (
+                <TouchableOpacity
+                  style={styles.commentReport}
+                  onPress={() => setReportTarget({ type: 'comment', id: item.id })}
+                  accessibilityRole="button"
+                  accessibilityLabel="Denunciar comentário"
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="flag-outline" size={14} color="#5A6180" />
+                </TouchableOpacity>
+              )}
             </TouchableOpacity>
           )}
         />
       )}
+
+      <ReportSheet
+        visible={!!reportTarget}
+        onClose={() => setReportTarget(null)}
+        targetType={reportTarget?.type || 'photo'}
+        targetId={reportTarget?.id}
+      />
 
       {!loading && photo ? (
         <View style={styles.commentInputRow}>
@@ -265,6 +334,9 @@ const styles = StyleSheet.create({
   rating: { marginTop: 2 },
   caption: { color: '#F7F7F2', fontSize: 14, lineHeight: 21 },
   review: { color: '#d5d7e2', fontSize: 13, lineHeight: 20, fontStyle: 'italic' },
+  errorHint: { color: '#5A6180', fontSize: 12.5, lineHeight: 18, textAlign: 'center', paddingHorizontal: 30 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  commentReport: { paddingLeft: 6, paddingTop: 4, alignSelf: 'flex-start' },
   commentsTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',

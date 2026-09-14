@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -26,6 +28,9 @@ import { getLevelInfo } from '../../utils/travelerLevels';
 import TravelerLevelCard from '../../components/profile/TravelerLevelCard';
 import StarRating from '../../components/StarRating';
 import { getOrCreateConversation } from '../../services/messageService';
+import { blockUser, isBlockedByMe, unblockUser } from '../../services/moderationService';
+import ReportSheet from '../../components/ReportSheet';
+import { confirm, notify } from '../../utils/dialogs';
 
 // A lista de níveis que vivia AQUI foi removida.
 //
@@ -45,6 +50,10 @@ export default function PublicProfileScreen({ route, navigation }) {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followsMe, setFollowsMe] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
+  const [bloqueado, setBloqueado] = useState(false);
+  const [processandoBloqueio, setProcessandoBloqueio] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -103,6 +112,13 @@ export default function PublicProfileScreen({ route, navigation }) {
         setFollowCounts(followCountsRes);
 
         if (myId && myId !== userId) {
+          // Só o MEU lado do bloqueio: se foi a outra pessoa quem bloqueou, o
+          // perfil nem chega aqui — some pela policy de `profiles`, e a tela cai
+          // no estado de indisponível mais abaixo.
+          isBlockedByMe(userId).then((estaBloqueado) => {
+            if (active) setBloqueado(estaBloqueado);
+          });
+
           const [followingRes, followsMeRes] = await Promise.all([
             getFollowing(myId),
             supabase
@@ -162,6 +178,54 @@ export default function PublicProfileScreen({ route, navigation }) {
     navigation.navigate('Conversation', { conversationId: result.data, profile });
   };
 
+  // Bloquear e desbloquear.
+  //
+  // O efeito é do BANCO: a RPC desfaz o "seguir" dos dois lados e as policies
+  // escondem tudo daí em diante. A tela não tenta repetir nada disso — só sai
+  // do perfil, porque depois do bloqueio ele deixou de existir para quem bloqueou
+  // e recarregar aqui mostraria a tela de indisponível na cara de quem acabou de
+  // pedir o bloqueio.
+  const confirmarBloqueio = async () => {
+    setMenuVisible(false);
+
+    const nome = profile?.display_name || `@${profile?.username}` || 'esta pessoa';
+    const aceitou = await confirm(
+      'Bloquear',
+      `${nome} não vai mais ver seu perfil, suas fotos nem seus comentários — e você também não vê os dela.\n\n`
+      + 'Se vocês se seguiam, deixam de se seguir agora.\n\n'
+      + 'Você pode desfazer em Configurações › Usuários bloqueados.'
+    );
+    if (!aceitou) return;
+
+    setProcessandoBloqueio(true);
+    const resultado = await blockUser(userId);
+    setProcessandoBloqueio(false);
+
+    if (!resultado.success) {
+      notify('Não foi possível bloquear', resultado.error || 'Tente novamente em instantes.');
+      return;
+    }
+
+    notify('Usuário bloqueado', 'Vocês não se veem mais. Para desfazer, vá em Configurações › Usuários bloqueados.');
+    navigation.goBack();
+  };
+
+  const desfazerBloqueio = async () => {
+    setMenuVisible(false);
+
+    setProcessandoBloqueio(true);
+    const resultado = await unblockUser(userId);
+    setProcessandoBloqueio(false);
+
+    if (!resultado.success) {
+      notify('Não foi possível desbloquear', resultado.error || 'Tente novamente em instantes.');
+      return;
+    }
+
+    setBloqueado(false);
+    notify('Usuário desbloqueado', 'Vocês voltam a se ver. Vocês NÃO voltam a se seguir.');
+  };
+
   const openPhoto = (photo) => {
     navigation.navigate('PhotoDetail', { photoId: photo.id, photo });
   };
@@ -174,10 +238,21 @@ export default function PublicProfileScreen({ route, navigation }) {
     );
   }
 
+  // Perfil vazio não é mais só "não existe".
+  //
+  // Desde o bloqueio, a consulta volta SEM ERRO e SEM LINHA em três situações
+  // diferentes: a pessoa bloqueou quem está olhando, a conta está em carência de
+  // exclusão, ou o perfil sumiu mesmo. O texto não diz qual delas é — de
+  // propósito: "fulano te bloqueou" entrega uma informação privada de quem
+  // bloqueou, e é justamente o tipo de aviso que vira retaliação.
   if (!profile) {
     return (
       <View style={styles.center}>
-        <Text style={styles.notFound}>Perfil não encontrado</Text>
+        <Ionicons name="person-remove-outline" size={38} color="#3A4166" />
+        <Text style={styles.notFound}>Este perfil não está disponível</Text>
+        <Text style={styles.notFoundHint}>
+          Ele pode ter sido removido ou não estar mais acessível para você.
+        </Text>
         <TouchableOpacity style={styles.menuButton} onPress={() => navigation.navigate('Main')}>
           <Ionicons name="home-outline" size={18} color="#fff" />
           <Text style={styles.menuButtonText}>Voltar ao menu</Text>
@@ -196,14 +271,31 @@ export default function PublicProfileScreen({ route, navigation }) {
           <Ionicons name="arrow-back" size={23} color="#F7F7F2" />
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>Perfil</Text>
-        <TouchableOpacity
-          accessibilityLabel="Voltar ao menu"
-          style={styles.homeButton}
-          onPress={() => navigation.navigate('Main')}
-        >
-          <Ionicons name="home-outline" size={20} color="#F7F7F2" />
-          <Text style={styles.homeText}>Menu</Text>
-        </TouchableOpacity>
+        <View style={styles.topBarActions}>
+          <TouchableOpacity
+            accessibilityLabel="Voltar ao menu"
+            style={styles.homeButton}
+            onPress={() => navigation.navigate('Main')}
+          >
+            <Ionicons name="home-outline" size={20} color="#F7F7F2" />
+            <Text style={styles.homeText}>Menu</Text>
+          </TouchableOpacity>
+
+          {/* Bloquear e denunciar vivem atrás do "..." e não soltos na barra:
+              são ações raras e pesadas, e um alvo de toque permanente ao lado do
+              botão de mensagem convida ao acidente. Não aparece no próprio
+              perfil — ninguém se bloqueia nem se denuncia. */}
+          {!isOwnProfile && (
+            <TouchableOpacity
+              accessibilityLabel="Mais opções"
+              accessibilityRole="button"
+              style={styles.moreButton}
+              onPress={() => setMenuVisible(true)}
+            >
+              <Ionicons name="ellipsis-horizontal" size={20} color="#F7F7F2" />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <ScrollView
@@ -341,6 +433,69 @@ export default function PublicProfileScreen({ route, navigation }) {
 
         <View style={styles.bottomSpace} />
       </ScrollView>
+
+      <Modal
+        visible={menuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuVisible(false)}
+      >
+        <Pressable
+          style={styles.menuOverlay}
+          onPress={() => setMenuVisible(false)}
+          accessibilityLabel="Fechar"
+        />
+        <View style={styles.menuSheet}>
+          <View style={styles.menuHandle} />
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              setMenuVisible(false);
+              setReportVisible(true);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Denunciar perfil"
+          >
+            <Ionicons name="flag-outline" size={19} color="#F7F7F2" />
+            <View style={styles.menuItemText}>
+              <Text style={styles.menuItemLabel}>Denunciar perfil</Text>
+              <Text style={styles.menuItemHint}>Nossa equipe analisa. A pessoa não fica sabendo.</Text>
+            </View>
+          </TouchableOpacity>
+
+          <View style={styles.menuDivider} />
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={bloqueado ? desfazerBloqueio : confirmarBloqueio}
+            disabled={processandoBloqueio}
+            accessibilityRole="button"
+            accessibilityLabel={bloqueado ? 'Desbloquear usuário' : 'Bloquear usuário'}
+          >
+            {processandoBloqueio
+              ? <ActivityIndicator size="small" color="#FF4D6D" />
+              : <Ionicons name={bloqueado ? 'lock-open-outline' : 'ban-outline'} size={19} color="#FF4D6D" />}
+            <View style={styles.menuItemText}>
+              <Text style={[styles.menuItemLabel, styles.menuItemDanger]}>
+                {bloqueado ? 'Desbloquear' : 'Bloquear'}
+              </Text>
+              <Text style={styles.menuItemHint}>
+                {bloqueado
+                  ? 'Vocês voltam a se ver. Não voltam a se seguir.'
+                  : 'Vocês deixam de se ver. Reversível quando quiser.'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      <ReportSheet
+        visible={reportVisible}
+        onClose={() => setReportVisible(false)}
+        targetType="profile"
+        targetId={userId}
+      />
     </View>
   );
 }
@@ -370,6 +525,44 @@ const styles = StyleSheet.create({
   homeButton: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   homeText: { color: '#F7F7F2', fontSize: 12, fontWeight: '600' },
   notFound: { color: '#9aa0c6', marginBottom: 16 },
+  topBarActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  moreButton: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
+  notFoundHint: {
+    color: '#5A6180',
+    fontSize: 12.5,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: -2,
+    marginBottom: 6,
+    paddingHorizontal: 24,
+  },
+  menuOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(5,7,15,0.6)' },
+  menuSheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#131A2E',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingTop: 10,
+    paddingBottom: 34,
+    paddingHorizontal: 18,
+  },
+  menuHandle: {
+    alignSelf: 'center',
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#2B3352',
+    marginBottom: 10,
+  },
+  menuItem: { flexDirection: 'row', alignItems: 'center', gap: 13, paddingVertical: 14, paddingHorizontal: 4 },
+  menuItemText: { flex: 1 },
+  menuItemLabel: { color: '#F7F7F2', fontSize: 14.5, fontWeight: '600' },
+  menuItemDanger: { color: '#FF4D6D' },
+  menuItemHint: { color: '#8A90A6', fontSize: 11.5, marginTop: 2 },
+  menuDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.07)' },
   menuButton: {
     flexDirection: 'row',
     alignItems: 'center',
