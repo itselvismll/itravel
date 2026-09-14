@@ -116,7 +116,7 @@ export async function signUp(email, password, username, fullName, captchaToken) 
 export async function signIn(email, password, captchaToken) {
   try {
     const { data, error } = await supabase.auth.signInWithPassword({
-      email,
+      email: String(email || '').trim().toLowerCase(),
       password,
       options: { captchaToken },
     });
@@ -125,7 +125,12 @@ export async function signIn(email, password, captchaToken) {
 
     return { success: true, user: data.user };
   } catch (error) {
-    return { success: false, error: error.message };
+    return {
+      success: false,
+      error: error?.message || 'Falha desconhecida na autenticação.',
+      code: error?.code || 'AUTH_LOGIN_FAILED',
+      status: Number(error?.status) || 0,
+    };
   }
 }
 

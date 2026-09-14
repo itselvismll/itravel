@@ -7,6 +7,7 @@
 
 import { getCountryNamePtByCode } from './countryUtils';
 import { fetch } from 'expo/fetch';
+import BRAZILIAN_MUNICIPALITIES from '../data/brazilianMunicipalities.json';
 
 const DIACRITICS_REGEX = new RegExp('[\\u0300-\\u036f]', 'g');
 
@@ -110,6 +111,23 @@ const CITY_QUERY_ALIASES = {
 const CITY_ALIAS_KEYS = Object.keys(CITY_QUERY_ALIASES);
 const MIN_ALIAS_PREFIX_LENGTH = 4;
 
+const BRAZIL_STATE_NAMES = {
+  AC: 'Acre', AL: 'Alagoas', AP: 'Amapá', AM: 'Amazonas', BA: 'Bahia', CE: 'Ceará',
+  DF: 'Distrito Federal', ES: 'Espírito Santo', GO: 'Goiás', MA: 'Maranhão', MT: 'Mato Grosso',
+  MS: 'Mato Grosso do Sul', MG: 'Minas Gerais', PA: 'Pará', PB: 'Paraíba', PR: 'Paraná',
+  PE: 'Pernambuco', PI: 'Piauí', RJ: 'Rio de Janeiro', RN: 'Rio Grande do Norte',
+  RS: 'Rio Grande do Sul', RO: 'Rondônia', RR: 'Roraima', SC: 'Santa Catarina',
+  SP: 'São Paulo', SE: 'Sergipe', TO: 'Tocantins',
+};
+
+const getCityIdentity = city => {
+  const rawState = String(city?.state || '').trim();
+  const state = city?.countryCode === 'BR'
+    ? BRAZIL_STATE_NAMES[rawState.toUpperCase()] || rawState
+    : rawState;
+  return normalizeSearchText(`${city?.shortName}|${state}|${city?.countryCode}`);
+};
+
 /**
  * Resolve a consulta digitada para o termo que a Photon entende.
  * Casa exatamente ("tóquio") ou por prefixo não-ambíguo ("toqui").
@@ -139,6 +157,7 @@ const PHOTON_LANG = 'en';
 // país. Filtrar por `osm_tag=place:*` parece equivalente mas exclui casos importantes —
 // Tóquio é `place:province` no OSM e sumia da lista.
 const PHOTON_LAYER = 'city';
+const AIRPORT_ENDPOINT = 'https://api.freeairportdb.com/v1/airports';
 
 const PLACE_TIER = {
   city: 0,
@@ -218,6 +237,33 @@ const delay = (ms, signal) =>
     }, { once: true });
   });
 
+const searchBrazilianMunicipalities = (rawQuery, limit) => {
+  const normalizedQuery = normalizeSearchText(rawQuery);
+  if (normalizedQuery.length < MIN_CITY_QUERY_LENGTH) return [];
+
+  return BRAZILIAN_MUNICIPALITIES
+    .map(([shortName, state, ibgeId]) => ({
+      name: `${shortName}, ${state}, Brasil`,
+      shortName,
+      state,
+      country: 'Brasil',
+      countryCode: 'BR',
+      placeType: 'municipality',
+      ibgeId,
+      lat: null,
+      lng: null,
+    }))
+    .filter(city => matchesSearchQuery(city.shortName, normalizedQuery))
+    .sort((a, b) => {
+      const aName = normalizeSearchText(a.shortName);
+      const bName = normalizeSearchText(b.shortName);
+      const aRank = aName === normalizedQuery ? 0 : aName.startsWith(normalizedQuery) ? 1 : 2;
+      const bRank = bName === normalizedQuery ? 0 : bName.startsWith(normalizedQuery) ? 1 : 2;
+      return aRank - bRank || String(a.shortName).localeCompare(String(b.shortName), 'pt-BR');
+    })
+    .slice(0, limit);
+};
+
 // A instância pública da Photon devolve 503 sob rajada. Uma única retentativa curta
 // resolve o caso comum sem transformar falha de rede em "nenhuma cidade encontrada".
 const fetchCities = async (query, { signal, limit, retry = true }) => {
@@ -264,7 +310,16 @@ export const searchCities = async (rawQuery, options = {}) => {
   // resultado depois de descartar os outros países.
   const fetchLimit = targetCountry ? 30 : 20;
 
-  let results = await fetchCities(resolvedQuery, { signal, limit: fetchLimit });
+  const officialBrazilianCities = !targetCountry || targetCountry === 'BR'
+    ? searchBrazilianMunicipalities(trimmed, fetchLimit)
+    : [];
+  let results = [];
+  try {
+    results = await fetchCities(resolvedQuery, { signal, limit: fetchLimit });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw error;
+    if (!officialBrazilianCities.length) throw error;
+  }
 
   if (targetCountry) {
     const inCountry = results.filter((city) => city.countryCode === targetCountry);
@@ -282,12 +337,93 @@ export const searchCities = async (rawQuery, options = {}) => {
   }
 
   const seen = new Set();
-  const unique = results.filter((city) => {
-    const key = normalizeSearchText(`${city.shortName}|${city.state}|${city.countryCode}`);
+  const unique = [...officialBrazilianCities, ...results].filter((city) => {
+    const key = getCityIdentity(city);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
 
   return rankCities(unique, normalizedQuery).slice(0, limit);
+};
+
+const AIRPORT_TYPE_TIER = {
+  large_airport: 0,
+  medium_airport: 1,
+  small_airport: 2,
+};
+
+export const isExactAirportCode = (airport, rawQuery) => {
+  const normalizedQuery = normalizeSearchText(rawQuery);
+  return [airport?.iata, airport?.icao]
+    .some(code => normalizeSearchText(code) === normalizedQuery);
+};
+
+const toAirportSuggestion = airport => {
+  if (!airport?.name || !airport?.country_code) return null;
+  const countryCode = String(airport.country_code).toUpperCase();
+  const country = getCountryNamePtByCode(countryCode, airport.country_name || '');
+  return {
+    name: airport.name,
+    shortName: airport.name,
+    city: airport.municipality || '',
+    state: airport.region_name || '',
+    country,
+    countryCode,
+    iata: airport.iata || '',
+    icao: airport.icao || '',
+    airportType: airport.type || '',
+    lat: Number.isFinite(Number(airport.latitude)) ? Number(airport.latitude) : null,
+    lng: Number.isFinite(Number(airport.longitude)) ? Number(airport.longitude) : null,
+  };
+};
+
+const rankAirports = (airports, rawQuery) => {
+  const normalizedQuery = normalizeSearchText(rawQuery);
+  return airports.sort((a, b) => {
+    const aExactCode = isExactAirportCode(a, normalizedQuery) ? 0 : 1;
+    const bExactCode = isExactAirportCode(b, normalizedQuery) ? 0 : 1;
+    const aType = AIRPORT_TYPE_TIER[a.airportType] ?? 3;
+    const bType = AIRPORT_TYPE_TIER[b.airportType] ?? 3;
+    return aExactCode - bExactCode || aType - bType || a.name.localeCompare(b.name, 'pt-BR');
+  });
+};
+
+export const formatAirportLabel = airport => (
+  [airport?.iata || airport?.icao, airport?.name].filter(Boolean).join(' · ')
+);
+
+export const formatAirportSubtitle = airport => (
+  [airport?.city, airport?.state, airport?.country].filter(Boolean).join(', ')
+);
+
+export const searchAirports = async (rawQuery, options = {}) => {
+  const { signal, limit = 5 } = options;
+  const trimmed = String(rawQuery || '').trim();
+  if (trimmed.length < MIN_CITY_QUERY_LENGTH) return [];
+
+  const url = `${AIRPORT_ENDPOINT}?q=${encodeURIComponent(trimmed)}&limit=${Math.max(limit * 3, 12)}`;
+  const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error(`Busca de aeroportos indisponível (${response.status})`);
+  const data = await response.json();
+  const airports = (data?.data || [])
+    .filter(item => Object.hasOwn(AIRPORT_TYPE_TIER, item?.type))
+    .map(toAirportSuggestion)
+    .filter(Boolean);
+
+  return rankAirports(airports, trimmed).slice(0, limit);
+};
+
+export const searchTravelLocations = async (rawQuery, options = {}) => {
+  const { signal, cityLimit = 6, airportLimit = 4 } = options;
+  const [citiesResult, airportsResult] = await Promise.allSettled([
+    searchCities(rawQuery, { signal, limit: cityLimit }),
+    searchAirports(rawQuery, { signal, limit: airportLimit }),
+  ]);
+  if (signal?.aborted) throw abortError();
+
+  return {
+    cities: citiesResult.status === 'fulfilled' ? citiesResult.value : [],
+    airports: airportsResult.status === 'fulfilled' ? airportsResult.value : [],
+  };
 };

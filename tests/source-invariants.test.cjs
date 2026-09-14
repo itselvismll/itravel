@@ -28,7 +28,24 @@ test('AI function validates authentication and destination input', () => {
   assert.doesNotMatch(handler, /gemini-1\.5-flash/);
   assert.doesNotMatch(handler, /temperature:/);
   assert.match(handler, /responseMimeType: 'application\/json'/);
-  assert.match(handler, /responseSchema,/);
+  assert.match(handler, /responseJsonSchema/);
+  assert.match(handler, /useStructuredSchema = false/);
+  assert.match(handler, /parseProviderJson/);
+});
+
+test('AI failures keep a request id from the provider attempt to the planner screen', () => {
+  const handler = read('supabase/functions/travel-assistant/index.ts');
+  const assistant = read('src/services/assistantService.js');
+  const planner = read('src/screens/assistant/TripPlannerScreen.js');
+  for (const field of ['requestId', 'model', 'status', 'providerStatus', 'code', 'finishReason', 'durationMs']) {
+    assert.match(handler, new RegExp(field));
+  }
+  assert.match(handler, /travel_assistant_provider_attempt/);
+  assert.match(handler, /x-journi-request-id/);
+  assert.doesNotMatch(handler, /providerMessage/);
+  assert.match(assistant, /functionError\?\.code/);
+  assert.match(assistant, /functionError\?\.requestId/);
+  assert.match(planner, /Código: \$\{safeCode\}-\$\{shortRequestId/);
 });
 
 test('travel planner is personalized, structured, cancellable, and editable', () => {
@@ -263,7 +280,7 @@ test('planning, messaging, passport, and explore improvements stay integrated', 
   const routing = read('src/utils/notificationRouting.js');
   assert.match(planner, /DestinationBudgetPlanner/);
   assert.match(planner, /LocationAutocomplete/);
-  assert.match(planner, /MultiCountrySelector/);
+  assert.match(planner, /MultiDestinationSelector/);
   assert.match(planner, /formatMoneyInput/);
   assert.match(planner, /form\.travelerType === 'Casal'/);
   assert.match(result, /Abrir meus roteiros salvos/);
@@ -484,12 +501,12 @@ test('long AI plans must contain exactly the requested duration and explain ever
   const assistant = read('supabase/functions/travel-assistant/index.ts');
   const service = read('src/services/assistantService.js');
   const result = read('src/screens/assistant/AssistantResultScreen.js');
-  assert.match(assistant, /const strictDaySchemaLimit = 3/);
+  assert.match(assistant, /const strictDaySchemaLimit = 6/);
   assert.match(assistant, /Math\.ceil\(duration \/ strictDaySchemaLimit\)/);
   assert.match(assistant, /Math\.min\(strictDaySchemaLimit, duration - index \* strictDaySchemaLimit\)/);
   assert.match(assistant, /spec\.days <= strictDaySchemaLimit/);
   assert.match(assistant, /minItems: spec\.days, maxItems: spec\.days/);
-  assert.match(assistant, /Math\.min\(65535, Math\.max\(8192, spec\.days \* 1000\)\)/);
+  assert.match(assistant, /Math\.min\(65535, Math\.max\(8192, spec\.days \* 1100\)\)/);
   assert.match(assistant, /candidatePlan\.days\.length === spec\.days/);
   assert.match(assistant, /retorne somente o campo days/);
   assert.match(assistant, /const chunkConcurrency = 1/);
@@ -501,10 +518,13 @@ test('long AI plans must contain exactly the requested duration and explain ever
   assert.match(assistant, /dayDestinations:/);
   assert.match(assistant, /Siga dayDestinations exatamente/);
   assert.match(assistant, /const maxProviderAttempts = 2/);
+  assert.match(service, /MAX_DAYS_PER_ASSISTANT_REQUEST = 12/);
+  assert.match(service, /buildPlanSegments/);
+  assert.match(service, /mergeSegmentResults/);
   assert.match(assistant, /getProviderRetryDelayMs/);
   assert.match(assistant, /geminiResponse\.status === 429/);
   assert.match(assistant, /model !== models\[models\.length - 1\]/);
-  assert.match(assistant, /await sleep\(1200\)/);
+  assert.match(assistant, /await sleep\(400\)/);
   assert.match(assistant, /placeWindowSize/);
   assert.match(service, /activeAssistantRequests/);
   assert.match(assistant, /const usedActivityTitles = new Set/);
@@ -521,20 +541,44 @@ test('long AI plans must contain exactly the requested duration and explain ever
 test('trip budget is allocated per destination and consolidated in BRL', () => {
   const planner = read('src/screens/assistant/TripPlannerScreen.js');
   const destinationBudget = read('src/components/DestinationBudgetPlanner.js');
+  const currencyPicker = read('src/components/CurrencyPicker.js');
   const currency = read('src/services/currencyService.js');
   const assistant = read('supabase/functions/travel-assistant/index.ts');
   assert.match(planner, /<DestinationBudgetPlanner/);
   assert.match(planner, /destinationBudgets/);
   assert.match(destinationBudget, /Orçamento da viagem/);
-  assert.match(destinationBudget, /Informe em reais e veja quanto terá na moeda de cada destino/);
+  assert.match(destinationBudget, /Moeda para comparar/);
+  assert.match(destinationBudget, /onDisplayCurrencyChange/);
+  assert.match(destinationBudget, /A IA usa esta escolha para decidir hospedagem, alimentação, transporte e passeios/);
+  assert.match(destinationBudget, /Econômico/);
+  assert.match(destinationBudget, /Equilibrado/);
+  assert.match(destinationBudget, /Confortável/);
   assert.match(destinationBudget, /TOTAL ESTIMADO/);
-  assert.match(destinationBudget, /getCountryCurrency/);
-  assert.match(destinationBudget, /Inverter moedas de/);
+  assert.match(destinationBudget, /Inverter conversão de/);
   assert.match(destinationBudget, /BASE_TO_LOCAL/);
+  assert.match(destinationBudget, /destinationCurrency/);
+  assert.match(destinationBudget, /comparisonCurrency/);
+  assert.doesNotMatch(destinationBudget, /currency: displayCurrency/);
+  assert.match(currencyPicker, /getAvailableCurrencies/);
+  assert.match(currencyPicker, /Ex: dólar, euro ou USD/);
   assert.match(currency, /world-countries@latest\/dist\/countries\.json/);
+  assert.match(currency, /currencyCatalogMemoryCache/);
   assert.match(currency, /'Argentine peso': 'ARS'/);
   assert.match(currency, /open\.er-api\.com\/v6\/latest/);
   assert.match(assistant, /amountInBRL/);
+  assert.match(assistant, /Em economy, priorize hospedagem simples/);
+  assert.match(assistant, /Em premium, priorize conforto/);
+});
+
+test('password login preserves the Supabase error code and never hides an unknown failure', () => {
+  const authService = read('src/services/supabase.js');
+  const login = read('src/screens/auth/LoginScreen.js');
+  assert.match(authService, /code: error\?\.code \|\| 'AUTH_LOGIN_FAILED'/);
+  assert.match(authService, /status: Number\(error\?\.status\) \|\| 0/);
+  assert.match(authService, /trim\(\)\.toLowerCase\(\)/);
+  assert.match(login, /formatLoginError/);
+  assert.match(login, /Código: \$\{safeCode\}/);
+  assert.match(login, /AUTH_UNEXPECTED_ERROR/);
 });
 
 test('country photo fullscreen lets the owner delete the selected photo', () => {
@@ -884,6 +928,29 @@ test('the guided onboarding card closes on the first marked country', () => {
   // O alerta bloqueante do navegador fica suprimido no passo guiado: ele
   // engoliria a celebração inteira.
   assert.match(globe, /suppressVisitedAlert=\{guidedActive\}/);
+});
+
+test('AI planner searches specific cities and airports with country flags', () => {
+  const planner = read('src/screens/assistant/TripPlannerScreen.js');
+  const origin = read('src/components/LocationAutocomplete.js');
+  const destinations = read('src/components/MultiDestinationSelector.js');
+  const geoSearch = read('src/utils/geoSearch.js');
+  const municipalities = JSON.parse(read('src/data/brazilianMunicipalities.json'));
+  const budget = read('src/components/DestinationBudgetPlanner.js');
+
+  assert.match(planner, /Cidade, país ou aeroporto \(ex: GRU\)/);
+  assert.match(planner, /Destinos e paradas/);
+  assert.match(origin, /searchTravelLocations/);
+  assert.match(origin, /CountryFlag/);
+  assert.match(destinations, /formatAirportLabel/);
+  assert.match(destinations, /CountryFlag/);
+  assert.match(destinations, /type === 'airport'/);
+  assert.match(geoSearch, /api\.freeairportdb\.com\/v1\/airports/);
+  assert.match(geoSearch, /searchBrazilianMunicipalities/);
+  assert.match(geoSearch, /Promise\.allSettled/);
+  assert.ok(municipalities.length >= 5570);
+  assert.ok(municipalities.some(([name, state]) => name === 'Jundiaí' && state === 'SP'));
+  assert.match(budget, /destinationId/);
 });
 
 test('mobile performance safeguards keep heavy content bounded', () => {
