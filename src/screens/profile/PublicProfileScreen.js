@@ -24,6 +24,7 @@ import CountryFlag from '../../components/CountryFlag';
 import CountryGridSection from '../../components/profile/CountryGridSection';
 import Avatar from '../../components/Avatar';
 import { normalizeBio } from '../../utils/bio';
+import InstagramBadge from '../../components/profile/InstagramBadge';
 import { getLevelInfo } from '../../utils/travelerLevels';
 import TravelerLevelCard from '../../components/profile/TravelerLevelCard';
 import StarRating from '../../components/StarRating';
@@ -313,6 +314,9 @@ export default function PublicProfileScreen({ route, navigation }) {
               defesa do ProfileScreen — bio antiga com muitas linhas em branco
               não abre vão vertical aqui. */}
           {profile.bio ? <Text style={styles.bio}>{normalizeBio(profile.bio)}</Text> : null}
+
+          {/* Badge do Instagram. Opcional: o componente devolve null sem @. */}
+          <InstagramBadge username={profile?.instagram_username} style={{ marginTop: 8 }} />
 
           <View style={styles.statsRow}>
             <View style={styles.statItem}>

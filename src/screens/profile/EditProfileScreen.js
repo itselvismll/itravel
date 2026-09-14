@@ -32,6 +32,7 @@ import {
   normalizeBio,
   validateBio,
 } from '../../utils/bio';
+import { normalizeInstagramUsername } from '../../utils/instagram';
 
 // Teto bruto do TextInput. Fica ACIMA do limite real para o excedente poder ser
 // digitado, contado e mostrado em vermelho — o corte seco no limite esconderia
@@ -69,6 +70,7 @@ export default function EditProfileScreen({ navigation, route }) {
   const [displayName, setDisplayName] = useState(profile?.display_name || '');
   const [username, setUsername] = useState(profile?.username || '');
   const [bio, setBio] = useState(profile?.bio || '');
+  const [instagram, setInstagram] = useState(profile?.instagram_username || '');
   const [avatarUri, setAvatarUri] = useState(profile?.avatar_url || null);
   const [avatarFile, setAvatarFile] = useState(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -83,6 +85,7 @@ export default function EditProfileScreen({ navigation, route }) {
       setDisplayName(profile.display_name || '');
       setUsername(profile.username || '');
       setBio(profile.bio || '');
+      setInstagram(profile.instagram_username || '');
     }
   }, [profile]);
 
@@ -97,6 +100,12 @@ export default function EditProfileScreen({ navigation, route }) {
   // enquanto a pessoa digita — descobrir só ao apertar "Salvar" é pior.
   const bioOverLines = countLineBreaks(bioNormalized) > BIO_MAX_LINE_BREAKS;
   const bioInvalid = bioOverLength || bioOverLines;
+
+  // Vazio NAO e invalido: o campo e opcional. So o que a pessoa digitou e a
+  // normalizacao nao conseguiu aproveitar conta como erro — assim o aviso
+  // vermelho nao aparece num campo intocado.
+  const instagramNormalizado = normalizeInstagramUsername(instagram);
+  const instagramInvalido = instagram.trim().length > 0 && !instagramNormalizado;
 
   const handlePickAvatar = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -150,6 +159,14 @@ export default function EditProfileScreen({ navigation, route }) {
       return;
     }
 
+    // Barra ANTES de gravar: o constraint do banco recusaria com um 23514, cuja
+    // mensagem crua não diz à pessoa o que fazer. Campo vazio segue em frente —
+    // é opcional, e vira null lá.
+    if (instagramInvalido) {
+      setErrorMessage('O @ do Instagram só aceita letras, números, ponto e underline.');
+      return;
+    }
+
     setErrorMessage('');
     setSaving(true);
     try {
@@ -185,6 +202,9 @@ export default function EditProfileScreen({ navigation, route }) {
         display_name: displayName.trim(),
         username: normalizedUsername,
         bio: bioCheck.value,
+        // Sempre enviado, inclusive vazio: é assim que apagar o campo funciona.
+        // Mandar só quando preenchido deixaria o @ antigo no banco para sempre.
+        instagram_username: instagramNormalizado,
         ...(avatarFile && { avatar_url: finalAvatarUrl }),
       });
 
@@ -387,6 +407,41 @@ export default function EditProfileScreen({ navigation, route }) {
               {bioCount}/{BIO_MAX_LENGTH}
             </Text>
           </View>
+
+          <View style={styles.divider} />
+
+          <Text style={styles.label}>Instagram</Text>
+          <View style={styles.instagramRow}>
+            {/* O @ é desenhado FORA do campo, como prefixo fixo. Dentro do valor
+                ele seria salvo junto e teria de ser retirado depois; como rótulo
+                ele diz o formato esperado sem a pessoa precisar digitá-lo — e
+                quem digitar assim mesmo continua funcionando, porque a
+                normalização tira. */}
+            <Text style={styles.instagramPrefix}>@</Text>
+            <TextInput
+              style={[styles.input, styles.instagramInput]}
+              value={instagram}
+              onChangeText={(text) => {
+                setInstagram(text);
+                setErrorMessage('');
+              }}
+              placeholder="seu.usuario"
+              placeholderTextColor="#bbb"
+              autoCapitalize="none"
+              autoCorrect={false}
+              // Sem `keyboardType="url"`: o teclado de URL esconde o underline,
+              // que é caractere válido de username no Instagram.
+              maxLength={90}
+              accessibilityLabel="Nome de usuário no Instagram"
+            />
+          </View>
+          <Text
+            style={{ fontSize: 10, color: instagramInvalido ? '#ef4444' : '#bbb', marginTop: 4 }}
+          >
+            {instagramInvalido
+              ? 'Use apenas letras, números, ponto e underline.'
+              : 'Opcional. Pode colar o link do seu perfil — o @ é removido automaticamente.'}
+          </Text>
         </View>
 
         {errorMessage ? (
@@ -428,6 +483,10 @@ export default function EditProfileScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f0f0f0' },
   bioInput: { minHeight: 74, paddingTop: 8, lineHeight: 20 },
+  // O @ é prefixo fixo ao lado do campo, não parte do valor digitado.
+  instagramRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  instagramPrefix: { fontSize: 15, color: '#bbb', fontWeight: '600' },
+  instagramInput: { flex: 1 },
   header: {
     backgroundColor: '#0D1326',
     padding: 16,

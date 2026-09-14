@@ -22,6 +22,7 @@ import { getCurrentUser, signOut, getVisitedCountries, supabase } from '../../se
 import { getWishlist } from '../../services/socialService';
 import { getProfile } from '../../services/profileService';
 import { normalizeBio } from '../../utils/bio';
+import InstagramBadge from '../../components/profile/InstagramBadge';
 import { deletePhoto, getAllUserPhotos, getPhotoCommentCounts } from '../../services/photoService';
 import { getCountryNamePtByCode } from '../../utils/countryUtils';
 import StarRating from '../../components/StarRating';
@@ -320,6 +321,9 @@ export default function ProfileScreen({ navigation }) {
             não o reproduz. Na próxima vez que o dono editar e salvar, o valor
             gravado também é normalizado. */}
         {profile?.bio ? <Text style={styles.bio}>{normalizeBio(profile.bio)}</Text> : null}
+
+        {/* Badge do Instagram. Opcional: o componente devolve null sem @. */}
+        <InstagramBadge username={profile?.instagram_username} style={{ marginTop: 8 }} />
 
         <View style={styles.statsRow}>
           <View style={styles.statItem}>

@@ -182,7 +182,13 @@ test('a validação também roda no serviço, não só na tela', () => {
   assert.match(service, /const bio = validateBio\(sanitizedUpdates\.bio\)/);
   assert.match(service, /if \(!bio\.valid\) return \{ success: false, error: bio\.error \}/);
   // E o campo precisa estar na allowlist, senão ele seria descartado em silêncio.
-  assert.match(service, /allowedFields = \['username', 'display_name', 'avatar_url', 'bio'\]/);
+  //
+  // Casa só a presença de 'bio' na lista, e não a lista inteira: este teste é
+  // sobre a bio, e prender aqui a composição exata de `allowedFields` fazia
+  // qualquer campo novo de perfil reprovar o teste da bio — que é o lugar errado
+  // para descobrir isso. Quem cuida da lista como um todo é
+  // profile-schema.test.cjs, que exige migração para cada campo.
+  assert.match(service, /allowedFields = \[[^\]]*'bio'[^\]]*\]/);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

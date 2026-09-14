@@ -4,9 +4,10 @@ import { supabase } from './supabase';
 // acento nem caractere inválido e deixava passar username que o banco recusava.
 import { normalizeUsername } from '../utils/username';
 import { validateBio } from '../utils/bio';
+import { normalizeInstagramUsername } from '../utils/instagram';
 
 const sanitizeProfileUpdates = (updates = {}) => {
-  const allowedFields = ['username', 'display_name', 'avatar_url', 'bio'];
+  const allowedFields = ['username', 'display_name', 'avatar_url', 'bio', 'instagram_username'];
   const sanitized = Object.fromEntries(
     Object.entries(updates).filter(([key]) => allowedFields.includes(key))
   );
@@ -64,6 +65,16 @@ export const updateProfile = async (userId, updates) => {
     const bio = validateBio(sanitizedUpdates.bio);
     if (!bio.valid) return { success: false, error: bio.error };
     sanitizedUpdates.bio = bio.value;
+  }
+
+  // O @ do Instagram passa pela MESMA normalização da tela, aqui também: o
+  // constraint do banco recusa qualquer coisa fora de [A-Za-z0-9._]{1,30}, e o
+  // que chegasse por outro caminho que não o formulário viraria um 23514 cru na
+  // cara do usuário. Vazio vira null — "não informado" é ausência de valor, e
+  // não string vazia, senão o badge teria dois casos para testar em vez de um.
+  if (Object.hasOwn(sanitizedUpdates, 'instagram_username')) {
+    sanitizedUpdates.instagram_username =
+      normalizeInstagramUsername(sanitizedUpdates.instagram_username) || null;
   }
 
   // Some legacy auth accounts were created before profiles were generated
