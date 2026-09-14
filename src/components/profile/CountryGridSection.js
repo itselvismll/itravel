@@ -41,6 +41,22 @@ export default function CountryGridSection({
 
   const isEmpty = !countries?.length;
 
+  // Uma ou duas etiquetas ficam centralizadas; de três em diante, alinhadas à
+  // esquerda como antes.
+  //
+  // O card ocupa a largura da tela e a etiqueta tem largura FIXA (104). Com um
+  // país só, `flex-start` encostava o selo na borda esquerda e deixava uns 250px
+  // de branco à direita — o card parecia dimensionado para uma grade que não
+  // existe. Centralizar não muda a altura (nunca houve altura fixa aqui): o
+  // branco vira margem simétrica, que lê como espaço de respiro em vez de buraco.
+  //
+  // O corte é em 2 porque a partir de 3 as etiquetas já preenchem a linha nas
+  // larguras de tela comuns (3 × 104 + 2 × 10 = 332, contra ~348 úteis num
+  // aparelho de 400pt), e centralizar passaria a desalinhar a primeira etiqueta
+  // em relação ao título — que é o que mantém a leitura de "grade" nos casos
+  // cheios.
+  const poucosSelos = visible.length + (hasMore ? 1 : 0) <= 2;
+
   return (
     <View style={styles.card}>
       <View style={styles.cardTitleRow}>
@@ -56,7 +72,7 @@ export default function CountryGridSection({
           <Text style={styles.emptyText}>{emptyState.text}</Text>
         </View>
       ) : (
-        <View style={styles.stampsGrid}>
+        <View style={[styles.stampsGrid, poucosSelos && styles.stampsGridPoucos]}>
           {visible.map((country, index) => (
             <CountryTag
               key={countryKey(country, index)}
@@ -110,6 +126,18 @@ const styles = StyleSheet.create({
     padding: 14,
     margin: 12,
     marginBottom: 0,
+    // O PublicProfileScreen centraliza os filhos do scroll
+    // (`scrollContent: { alignItems: 'center' }`), e com isso o card deixava de
+    // esticar: a largura virava a do conteúdo — com um país só, pouco mais que o
+    // próprio título — e o card aparecia estreito no meio da tela, desalinhado
+    // das outras seções. No ProfileScreen nunca apareceu porque lá o
+    // contentContainerStyle não mexe em alignItems, e o padrão já é stretch.
+    //
+    // `stretch` e não `width: '100%'`: largura percentual resolve contra a caixa
+    // de conteúdo do pai e SOMA as margens por fora, então os `margin: 12` dos
+    // dois lados estourariam a tela em 24pt. Os irmãos `styles.section` podem
+    // usar 100% porque espaçam com paddingHorizontal, não com margem.
+    alignSelf: 'stretch',
   },
   cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 14 },
   cardTitle: {
@@ -126,6 +154,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     justifyContent: 'flex-start',
   },
+  stampsGridPoucos: { justifyContent: 'center' },
   // Mesmas medidas da etiqueta, para o card cair no slot sem quebrar a grade.
   // O visual é o negativo dela: tracejado e vazado em vez de sólido, que é como
   // se lê "aqui tem mais" em vez de "aqui tem um país".
