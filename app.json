@@ -49,7 +49,8 @@
       "expo-sharing",
       "expo-font",
       "expo-web-browser",
-      "expo-image"
+      "expo-image",
+      "./plugins/withInstagram"
     ],
     "extra": {
       "eas": {

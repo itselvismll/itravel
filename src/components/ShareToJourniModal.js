@@ -5,7 +5,24 @@ import Avatar from './Avatar';
 import { getShareRecipients, shareWithUser } from '../services/messageService';
 import { notify } from '../utils/dialogs';
 
-export default function ShareToJourniModal({ visible, onClose, resource, onExternalShare }) {
+/**
+ * `onInstagramShare` é opcional de propósito: quem chama decide se a opção faz
+ * sentido naquela plataforma (o compartilhamento nos Stories é nativo, não tem
+ * lado web). Sem a prop, a linha não é desenhada — o modal não testa Platform.
+ *
+ * O typedef existe porque props sem valor padrão são inferidas como
+ * OBRIGATÓRIAS a partir da desestruturação, e o feed e o roteiro usam este modal
+ * sem passar nenhuma das duas de compartilhamento externo.
+ *
+ * @param {{
+ *   visible: boolean,
+ *   onClose: () => void,
+ *   resource: any,
+ *   onExternalShare?: () => void,
+ *   onInstagramShare?: () => void,
+ * }} props
+ */
+export default function ShareToJourniModal({ visible, onClose, resource, onExternalShare, onInstagramShare }) {
   const [recipients, setRecipients] = useState([]);
   const [loading, setLoading] = useState(false);
   const [sendingId, setSendingId] = useState(null);
@@ -33,6 +50,18 @@ export default function ShareToJourniModal({ visible, onClose, resource, onExter
       <View style={styles.overlay}>
         <View style={styles.sheet}>
           <View style={styles.header}><Text style={styles.title}>Compartilhar</Text><TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color="#F7F7F2" /></TouchableOpacity></View>
+          {!!onInstagramShare && (
+            <TouchableOpacity
+              style={styles.instagram}
+              onPress={() => { onClose(); onInstagramShare(); }}
+              accessibilityRole="button"
+              accessibilityLabel="Compartilhar nos Stories do Instagram"
+            >
+              <Ionicons name="logo-instagram" size={21} color="#F7F7F2" />
+              <View style={{ flex: 1 }}><Text style={styles.externalTitle}>Compartilhar no Instagram</Text><Text style={styles.instagramSub}>Abre o editor de Stories com seu passaporte</Text></View>
+              <Ionicons name="chevron-forward" size={18} color="rgba(247,247,242,0.7)" />
+            </TouchableOpacity>
+          )}
           {!!onExternalShare && (
             <TouchableOpacity style={styles.external} onPress={() => { onClose(); onExternalShare(); }}>
               <Ionicons name="share-social-outline" size={21} color="#A78BFA" />
@@ -67,6 +96,10 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   title: { color: '#F7F7F2', fontSize: 18, fontWeight: '900' },
   external: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 13, backgroundColor: '#202744', borderRadius: 14, marginBottom: 16 },
+  // Mesma forma da linha de "Outros aplicativos", com o roxo da marca em vez do
+  // navy: é a mesma ação (sair do app), mas com destino certo em vez de escolha.
+  instagram: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 13, backgroundColor: '#6C2BD9', borderRadius: 14, marginBottom: 10 },
+  instagramSub: { color: 'rgba(247,247,242,0.72)', fontSize: 10, marginTop: 2 },
   externalTitle: { color: '#F7F7F2', fontSize: 13, fontWeight: '800' },
   externalSub: { color: '#7E86A6', fontSize: 10, marginTop: 2 },
   sectionLabel: { color: '#717998', fontSize: 9, fontWeight: '900', letterSpacing: 1, marginBottom: 6 },

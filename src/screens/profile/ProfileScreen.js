@@ -31,6 +31,12 @@ import { useUpload } from '../../context/UploadContext';
 import { getLevelInfo } from '../../utils/travelerLevels';
 import TravelerLevelCard from '../../components/profile/TravelerLevelCard';
 import { confirm, notify } from '../../utils/dialogs';
+import {
+  shareToInstagramStories,
+  STORIES_OK,
+  STORIES_SEM_APP,
+  STORIES_SEM_APP_ID,
+} from '../../utils/instagram';
 import useTabBarContentPadding from '../../hooks/useTabBarContentPadding';
 
 export default function ProfileScreen({ navigation }) {
@@ -180,6 +186,50 @@ export default function ProfileScreen({ navigation }) {
     } catch {
       notify('Erro ao compartilhar', 'Não foi possível gerar seu passaporte agora.');
     }
+  };
+
+  // Stories do Instagram. Reaproveita a MESMA captura do compartilhamento
+  // genérico acima — o passaporte já é desenhado uma vez fora da tela, e capturar
+  // de novo só produziria um segundo PNG idêntico.
+  //
+  // Só existe no nativo: o react-native-share não tem lado web, e na web o botão
+  // nem é oferecido (ver ShareToJourniModal).
+  const sharePassportToInstagram = async () => {
+    let uri;
+    try {
+      uri = await captureRef(shareCardRef, { format: 'png', quality: 1 });
+    } catch {
+      notify('Erro ao compartilhar', 'Não foi possível gerar seu passaporte agora.');
+      return;
+    }
+
+    const { status } = await shareToInstagramStories(uri);
+
+    if (status === STORIES_OK) return;
+
+    if (status === STORIES_SEM_APP) {
+      notify(
+        'Instagram não encontrado',
+        'Instale o Instagram para publicar seu passaporte nos Stories. Você também pode usar "Outros aplicativos" e escolher onde compartilhar.'
+      );
+      return;
+    }
+
+    if (status === STORIES_SEM_APP_ID) {
+      // Configuração faltando, não erro do usuário: sem o App ID do Facebook o
+      // Instagram recusa o conteúdo. Mensagem separada para quem for investigar
+      // não procurar defeito no aparelho.
+      notify(
+        'Compartilhamento indisponível',
+        'O compartilhamento nos Stories ainda não está configurado nesta versão do app. Use "Outros aplicativos" por enquanto.'
+      );
+      return;
+    }
+
+    notify(
+      'Erro ao compartilhar',
+      'Não foi possível abrir o Instagram agora. Tente por "Outros aplicativos".'
+    );
   };
 
   const handleDeletePhoto = async (photo) => {
@@ -507,6 +557,10 @@ export default function ProfileScreen({ navigation }) {
         },
       }}
       onExternalShare={sharePassportExternally}
+      // Só no nativo: o react-native-share não tem lado web. Passando `undefined`
+      // na web, o modal simplesmente não desenha a linha — a decisão de existir
+      // ou não fica aqui, e o modal não precisa saber de plataforma.
+      onInstagramShare={Platform.OS === 'web' ? undefined : sharePassportToInstagram}
     />
 
     <Modal
