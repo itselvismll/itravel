@@ -58,6 +58,20 @@ function LevelMedalMini() {
 //
 // `labelStyle` existe para o "Sair" cair meio passo de peso em vez de acompanhar
 // os outros: continua sendo o item de destaque da lista, sem gritar.
+//
+// O typedef existe porque `labelStyle` não tem valor padrão, e sem ele o
+// TypeScript infere a prop como obrigatória a partir da desestruturação — os
+// quatro itens que não passam estilo nenhum viravam erro.
+/**
+ * @param {{
+ *   icon: React.ComponentProps<typeof Ionicons>['name'],
+ *   label: string,
+ *   color?: string,
+ *   iconColor?: string,
+ *   labelStyle?: import('react-native').StyleProp<import('react-native').TextStyle>,
+ *   onPress: () => void,
+ * }} props
+ */
 function DrawerItem({ icon, label, color = '#F7F7F2', iconColor = '#A78BFA', labelStyle, onPress }) {
   return (
     <TouchableOpacity style={styles.item} onPress={onPress} accessibilityRole="button" accessibilityLabel={label}>

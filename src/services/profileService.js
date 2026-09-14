@@ -187,12 +187,33 @@ export const requestAccountDeletion = async () => {
 };
 
 /**
+ * O status HTTP da resposta, quando o postgrest-js anexa um ao erro.
+ *
+ * @param {unknown} error
+ * @returns {number | undefined}
+ */
+const httpStatus = (error) => {
+  if (typeof error !== 'object' || error === null || !('status' in error)) return undefined;
+  const { status } = /** @type {{ status?: unknown }} */ (error);
+  return typeof status === 'number' ? status : undefined;
+};
+
+/**
  * Reverte a exclusão, se houver uma pendente.
  *
  * Chamada em TODO login, sem checar antes se há pedido: a RPC devolve `false`
  * quando não havia nada para cancelar, então uma ida ao banco resolve o caso
  * comum e o caso de reativação com a mesma chamada. Ler o perfil antes só para
  * decidir se vale chamar seria uma consulta a mais em todo login.
+ *
+ * POR QUE O STATUS SAI DE UM TYPE GUARD
+ *
+ * `status` não existe no tipo `PostgrestError`, que declara só message, details,
+ * hint e code — mas chega em runtime em parte dos erros, e é justamente ele que
+ * separa "a policy recusou" (401/403) de "a RPC não existe no banco" (404), que
+ * é a distinção pela qual este log existe. Lido por `httpStatus` em vez de cast
+ * direto: um cast afirmaria ao TypeScript um campo que pode não vir, e o log
+ * passaria a imprimir `undefined` sem ninguém notar que a informação sumiu.
  *
  * POR QUE O RETORNO NÃO É UM BOOLEANO
  *
@@ -217,11 +238,12 @@ export const cancelAccountDeletion = async () => {
     const { data, error } = await supabase.rpc('cancel_account_deletion');
 
     if (error) {
+      const status = httpStatus(error);
       console.error(
         '[conta] cancel_account_deletion falhou:',
-        { message: error.message, code: error.code, details: error.details, hint: error.hint, status: error.status }
+        { message: error.message, code: error.code, details: error.details, hint: error.hint, status }
       );
-      return { reactivated: false, error: error.message, code: error.code, status: error.status };
+      return { reactivated: false, error: error.message, code: error.code, status };
     }
 
     return { reactivated: data === true };
