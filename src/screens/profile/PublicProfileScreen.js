@@ -360,14 +360,14 @@ export default function PublicProfileScreen({ route, navigation }) {
           ) : null}
         </View>
 
-        <View style={styles.section}>
-          <View style={styles.levelCard}>
-            <TravelerLevelCard
-              countryCount={visitedCountries.length}
-              levelInfo={levelInfo}
-            />
-          </View>
-        </View>
+        {/* Fora do `styles.section`: o card já traz a própria margem, igual ao
+            card de países logo abaixo. Dentro da seção ele ganharia os 18pt de
+            paddingHorizontal por cima dos 12 de margem e ficaria mais estreito
+            que o vizinho. */}
+        <TravelerLevelCard
+          countryCount={visitedCountries.length}
+          levelInfo={levelInfo}
+        />
 
         {visitedCountries.length > 0 ? (
           <CountryGridSection
@@ -636,16 +636,6 @@ const styles = StyleSheet.create({
     color: '#9aa0c6',
     letterSpacing: 1.6,
     marginBottom: 12,
-  },
-  // Deixou de ser `flexDirection: 'row'`: era o container do emoji ao lado do
-  // texto. O TravelerLevelCard é um bloco (medalha, barra, trilha, rodapé), e um
-  // container em linha espremeria a trilha numa coluna.
-  levelCard: {
-    backgroundColor: '#1b1f3a',
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
   },
   photoGrid: {
     flexDirection: 'row',

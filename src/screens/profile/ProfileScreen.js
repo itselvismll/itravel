@@ -304,13 +304,10 @@ export default function ProfileScreen({ navigation }) {
       {/* Card de nível. O conteúdo mora em TravelerLevelCard, compartilhado com
           o perfil público — antes cada tela desenhava o seu, com listas de nível
           que não batiam. */}
-      <View style={styles.card}>
-        <TravelerLevelCard
-          countryCount={visitedCountries.length}
-          levelInfo={levelInfo}
-          light
-        />
-      </View>
+      <TravelerLevelCard
+        countryCount={visitedCountries.length}
+        levelInfo={levelInfo}
+      />
 
       {/* Passaporte */}
       <CountryGridSection

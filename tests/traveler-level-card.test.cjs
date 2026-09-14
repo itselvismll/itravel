@@ -67,6 +67,37 @@ test('as telas de perfil não desenham mais o nível por conta própria', () => 
   }
 });
 
+test('o fundo do card mora no componente, não nas telas', () => {
+  // O card aparecia BRANCO no perfil próprio e NAVY no perfil dos outros.
+  //
+  // A causa não era uma cor errada: o componente devolvia um Fragment sem fundo
+  // nenhum, e cada tela o embrulhava no seu próprio container — branco de um
+  // lado, '#1b1f3a' do outro, mais uma prop `light` que só uma das duas passava.
+  // Eram dois estilos independentes que ninguém comparava, então divergir era o
+  // comportamento esperado, não o acidente.
+  //
+  // Travado aqui porque o sintoma só aparece abrindo as duas telas lado a lado,
+  // que é exatamente o que ninguém faz ao mexer numa delas.
+  const card = stripComments(read(CARD));
+  assert.match(card, /card: \{[^}]*backgroundColor: 'white'/, `${CARD}: o card perdeu o fundo próprio`);
+  assert.doesNotMatch(card, /light/, `${CARD}: a prop de tema voltou — é por ela que as telas divergiam`);
+
+  for (const tela of TELAS) {
+    const source = stripComments(read(tela));
+    // Nenhuma das telas pode voltar a embrulhar o card num container próprio.
+    assert.doesNotMatch(
+      source,
+      /<View style=\{styles\.\w+\}>\s*<TravelerLevelCard/,
+      `${tela}: voltou a embrulhar o card num container local`
+    );
+    assert.doesNotMatch(
+      source,
+      /<TravelerLevelCard[^>]*\blight\b/,
+      `${tela}: voltou a passar a prop de tema`
+    );
+  }
+});
+
 test('as duas telas leem a mesma fonte de níveis', () => {
   // O perfil público tinha uma CÓPIA da lista, com limites diferentes: o mesmo
   // usuário com 5 países aparecia como "Explorador" no próprio perfil e

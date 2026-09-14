@@ -139,16 +139,30 @@ function TrackBadge({ state }) {
 }
 
 /**
+ * O card de nível do viajante, fundo incluído.
+ *
+ * O fundo mora AQUI, e não em quem chama, porque foi assim que as duas telas
+ * divergiram: o componente devolvia um Fragment sem fundo nenhum, o
+ * ProfileScreen o embrulhava num card branco e passava `light`, e o
+ * PublicProfileScreen num card `#1b1f3a` sem passar nada. O mesmo card aparecia
+ * branco no perfil próprio e navy no perfil dos outros, e nada no código
+ * impedia isso — eram dois containers independentes que ninguém comparava.
+ *
+ * Branco porque é o padrão dos cards de conteúdo do perfil: o card de países do
+ * CountryGridSection é branco NAS DUAS telas, então o navy era o ponto fora da
+ * curva mesmo dentro do perfil público.
+ *
+ * `alignSelf: 'stretch'` pelo mesmo motivo do CountryGridSection: o
+ * PublicProfileScreen centraliza os filhos do scroll, e sem isso o card encolhe
+ * para a largura do conteúdo em vez de acompanhar as outras seções.
+ *
  * @param {{
  *   countryCount: number,
  *   levelInfo: { current: any, next: any, progress: number },
- *   light?: boolean,
  * }} props
  */
-export default function TravelerLevelCard({ countryCount, levelInfo, light = false }) {
-  const palette = light
-    ? { title: '#0D1326', sub: '#999', label: '#8A90A6', track: '#f0f0f0' }
-    : { title: '#F7F7F2', sub: '#9aa0c6', label: '#8A90A6', track: 'rgba(255,255,255,0.10)' };
+export default function TravelerLevelCard({ countryCount, levelInfo }) {
+  const palette = { title: '#0D1326', sub: '#999', label: '#8A90A6', track: '#f0f0f0' };
 
   const currentIndex = TRAVELER_LEVELS.findIndex(
     (level) => level.level === levelInfo.current.level
@@ -158,7 +172,7 @@ export default function TravelerLevelCard({ countryCount, levelInfo, light = fal
     : 0;
 
   return (
-    <>
+    <View style={styles.card}>
       <View style={styles.headerRow}>
         <LevelMedal />
         <View style={{ flex: 1 }}>
@@ -236,11 +250,23 @@ export default function TravelerLevelCard({ countryCount, levelInfo, light = fal
             : 'Nível máximo atingido'}
         </Text>
       </View>
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  // Mesmas medidas do card do CountryGridSection: os dois são cards de conteúdo
+  // do perfil e ficam empilhados um sobre o outro nas duas telas, então qualquer
+  // diferença de raio, padding ou margem aparece como desalinhamento.
+  card: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 14,
+    margin: 12,
+    marginBottom: 0,
+    alignSelf: 'stretch',
+  },
+
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
 
   medal: {
