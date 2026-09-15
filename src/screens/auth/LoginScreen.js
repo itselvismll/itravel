@@ -11,6 +11,36 @@ import { notify } from '../../utils/dialogs';
 import HCaptchaWidget from '../../components/auth/HCaptchaWidget';
 import { HCAPTCHA_ENABLED, HCAPTCHA_ERROR_MESSAGE } from '../../components/auth/hcaptchaConfig';
 
+const formatLoginError = (/** @type {{ error?: unknown, code?: unknown, status?: unknown }} */ result = {}) => {
+  const { error, code, status } = result;
+  const message = String(error || '');
+  const normalizedCode = String(code || '').toLowerCase();
+
+  if (normalizedCode === 'invalid_credentials' || /invalid login credentials/i.test(message)) {
+    return 'Email ou senha incorretos';
+  }
+  if (normalizedCode === 'email_not_confirmed' || /email not confirmed/i.test(message)) {
+    return 'Por favor, confirme seu email antes de fazer login';
+  }
+  if (/rate.limit|too many|429/i.test(`${normalizedCode} ${message} ${status || ''}`)) {
+    return 'Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente.';
+  }
+  if (normalizedCode === 'user_banned') {
+    return 'Esta conta está temporariamente indisponível. Entre em contato com o suporte.';
+  }
+  if (/failed to fetch|network request failed|load failed/i.test(message)) {
+    return 'Não foi possível conectar ao login. Verifique sua internet e tente novamente.';
+  }
+  if (/captcha/i.test(`${normalizedCode} ${message}`)) {
+    return HCAPTCHA_ERROR_MESSAGE;
+  }
+
+  const safeCode = String(code || (status ? `HTTP_${status}` : 'AUTH_LOGIN_FAILED'))
+    .replace(/[^a-zA-Z0-9_-]/g, '')
+    .toUpperCase();
+  return `Não foi possível entrar agora. Código: ${safeCode}`;
+};
+
 export default function LoginScreen({ navigation, onLoginSuccess }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -48,34 +78,29 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
     }
 
     setLoading(true);
-    const result = await signIn(email, password, captchaToken ?? undefined);
-    setLoading(false);
+    try {
+      const result = await signIn(email, password, captchaToken ?? undefined);
 
-    if (result.success) {
-      // Token do hCaptcha é de uso único: consumido, some do estado.
-      captchaRef.current?.markUsed();
-      setCaptchaToken(null);
-      if (onLoginSuccess) {
-        onLoginSuccess(result.user);
+      if (result.success) {
+        // O token do hCaptcha é de uso único e foi consumido nesta tentativa.
+        captchaRef.current?.markUsed();
+        setCaptchaToken(null);
+        if (onLoginSuccess) {
+          onLoginSuccess(result.user);
+        }
+        return;
       }
-    } else {
-      // Falhou? O token já foi queimado na tentativa — recarrega o desafio.
+
+      // Mesmo uma autenticação recusada consome o token; gere outro desafio.
       captchaRef.current?.reset();
       setCaptchaToken(null);
-
-      let errorMessage = 'Erro ao fazer login';
-      
-      if (result.error.includes('Invalid login credentials')) {
-        errorMessage = 'Email ou senha incorretos';
-      } else if (result.error.includes('Email not confirmed')) {
-        errorMessage = 'Por favor, confirme seu email antes de fazer login';
-      } else if (/rate limit|too many|429/i.test(result.error)) {
-        errorMessage = 'Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente.';
-      } else if (/captcha/i.test(result.error)) {
-        errorMessage = HCAPTCHA_ERROR_MESSAGE;
-      }
-
-      notify('Erro no Login', errorMessage);
+      notify('Erro no Login', formatLoginError(result));
+    } catch {
+      captchaRef.current?.reset();
+      setCaptchaToken(null);
+      notify('Erro no Login', 'Não foi possível entrar agora. Código: AUTH_UNEXPECTED_ERROR');
+    } finally {
+      setLoading(false);
     }
   };
 

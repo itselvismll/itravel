@@ -6,6 +6,7 @@ const COUNTRY_CURRENCY_CACHE_KEY = 'journi.countryCurrencies';
 let memoryCache = {};
 let countryCurrencyMemoryCache = {};
 let countryCurrenciesRequest = null;
+let currencyCatalogMemoryCache = null;
 
 // Territórios cuja moeda local tem paridade legal 1:1 com outra moeda usam a
 // cotação da moeda de reserva quando os provedores não publicam uma série própria.
@@ -54,6 +55,33 @@ const CURRENCY_NAME_TO_CODE = {
   'Turkish lira': 'TRY',
   'UAE dirham': 'AED',
   'United States dollar': 'USD',
+};
+
+export const FALLBACK_CURRENCIES = [
+  { code: 'BRL', name: 'Real brasileiro', country: 'BRA', symbol: 'R$' },
+  { code: 'USD', name: 'Dólar americano', country: 'USA', symbol: '$' },
+  { code: 'EUR', name: 'Euro', country: 'DEU', symbol: '€' },
+  { code: 'GBP', name: 'Libra esterlina', country: 'GBR', symbol: '£' },
+  { code: 'ARS', name: 'Peso argentino', country: 'ARG', symbol: '$' },
+  { code: 'JPY', name: 'Iene japonês', country: 'JPN', symbol: '¥' },
+  { code: 'CAD', name: 'Dólar canadense', country: 'CAN', symbol: '$' },
+  { code: 'AUD', name: 'Dólar australiano', country: 'AUS', symbol: '$' },
+  { code: 'CHF', name: 'Franco suíço', country: 'CHE', symbol: 'Fr' },
+  { code: 'CNY', name: 'Yuan chinês', country: 'CHN', symbol: '¥' },
+];
+
+const CURRENCY_FLAG_COUNTRY = Object.freeze({
+  BRL: 'BRA', USD: 'USA', EUR: 'DEU', GBP: 'GBR', JPY: 'JPN',
+  CAD: 'CAN', AUD: 'AUS', CHF: 'CHE', CNY: 'CHN', ARS: 'ARG',
+});
+
+const localizedCurrencyName = (code, fallback) => {
+  try {
+    const name = new Intl.DisplayNames(['pt-BR'], { type: 'currency' }).of(code);
+    return name && name !== code ? name : fallback || code;
+  } catch {
+    return fallback || code;
+  }
 };
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
@@ -208,6 +236,7 @@ const loadAllCountryCurrencies = async () => {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const countries = await response.json();
     const nextCache = { ...readCountryCurrencyCache() };
+    const catalog = new Map(FALLBACK_CURRENCIES.map(currency => [currency.code, currency]));
 
     (countries || []).forEach(country => {
       const currency = currencyFromCountry(country);
@@ -215,15 +244,34 @@ const loadAllCountryCurrencies = async () => {
       [country.cca2, country.cca3].filter(Boolean).forEach(code => {
         nextCache[String(code).toUpperCase()] = currency;
       });
+      if (!catalog.has(currency.code)) {
+        catalog.set(currency.code, {
+          ...currency,
+          name: localizedCurrencyName(currency.code, currency.name),
+          country: CURRENCY_FLAG_COUNTRY[currency.code] || country.cca3 || country.cca2 || '',
+        });
+      }
     });
 
     writeCountryCurrencyCache(nextCache);
+    currencyCatalogMemoryCache = [...catalog.values()]
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
     return nextCache;
   })().finally(() => {
     countryCurrenciesRequest = null;
   });
 
   return countryCurrenciesRequest;
+};
+
+export const getAvailableCurrencies = async () => {
+  if (currencyCatalogMemoryCache) return currencyCatalogMemoryCache;
+  try {
+    await loadAllCountryCurrencies();
+    return currencyCatalogMemoryCache || FALLBACK_CURRENCIES;
+  } catch {
+    return FALLBACK_CURRENCIES;
+  }
 };
 
 export const getCountryCurrency = async countryCode => {

@@ -14,10 +14,11 @@ import { Ionicons } from '@expo/vector-icons';
 import CalendarField from '../../components/CalendarField';
 import DestinationBudgetPlanner from '../../components/DestinationBudgetPlanner';
 import LocationAutocomplete from '../../components/LocationAutocomplete';
-import MultiCountrySelector from '../../components/MultiCountrySelector';
+import MultiDestinationSelector, { getTravelDestinationKey } from '../../components/MultiDestinationSelector';
 import { getCurrentUser, getVisitedCountries } from '../../services/supabase';
 import { getWishlist } from '../../services/socialService';
 import {
+  createAssistantRequestId,
   generateTravelPlan,
   TRAVEL_INTERESTS,
   TRAVEL_PACES,
@@ -31,6 +32,12 @@ import {
 import { formatMoneyInput, parseMoneyInput } from '../../services/currencyService';
 
 const TRAVELER_TYPES = ['Solo', 'Casal', 'Família', 'Amigos', 'Trabalho'];
+const formatAssistantError = ({ error, code, requestId }) => {
+  const friendlyMessage = error || 'Não foi possível gerar seu roteiro agora. Tente novamente.';
+  const shortRequestId = String(requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(-6);
+  const safeCode = String(code || 'PLANNER_UNEXPECTED_ERROR').replace(/[^A-Z0-9_]/gi, '').toUpperCase();
+  return `${friendlyMessage}\nCódigo: ${safeCode}-${shortRequestId || createAssistantRequestId().slice(-6)}`;
+};
 const initialForm = {
   origin: '',
   originDetails: null,
@@ -49,6 +56,8 @@ const initialForm = {
   budgetLevel: 'balanced',
   budgetCurrency: 'BRL',
   displayCurrency: 'BRL',
+  convertedBudget: 0,
+  exchangeDate: '',
   pace: 'balanced',
   interests: [],
   foodPreferences: '',
@@ -110,7 +119,7 @@ export default function TripPlannerScreen({ navigation, route }) {
   };
 
   const validate = () => {
-    if (!form.destinations.length) return 'Selecione pelo menos um país para a viagem.';
+    if (!form.destinations.length) return 'Selecione pelo menos um destino para a viagem.';
     if (form.useDates) {
       const start = parseBrazilianDate(form.startDate);
       const end = parseBrazilianDate(form.endDate);
@@ -167,7 +176,9 @@ export default function TripPlannerScreen({ navigation, route }) {
       budget: parseMoneyInput(form.budget),
       currency: 'BRL',
       budgetCurrency: 'BRL',
-      displayCurrency: 'BRL',
+      displayCurrency: form.displayCurrency,
+      convertedBudget: form.convertedBudget,
+      exchangeDate: form.exchangeDate,
       destinationBudgets: form.destinationBudgets,
     };
 
@@ -175,7 +186,7 @@ export default function TripPlannerScreen({ navigation, route }) {
       const userContext = await buildUserContext();
       const result = await generateTravelPlan({ planRequest, userContext });
       if (!result.success) {
-        setError(result.error);
+        setError(formatAssistantError(result));
         return;
       }
       navigation.replace('AssistantResult', {
@@ -184,8 +195,12 @@ export default function TripPlannerScreen({ navigation, route }) {
         liveContext: result.liveContext,
         userContext,
       });
-    } catch {
-      setError('Não foi possível gerar seu roteiro agora. Tente novamente.');
+    } catch (caughtError) {
+      setError(formatAssistantError({
+        error: 'Não foi possível gerar seu roteiro agora. Tente novamente.',
+        code: caughtError?.code,
+        requestId: caughtError?.requestId,
+      }));
     } finally {
       setLoading(false);
     }
@@ -230,10 +245,10 @@ export default function TripPlannerScreen({ navigation, route }) {
               origin: name,
               originDetails: location,
             }))}
-            placeholder="Busque uma cidade ou país"
+            placeholder="Cidade, país ou aeroporto (ex: GRU)"
           />
-          <MultiCountrySelector
-            label="Destinos da viagem"
+          <MultiDestinationSelector
+            label="Destinos e paradas"
             selected={form.destinations}
             onChange={destinations => setForm(current => ({
               ...current,
@@ -291,16 +306,19 @@ export default function TripPlannerScreen({ navigation, route }) {
             initialBudgets={form.destinationBudgets}
             budgetLevel={form.budgetLevel}
             onBudgetLevelChange={value => update('budgetLevel', value)}
-            onChange={(destinationBudgets, total) => setForm(current => ({
+            displayCurrency={form.displayCurrency}
+            onDisplayCurrencyChange={value => update('displayCurrency', value)}
+            onChange={(destinationBudgets, total, convertedTotal, exchangeDate) => setForm(current => ({
               ...current,
               destinationBudgets,
               budget: formatMoneyInput(Math.round(total)),
               budgetCurrency: 'BRL',
-              displayCurrency: 'BRL',
+              convertedBudget: convertedTotal,
+              exchangeDate,
             }))}
-            onRemoveDestination={countryCode => setForm(current => ({
+            onRemoveDestination={destinationId => setForm(current => ({
               ...current,
-              destinations: current.destinations.filter(item => item.code !== countryCode),
+              destinations: current.destinations.filter(item => getTravelDestinationKey(item) !== destinationId),
             }))}
             onAddDestination={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
           />
@@ -328,7 +346,7 @@ export default function TripPlannerScreen({ navigation, route }) {
         {!!error && (
           <View style={styles.errorBox}>
             <Ionicons name="alert-circle-outline" size={19} color="#FF8AA0" />
-            <Text style={styles.errorText}>{error}</Text>
+            <Text style={styles.errorText} selectable>{error}</Text>
           </View>
         )}
 

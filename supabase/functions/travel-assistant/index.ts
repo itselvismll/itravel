@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-journi-request-id',
 }
 
 const jsonResponse = (body: unknown, status = 200) => new Response(
@@ -38,6 +38,74 @@ const getProviderRetryDelayMs = (response: Response, data: any, attempt: number)
 const cleanText = (value: unknown, max = 160) => (
   typeof value === 'string' ? value.trim().slice(0, max) : ''
 )
+
+const createRequestId = (candidate: string | null) => {
+  const safeCandidate = String(candidate || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32)
+  return safeCandidate || crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+}
+
+const logProviderAttempt = (details: {
+  requestId: string
+  model: string
+  providerAttempt: number
+  chunkStartDay: number
+  status: number
+  providerStatus: string
+  providerReason: string
+  code: string
+  finishReason: string
+  durationMs: number
+}) => {
+  const entry = { event: 'travel_assistant_provider_attempt', ...details }
+  if (details.code === 'AI_PROVIDER_OK') console.log(entry)
+  else console.error(entry)
+}
+
+const getProviderReason = (payload: any) => cleanText(
+  payload?.error?.details?.find((detail: any) => typeof detail?.reason === 'string')?.reason,
+  80,
+)
+
+const classifyProviderHttpError = (status: number, providerStatus: string, providerReason: string) => {
+  if (providerReason === 'API_KEY_INVALID') return 'AI_PROVIDER_CREDENTIALS_INVALID'
+  if (status === 401) return 'AI_PROVIDER_UNAUTHENTICATED'
+  if (status === 403) return 'AI_PROVIDER_PERMISSION_DENIED'
+  if (status === 404) return 'AI_PROVIDER_MODEL_NOT_FOUND'
+  if (status === 429 || providerStatus === 'RESOURCE_EXHAUSTED') return 'AI_PROVIDER_RATE_LIMIT'
+  if (status >= 500) return 'AI_PROVIDER_UNAVAILABLE'
+  if (status === 400 || providerStatus === 'INVALID_ARGUMENT') return 'AI_PROVIDER_INVALID_REQUEST'
+  return 'AI_PROVIDER_HTTP_ERROR'
+}
+
+const toJsonSchema = (value: any): any => {
+  if (Array.isArray(value)) return value.map(toJsonSchema)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [
+    key,
+    key === 'type' && typeof entry === 'string' ? entry.toLowerCase() : toJsonSchema(entry),
+  ]))
+}
+
+const parseProviderJson = (value: unknown) => {
+  const raw = cleanText(value, 200000)
+  if (!raw) return null
+  const withoutFence = raw
+    .replace(/^\s*```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/i, '')
+    .trim()
+  try {
+    return JSON.parse(withoutFence)
+  } catch {
+    const start = withoutFence.indexOf('{')
+    const end = withoutFence.lastIndexOf('}')
+    if (start < 0 || end <= start) return null
+    try {
+      return JSON.parse(withoutFence.slice(start, end + 1))
+    } catch {
+      return null
+    }
+  }
+}
 
 const cleanList = (value: unknown, maxItems = 12) => (
   Array.isArray(value)
@@ -618,17 +686,22 @@ const planSchema = {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
-  if (req.method !== 'POST') return jsonResponse({ success: false, error: 'Método não permitido' }, 405)
+  const requestId = createRequestId(req.headers.get('x-journi-request-id'))
+  if (req.method !== 'POST') {
+    return jsonResponse({ success: false, error: 'Método não permitido', code: 'METHOD_NOT_ALLOWED', requestId }, 405)
+  }
 
   try {
     const debugRequested = req.headers.get('x-journi-debug') === '1'
     const authorization = req.headers.get('Authorization')
     if (!authorization?.startsWith('Bearer ')) {
-      return jsonResponse({ success: false, error: 'Não autenticado' }, 401)
+      return jsonResponse({ success: false, error: 'Não autenticado', code: 'ASSISTANT_UNAUTHENTICATED', requestId }, 401)
     }
 
     const apiKey = Deno.env.get('GEMINI_API_KEY')
-    if (!apiKey) return jsonResponse({ success: false, error: 'Serviço de IA não configurado' }, 500)
+    if (!apiKey) {
+      return jsonResponse({ success: false, error: 'Serviço de IA não configurado', code: 'AI_NOT_CONFIGURED', requestId }, 500)
+    }
 
     const body = await req.json()
     const supportedActions = ['generate_plan', 'regenerate_activity', 'adjust_plan']
@@ -660,10 +733,12 @@ serve(async (req) => {
     const duration = Math.max(1, Math.floor(Number(request.duration) || 3))
     const budget = Math.max(0, Number(request.budget) || 0)
 
-    if (!destination) return jsonResponse({ success: false, error: 'Informe um destino válido' }, 400)
+    if (!destination) {
+      return jsonResponse({ success: false, error: 'Informe um destino válido', code: 'INVALID_DESTINATION', requestId }, 400)
+    }
     const today = new Date().toISOString().slice(0, 10)
     if (isIsoDate(request.startDate) && request.startDate < today) {
-      return jsonResponse({ success: false, error: 'A data de ida não pode estar no passado' }, 400)
+      return jsonResponse({ success: false, error: 'A data de ida não pode estar no passado', code: 'PAST_START_DATE', requestId }, 400)
     }
 
     const safeRequest = {
@@ -738,7 +813,9 @@ serve(async (req) => {
       'gemini-3.6-flash',
       'gemini-3.5-flash-lite',
     ])]
-    const strictDaySchemaLimit = 3
+    // Seis dias mantêm cada resposta detalhada, mas reduzem pela metade as chamadas
+    // acumuladas no mesmo worker. Roteiros acima de 12 dias são segmentados no app.
+    const strictDaySchemaLimit = 6
     const chunkSpecs = Array.from(
       { length: Math.ceil(duration / strictDaySchemaLimit) },
       (_, index) => ({
@@ -800,6 +877,9 @@ serve(async (req) => {
         ...aiContext,
         realPlaces: rotatedPlaces.slice(0, placeWindowSize),
       }
+      const outputShape = includePlanDetails
+        ? `{"title":"...","summary":"...","destinationCountry":"...","localCurrency":"BRL","budgetStatus":"...","weatherNote":"...","days":[{"day":${spec.startDay},"date":"YYYY-MM-DD","theme":"...","activities":[{"period":"manhã","title":"...","description":"...","location":"...","duration":"...","estimatedCost":0,"mapQuery":"...","indoor":false,"purchaseNote":"...","latitude":0.0,"longitude":0.0,"category":"atracao","order":1}]}],"budget":{"total":0,"currency":"${currency}","items":[{"category":"Alimentação","amount":0,"note":"..."}],"shoppingIncluded":false,"scopeNote":"..."},"checklist":[{"category":"Documentos","item":"...","done":false}],"safetyTips":["..."],"practicalTips":["..."],"sources":[]}`
+        : `{"days":[{"day":${spec.startDay},"date":"YYYY-MM-DD","theme":"...","activities":[{"period":"manhã","title":"...","description":"...","location":"...","duration":"...","estimatedCost":0,"mapQuery":"...","indoor":false,"purchaseNote":"...","latitude":0.0,"longitude":0.0,"category":"atracao","order":1}]}]}`
       const prompt = `Você é o planejador de viagens do Journi. Responda em português brasileiro e apenas no JSON solicitado.
 
 Pedido deste bloco: ${JSON.stringify(chunkRequest)}
@@ -808,11 +888,16 @@ Perfil do viajante: ${JSON.stringify(safeUserContext)}
 Dados externos disponíveis: ${JSON.stringify(chunkAiContext)}
 Locais já usados em blocos anteriores e que não podem ser repetidos: ${JSON.stringify([...usedActivityTitles])}
 Operação: ${operationInstruction}
+Formato obrigatório da resposta (repita atividades e dias conforme solicitado): ${outputShape}
 
 Regras:
 - Crie exatamente ${spec.days} dias neste bloco, numerados de ${spec.startDay} a ${chunkEndDay}, respeitando datas, ritmo, interesses, alimentação, acessibilidade e todos os países selecionados em destinations.
 - Crie exatamente 3 atividades objetivas por dia (manhã, tarde e noite). Mantenha title, description e purchaseNote concisos.
-- O padrão de orçamento é ${safeRequest.budgetLevel}: economy significa econômico/barato, balanced significa médio e premium significa caro/confortável.
+- O perfil de orçamento escolhido é ${safeRequest.budgetLevel} e deve mudar decisões concretas do roteiro, não apenas o texto da resposta.
+- Em economy, priorize hospedagem simples e bem avaliada, transporte público, refeições acessíveis e atividades gratuitas ou de baixo custo.
+- Em balanced, combine bom custo-benefício, localização prática, atrações pagas essenciais e refeições de faixa intermediária.
+- Em premium, priorize conforto, localização, deslocamentos convenientes, experiências especiais e restaurantes melhores, sem inventar luxo desnecessário.
+- Quando houver um teto numérico, nunca o ultrapasse. Se o teto conflitar com o perfil escolhido, preserve o teto e explique os ajustes no orçamento.
 - Distribua manhã, tarde e noite sem deslocamentos impossíveis; agrupe locais próximos.
 - Cada atividade deve citar pelo nome um lugar real e identificável: atração, monumento, museu, parque, bairro, mercado ou restaurante. Não use títulos genéricos como "caminhada pelo centro", "experiência cultural", "tempo livre" ou "restaurante local".
 - Faça o viajante realmente conhecer o destino: priorize os pontos turísticos essenciais, alterne ícones conhecidos com experiências locais e explique em description o que será visto ou vivido ali.
@@ -842,7 +927,7 @@ Regras:
       const chunkDaysSchema = spec.days <= strictDaySchemaLimit
         ? { ...planSchema.properties.days, minItems: spec.days, maxItems: spec.days }
         : planSchema.properties.days
-      const responseSchema = includePlanDetails
+      const responseJsonSchema = toJsonSchema(includePlanDetails
         ? {
           ...planSchema,
           properties: { ...planSchema.properties, days: chunkDaysSchema },
@@ -851,19 +936,20 @@ Regras:
           type: 'OBJECT',
           required: ['days'],
           properties: { days: chunkDaysSchema },
-        }
-      const maxOutputTokens = includePlanDetails
-        ? Math.min(65535, Math.max(8192, spec.days * 1000))
-        : 4096
+        })
+      const maxOutputTokens = Math.min(65535, Math.max(8192, spec.days * 1100))
       let lastStatus = 502
       let lastProviderStatus = ''
+      let lastProviderReason = ''
       let failureCode = 'AI_PROVIDER_ERROR'
       let recommendedRetryDelayMs = 0
       const attempts: Array<Record<string, unknown>> = []
 
       for (const model of models) {
         const maxProviderAttempts = 2
+        let useStructuredSchema = true
         for (let providerAttempt = 1; providerAttempt <= maxProviderAttempts; providerAttempt += 1) {
+          const attemptStartedAt = Date.now()
           try {
             const geminiResponse = await fetch(
               `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
@@ -876,7 +962,7 @@ Regras:
                   generationConfig: {
                     maxOutputTokens,
                     responseMimeType: 'application/json',
-                    responseSchema,
+                    ...(useStructuredSchema ? { responseJsonSchema } : {}),
                   },
                 }),
               },
@@ -884,19 +970,32 @@ Regras:
             lastStatus = geminiResponse.status
             const geminiData = await geminiResponse.json().catch(() => null)
             lastProviderStatus = geminiData?.error?.status || ''
+            lastProviderReason = getProviderReason(geminiData)
+            const finishReason = cleanText(geminiData?.candidates?.[0]?.finishReason, 80)
             if (!geminiResponse.ok || !geminiData) {
-              failureCode = lastProviderStatus || `HTTP_${geminiResponse.status}`
+              failureCode = geminiData
+                ? classifyProviderHttpError(geminiResponse.status, lastProviderStatus, lastProviderReason)
+                : 'AI_PROVIDER_INVALID_RESPONSE'
               attempts.push({
                 model,
                 providerAttempt,
                 status: geminiResponse.status,
                 providerStatus: lastProviderStatus,
-                message: cleanText(geminiData?.error?.message, 240),
+                providerReason: lastProviderReason,
+                code: failureCode,
+                finishReason,
               })
-              console.error('travel-assistant provider attempt failed', {
-                model, providerAttempt, chunkStartDay: spec.startDay, status: lastStatus,
+              logProviderAttempt({
+                requestId,
+                model,
+                providerAttempt,
+                chunkStartDay: spec.startDay,
+                status: lastStatus,
                 providerStatus: lastProviderStatus,
-                providerMessage: cleanText(geminiData?.error?.message, 240),
+                providerReason: lastProviderReason,
+                code: failureCode,
+                finishReason,
+                durationMs: Date.now() - attemptStartedAt,
               })
               if (geminiResponse.status === 429) {
                 recommendedRetryDelayMs = Math.max(
@@ -910,6 +1009,17 @@ Regras:
                 }
                 break
               }
+              if (
+                geminiResponse.status === 400
+                && lastProviderStatus === 'INVALID_ARGUMENT'
+                && useStructuredSchema
+                && providerAttempt < maxProviderAttempts
+              ) {
+                // O Gemini pode rejeitar schemas grandes ou profundos. O prompt ainda
+                // contém o formato completo, e a resposta continua restrita a JSON.
+                useStructuredSchema = false
+                continue
+              }
               if (geminiResponse.status === 503 && providerAttempt < maxProviderAttempts) {
                 await sleep(getProviderRetryDelayMs(geminiResponse, geminiData, providerAttempt))
                 continue
@@ -919,41 +1029,106 @@ Regras:
             const responseText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text
             if (!responseText) {
               failureCode = 'AI_EMPTY_RESPONSE'
-              attempts.push({ model, providerAttempt, status: geminiResponse.status, providerStatus: 'EMPTY_RESPONSE' })
+              attempts.push({ model, providerAttempt, status: geminiResponse.status, providerStatus: 'EMPTY_RESPONSE', code: failureCode, finishReason })
+              logProviderAttempt({
+                requestId,
+                model,
+                providerAttempt,
+                chunkStartDay: spec.startDay,
+                status: geminiResponse.status,
+                providerStatus: 'EMPTY_RESPONSE',
+                providerReason: '',
+                code: failureCode,
+                finishReason,
+                durationMs: Date.now() - attemptStartedAt,
+              })
               break
             }
             try {
-              const candidatePlan = JSON.parse(responseText)
-              if (Array.isArray(candidatePlan.days) && candidatePlan.days.length === spec.days) {
+              const candidatePlan = parseProviderJson(responseText)
+              const hasCompleteDays = Array.isArray(candidatePlan?.days)
+                && candidatePlan.days.length === spec.days
+                && candidatePlan.days.every((day: any) => (
+                  Number.isFinite(Number(day?.day))
+                  && Array.isArray(day?.activities)
+                  && day.activities.length === 3
+                ))
+              const hasPlanDetails = !includePlanDetails || (
+                cleanText(candidatePlan?.title, 200)
+                && candidatePlan?.budget
+                && Array.isArray(candidatePlan?.budget?.items)
+                && Array.isArray(candidatePlan?.checklist)
+                && Array.isArray(candidatePlan?.safetyTips)
+                && Array.isArray(candidatePlan?.practicalTips)
+              )
+              if (hasCompleteDays && hasPlanDetails) {
                 for (const day of candidatePlan.days) {
                   for (const activity of day?.activities || []) {
                     const title = cleanText(activity?.title, 120)
                     if (title) usedActivityTitles.add(title)
                   }
                 }
+                logProviderAttempt({
+                  requestId,
+                  model,
+                  providerAttempt,
+                  chunkStartDay: spec.startDay,
+                  status: geminiResponse.status,
+                  providerStatus: 'OK',
+                  providerReason: '',
+                  code: 'AI_PROVIDER_OK',
+                  finishReason,
+                  durationMs: Date.now() - attemptStartedAt,
+                })
                 return { success: true, plan: candidatePlan, spec }
               }
               failureCode = 'AI_INCOMPLETE_PLAN'
-              attempts.push({ model, providerAttempt, status: geminiResponse.status, providerStatus: failureCode })
+              attempts.push({ model, providerAttempt, status: geminiResponse.status, providerStatus: 'OK', code: failureCode, finishReason })
+              logProviderAttempt({
+                requestId,
+                model,
+                providerAttempt,
+                chunkStartDay: spec.startDay,
+                status: geminiResponse.status,
+                providerStatus: 'OK',
+                providerReason: '',
+                code: failureCode,
+                finishReason,
+                durationMs: Date.now() - attemptStartedAt,
+              })
             } catch {
               failureCode = 'AI_INVALID_JSON'
-              attempts.push({ model, providerAttempt, status: geminiResponse.status, providerStatus: failureCode })
+              attempts.push({ model, providerAttempt, status: geminiResponse.status, providerStatus: 'OK', code: failureCode, finishReason })
+              logProviderAttempt({
+                requestId,
+                model,
+                providerAttempt,
+                chunkStartDay: spec.startDay,
+                status: geminiResponse.status,
+                providerStatus: 'OK',
+                providerReason: '',
+                code: failureCode,
+                finishReason,
+                durationMs: Date.now() - attemptStartedAt,
+              })
             }
             break
           } catch (error) {
             failureCode = error instanceof DOMException && error.name === 'TimeoutError'
               ? 'AI_PROVIDER_TIMEOUT'
               : 'AI_PROVIDER_NETWORK_ERROR'
-            console.error('travel-assistant provider request error', {
-              model, providerAttempt, chunkStartDay: spec.startDay, code: failureCode,
-              message: cleanText(error instanceof Error ? error.message : '', 240),
-            })
-            attempts.push({
+            attempts.push({ model, providerAttempt, status: 0, providerStatus: '', code: failureCode, finishReason: '' })
+            logProviderAttempt({
+              requestId,
               model,
               providerAttempt,
+              chunkStartDay: spec.startDay,
               status: 0,
-              providerStatus: failureCode,
-              message: cleanText(error instanceof Error ? error.message : '', 240),
+              providerStatus: '',
+              providerReason: '',
+              code: failureCode,
+              finishReason: '',
+              durationMs: Date.now() - attemptStartedAt,
             })
             break
           }
@@ -964,6 +1139,7 @@ Regras:
         failureCode,
         status: lastStatus,
         providerStatus: lastProviderStatus,
+        providerReason: lastProviderReason,
         recommendedRetryDelayMs,
         spec,
         attempts,
@@ -978,7 +1154,7 @@ Regras:
       )
       chunkResults.push(...batch)
       if (batch.some(result => !result.success)) break
-      if (index + chunkConcurrency < chunkSpecs.length) await sleep(1200)
+      if (index + chunkConcurrency < chunkSpecs.length) await sleep(400)
     }
     const failedChunk = chunkResults.find(result => !result.success)
     if (failedChunk) {
@@ -990,12 +1166,24 @@ Regras:
         : failedChunk.failureCode === 'AI_INCOMPLETE_PLAN'
           ? 'A IA não concluiu todos os dias do roteiro. Tente novamente em instantes.'
           : 'O planejador está temporariamente indisponível. Tente novamente em instantes.'
-      console.error('travel-assistant generation failed', failedChunk)
+      console.error({
+        event: 'travel_assistant_request_failed',
+        requestId,
+        code: failedChunk.failureCode,
+        status: failedChunk.status,
+        providerStatus: failedChunk.providerStatus,
+        providerReason: failedChunk.providerReason,
+        chunkStartDay: failedChunk.spec?.startDay,
+      })
       return jsonResponse(
         {
           success: false,
           error,
           code: failedChunk.failureCode,
+          requestId,
+          providerStatus: failedChunk.providerStatus,
+          providerReason: failedChunk.providerReason,
+          providerHttpStatus: failedChunk.status,
           ...(retryAfterSeconds ? { retryAfterSeconds } : {}),
           ...(debugRequested ? { diagnostics: failedChunk.attempts } : {}),
         },
@@ -1058,15 +1246,18 @@ Regras:
       console.warn('travel-assistant coordenadas aproximadas', geoSummary)
     }
 
-    return jsonResponse({ success: true, plan, liveContext })
+    return jsonResponse({ success: true, plan, liveContext, requestId })
   } catch (error) {
-    console.error('travel-assistant unhandled error', {
-      message: cleanText(error instanceof Error ? error.message : '', 240),
+    console.error({
+      event: 'travel_assistant_unhandled_error',
+      requestId,
+      code: 'ASSISTANT_INTERNAL_ERROR',
     })
     return jsonResponse({
       success: false,
       error: 'Não foi possível processar o planejamento',
       code: 'ASSISTANT_INTERNAL_ERROR',
+      requestId,
     }, 500)
   }
 })

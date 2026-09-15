@@ -3,8 +3,16 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View 
 import { Ionicons } from '@expo/vector-icons';
 import CountryFlag from './CountryFlag';
 import { COUNTRIES_STATIC } from '../data/countriesStaticData';
-import { getCountryNamePtByCode } from '../utils/countryUtils';
-import { searchCities, searchCountries, CITY_SEARCH_DEBOUNCE_MS } from '../utils/geoSearch';
+import { getAlpha3, getCountryNamePtByCode } from '../utils/countryUtils';
+import {
+  CITY_SEARCH_DEBOUNCE_MS,
+  formatAirportLabel,
+  formatAirportSubtitle,
+  formatCityLabel,
+  isExactAirportCode,
+  searchCountries,
+  searchTravelLocations,
+} from '../utils/geoSearch';
 
 const COUNTRIES = Object.entries(COUNTRIES_STATIC).map(([code, country]) => ({
   code,
@@ -15,8 +23,12 @@ const COUNTRIES = Object.entries(COUNTRIES_STATIC).map(([code, country]) => ({
 export default function LocationAutocomplete({ label, value, onChange, placeholder = 'Busque uma cidade ou país' }) {
   const [focused, setFocused] = useState(false);
   const [cities, setCities] = useState([]);
+  const [airports, setAirports] = useState([]);
   const [loading, setLoading] = useState(false);
   const selectedRef = useRef(false);
+  const blurTimerRef = useRef(null);
+
+  useEffect(() => () => clearTimeout(blurTimerRef.current), []);
 
   const countries = useMemo(
     () => focused ? searchCountries(COUNTRIES, value, 4) : [],
@@ -26,6 +38,7 @@ export default function LocationAutocomplete({ label, value, onChange, placehold
   useEffect(() => {
     if (!focused || selectedRef.current || String(value || '').trim().length < 2) {
       setCities([]);
+      setAirports([]);
       setLoading(false);
       selectedRef.current = false;
       return undefined;
@@ -35,9 +48,18 @@ export default function LocationAutocomplete({ label, value, onChange, placehold
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        setCities(await searchCities(value, { signal: controller.signal, limit: 6 }));
+        const result = await searchTravelLocations(value, {
+          signal: controller.signal,
+          cityLimit: 6,
+          airportLimit: 4,
+        });
+        setCities(result.cities);
+        setAirports(result.airports);
       } catch (error) {
-        if (error?.name !== 'AbortError') setCities([]);
+        if (error?.name !== 'AbortError') {
+          setCities([]);
+          setAirports([]);
+        }
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
@@ -50,28 +72,46 @@ export default function LocationAutocomplete({ label, value, onChange, placehold
   }, [focused, value]);
 
   const choose = item => {
+    clearTimeout(blurTimerRef.current);
     selectedRef.current = true;
     setFocused(false);
     setCities([]);
+    setAirports([]);
     onChange(item.label, item);
   };
 
+  const exactAirports = airports.filter(airport => isExactAirportCode(airport, value));
+  const otherAirports = airports.filter(airport => !isExactAirportCode(airport, value));
+  const mapAirport = (airport, index) => ({
+    id: `airport-${airport.iata || airport.icao || airport.name}-${index}`,
+    type: 'airport',
+    label: formatAirportLabel(airport),
+    subtitle: `Aeroporto${formatAirportSubtitle(airport) ? ` • ${formatAirportSubtitle(airport)}` : ''}`,
+    countryCode: airport.countryCode,
+    code: getAlpha3(airport.countryCode),
+    airport,
+  });
+
   const results = [
+    ...exactAirports.map(mapAirport),
     ...countries.map(country => ({
       id: `country-${country.code}`,
       type: 'country',
       label: country.name,
       subtitle: 'País',
+      code: country.code,
       countryCode: country.code,
     })),
     ...cities.map((city, index) => ({
       id: `city-${city.countryCode}-${city.shortName}-${index}`,
       type: 'city',
-      label: [city.shortName, city.state, city.country].filter(Boolean).join(', '),
+      label: formatCityLabel(city),
       subtitle: 'Cidade',
       countryCode: city.countryCode,
+      code: getAlpha3(city.countryCode),
       city,
     })),
+    ...otherAirports.map(mapAirport),
   ];
 
   return (
@@ -82,7 +122,13 @@ export default function LocationAutocomplete({ label, value, onChange, placehold
         <TextInput
           value={value}
           onChangeText={text => { selectedRef.current = false; onChange(text, null); }}
-          onFocus={() => setFocused(true)}
+          onFocus={() => {
+            clearTimeout(blurTimerRef.current);
+            setFocused(true);
+          }}
+          onBlur={() => {
+            blurTimerRef.current = setTimeout(() => setFocused(false), 150);
+          }}
           placeholder={placeholder}
           placeholderTextColor="#626987"
           style={styles.input}
@@ -96,7 +142,11 @@ export default function LocationAutocomplete({ label, value, onChange, placehold
             <TouchableOpacity key={item.id} style={styles.result} onPress={() => choose(item)}>
               <CountryFlag countryCode={item.countryCode} width={28} height={19} borderRadius={3} />
               <View style={{ flex: 1 }}><Text style={styles.resultName}>{item.label}</Text><Text style={styles.resultType}>{item.subtitle}</Text></View>
-              <Ionicons name={item.type === 'city' ? 'business-outline' : 'earth-outline'} size={17} color="#7E86A6" />
+              <Ionicons
+                name={item.type === 'airport' ? 'airplane-outline' : item.type === 'city' ? 'business-outline' : 'earth-outline'}
+                size={17}
+                color={item.type === 'airport' ? '#35D3C8' : '#7E86A6'}
+              />
             </TouchableOpacity>
           ))}
         </View>
@@ -112,6 +162,6 @@ const styles = StyleSheet.create({
   input: { flex: 1, color: '#F7F7F2', paddingVertical: 12, fontSize: 14 },
   results: { backgroundColor: '#252D4C', borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#3A4367' },
   result: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
-  resultName: { color: '#F7F7F2', fontSize: 12, fontWeight: '700' },
-  resultType: { color: '#7E86A6', fontSize: 9, marginTop: 2 },
+  resultName: { color: '#F7F7F2', fontSize: 12, lineHeight: 17, fontWeight: '700' },
+  resultType: { color: '#7E86A6', fontSize: 9, lineHeight: 13, marginTop: 2 },
 });

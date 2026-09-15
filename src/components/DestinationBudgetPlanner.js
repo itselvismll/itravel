@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import CountryFlag from './CountryFlag';
+import CurrencyPicker from './CurrencyPicker';
 import {
   convertCurrency,
   formatMoneyInput,
@@ -27,6 +28,32 @@ const formatCurrency = (value, currency) => {
 
 const BASE_TO_LOCAL = 'baseToLocal';
 const LOCAL_TO_BASE = 'localToBase';
+const BUDGET_LEVELS = [
+  {
+    id: 'economy',
+    label: 'Econômico',
+    eyebrow: 'Gastar menos',
+    description: 'Hospedagens simples, transporte público, refeições acessíveis e prioridade para passeios gratuitos.',
+  },
+  {
+    id: 'balanced',
+    label: 'Equilibrado',
+    eyebrow: 'Custo-benefício',
+    description: 'Mistura economia e conforto, incluindo as atrações pagas mais importantes sem exagerar nos gastos.',
+  },
+  {
+    id: 'premium',
+    label: 'Confortável',
+    eyebrow: 'Mais comodidade',
+    description: 'Prioriza boa localização, experiências especiais, transporte cômodo e restaurantes mais completos.',
+  },
+];
+const getDestinationId = destination => (
+  destination?.id || `${destination?.type || 'country'}:${destination?.code || ''}:${destination?.name || ''}`
+);
+const getBudgetLevelIcon = levelId => (
+  levelId === 'economy' ? 'wallet-outline' : levelId === 'premium' ? 'diamond-outline' : 'scale-outline'
+);
 
 const convertedValue = (row, amount = parseMoneyInput(row.amount)) => {
   if (!row.rate) return 0;
@@ -36,9 +63,12 @@ const convertedValue = (row, amount = parseMoneyInput(row.amount)) => {
 const budgetValues = row => {
   const input = parseMoneyInput(row.amount);
   const converted = convertedValue(row, input);
-  return row.direction === LOCAL_TO_BASE
-    ? { localAmount: input, amountInBRL: converted }
-    : { localAmount: converted, amountInBRL: input };
+  const comparisonAmount = row.direction === LOCAL_TO_BASE ? input : converted;
+  const amountInBRL = row.direction === LOCAL_TO_BASE ? converted : input;
+  const localAmount = row.destinationRate
+    ? convertCurrency(amountInBRL, row.destinationRate)
+    : amountInBRL;
+  return { comparisonAmount, localAmount, amountInBRL };
 };
 
 export default function DestinationBudgetPlanner({
@@ -50,21 +80,52 @@ export default function DestinationBudgetPlanner({
   onRemoveDestination,
   onAddDestination,
   baseCurrency = 'BRL',
+  displayCurrency = 'USD',
+  onDisplayCurrencyChange,
 }) {
   const [rows, setRows] = useState(initialBudgets);
+  const [levelMenuOpen, setLevelMenuOpen] = useState(false);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
-  const destinationSignature = destinations.map(item => `${item.code}:${item.name}`).join('|');
+  const destinationSignature = destinations.map(getDestinationId).join('|');
 
   useEffect(() => {
     setRows(current => destinations.map(destination => {
-      const existing = current.find(item => item.countryCode === destination.code)
-        || initialBudgets.find(item => item.countryCode === destination.code);
-      return existing || {
-        countryCode: destination.code,
+      const destinationId = getDestinationId(destination);
+      const hasRepeatedCountry = destinations.filter(item => item.code === destination.code).length > 1;
+      const existing = current.find(item => item.destinationId === destinationId)
+        || initialBudgets.find(item => item.destinationId === destinationId)
+        || (!hasRepeatedCountry && initialBudgets.find(item => item.countryCode === destination.code));
+      if (existing) {
+        const sameComparisonCurrency = existing.comparisonCurrency === displayCurrency;
+        const amountInBRL = Number(existing.amountInBRL) || parseMoneyInput(existing.amount);
+        return {
+          ...existing,
+          destinationId,
+          countryCode: destination.countryCode || destination.code,
+          countryName: destination.name,
+          currency: existing.destinationCurrency || '',
+          destinationCurrency: existing.destinationCurrency || '',
+          destinationCurrencyName: existing.destinationCurrencyName || '',
+          destinationCurrencyLoaded: Boolean(existing.destinationCurrencyLoaded && existing.destinationCurrency),
+          destinationRate: existing.destinationRate || null,
+          comparisonCurrency: displayCurrency,
+          amount: sameComparisonCurrency ? existing.amount : formatMoneyInput(amountInBRL),
+          rate: sameComparisonCurrency ? existing.rate : null,
+          direction: sameComparisonCurrency ? existing.direction : BASE_TO_LOCAL,
+          loading: true,
+        };
+      }
+      return {
+        destinationId,
+        countryCode: destination.countryCode || destination.code,
         countryName: destination.name,
         currency: '',
-        currencyName: '',
+        destinationCurrency: '',
+        destinationCurrencyName: '',
+        destinationCurrencyLoaded: false,
+        destinationRate: null,
+        comparisonCurrency: displayCurrency,
         amount: '',
         rate: null,
         rateDate: '',
@@ -79,21 +140,60 @@ export default function DestinationBudgetPlanner({
   }, [destinationSignature]);
 
   useEffect(() => {
+    setRows(current => current.map(row => {
+      if (row.comparisonCurrency === displayCurrency) return row;
+      const amountInBRL = budgetValues(row).amountInBRL;
+      return {
+        ...row,
+        comparisonCurrency: displayCurrency,
+        amount: formatMoneyInput(amountInBRL),
+        rate: null,
+        rateDate: '',
+        rateSource: '',
+        convertedAmount: 0,
+        direction: BASE_TO_LOCAL,
+        rateDirection: BASE_TO_LOCAL,
+        loading: true,
+        error: '',
+      };
+    }));
+  }, [displayCurrency]);
+
+  const hydrationSignature = rows.map(row => (
+    `${row.destinationId}:${row.comparisonCurrency}:${row.loading ? 1 : 0}:${row.rate == null ? 1 : 0}:${row.destinationCurrencyLoaded ? 1 : 0}:${row.destinationRate == null ? 1 : 0}`
+  )).join('|');
+
+  useEffect(() => {
     let active = true;
     const hydrateRows = async () => {
-      const pendingRows = rows.filter(row => row.loading || !row.currency || row.rate == null || row.rateDirection !== BASE_TO_LOCAL);
+      const pendingRows = rows.filter(row => (
+        row.loading
+        || row.comparisonCurrency !== displayCurrency
+        || row.rate == null
+        || row.rateDirection !== BASE_TO_LOCAL
+        || !row.destinationCurrencyLoaded
+      ));
       const hydrated = await Promise.all(pendingRows.map(async row => {
-        const currencyResult = row.currency
-          ? { success: true, code: row.currency, name: row.currencyName }
+        const comparisonCurrency = row.comparisonCurrency || displayCurrency;
+        const currencyResult = row.destinationCurrencyLoaded
+          ? { success: Boolean(row.destinationCurrency), code: row.destinationCurrency, name: row.destinationCurrencyName }
           : await getCountryCurrency(row.countryCode);
-        if (!currencyResult.success) return { ...row, loading: false, error: currencyResult.error };
-
-        const exchangeResult = await getDailyExchangeRate(baseCurrency, currencyResult.code);
+        const destinationCurrency = currencyResult.success ? currencyResult.code : '';
+        const exchangeResult = await getDailyExchangeRate(baseCurrency, comparisonCurrency);
+        const destinationExchangeResult = !destinationCurrency || destinationCurrency === baseCurrency
+          ? { success: true, rate: 1 }
+          : destinationCurrency === comparisonCurrency
+            ? exchangeResult
+            : await getDailyExchangeRate(baseCurrency, destinationCurrency);
         if (!exchangeResult.success) {
           return {
             ...row,
-            currency: currencyResult.code,
-            currencyName: currencyResult.name,
+            currency: destinationCurrency,
+            destinationCurrency,
+            destinationCurrencyName: currencyResult.name || '',
+            destinationCurrencyLoaded: true,
+            destinationRate: destinationExchangeResult.success ? destinationExchangeResult.rate : null,
+            comparisonCurrency,
             loading: false,
             error: exchangeResult.error,
           };
@@ -101,8 +201,12 @@ export default function DestinationBudgetPlanner({
 
         return {
           ...row,
-          currency: currencyResult.code,
-          currencyName: currencyResult.name,
+          currency: destinationCurrency,
+          destinationCurrency,
+          destinationCurrencyName: currencyResult.name || '',
+          destinationCurrencyLoaded: true,
+          destinationRate: destinationExchangeResult.success ? destinationExchangeResult.rate : null,
+          comparisonCurrency,
           rate: exchangeResult.rate,
           rateDate: exchangeResult.date,
           rateDirection: BASE_TO_LOCAL,
@@ -116,29 +220,39 @@ export default function DestinationBudgetPlanner({
         };
       }));
       if (active) {
-        const hydratedByCountry = Object.fromEntries(hydrated.map(row => [row.countryCode, row]));
-        setRows(current => current.map(row => hydratedByCountry[row.countryCode] || row));
+        const hydratedByDestination = Object.fromEntries(hydrated.map(row => [row.destinationId, row]));
+        setRows(current => current.map(row => hydratedByDestination[row.destinationId] || row));
       }
     };
-    if (rows.some(row => row.loading || !row.currency || row.rate == null || row.rateDirection !== BASE_TO_LOCAL)) hydrateRows();
+    if (rows.some(row => (
+      row.loading
+      || row.comparisonCurrency !== displayCurrency
+      || row.rate == null
+      || row.rateDirection !== BASE_TO_LOCAL
+      || !row.destinationCurrencyLoaded
+    ))) hydrateRows();
     return () => { active = false; };
-  }, [baseCurrency, destinationSignature, rows.length]);
+  }, [baseCurrency, destinationSignature, displayCurrency, hydrationSignature]);
 
   const total = useMemo(() => rows.reduce((sum, row) => sum + budgetValues(row).amountInBRL, 0), [rows]);
+  const convertedTotal = useMemo(() => rows.reduce((sum, row) => sum + budgetValues(row).comparisonAmount, 0), [rows]);
 
   useEffect(() => {
     onChangeRef.current?.(
       rows.map(({ loading, error, ...row }) => ({
         ...row,
+        currency: row.destinationCurrency || baseCurrency,
         ...budgetValues(row),
       })),
-      total
+      total,
+      convertedTotal,
+      rows.find(row => row.rateDate)?.rateDate || ''
     );
-  }, [rows, total]);
+  }, [convertedTotal, rows, total]);
 
-  const updateAmount = (countryCode, value) => {
+  const updateAmount = (destinationId, value) => {
     const formatted = sanitizeMoneyInput(value);
-    setRows(current => current.map(row => row.countryCode === countryCode
+    setRows(current => current.map(row => row.destinationId === destinationId
       ? {
         ...row,
         amount: formatted,
@@ -147,9 +261,9 @@ export default function DestinationBudgetPlanner({
       : row));
   };
 
-  const invertCurrency = countryCode => {
+  const invertCurrency = destinationId => {
     setRows(current => current.map(row => {
-      if (row.countryCode !== countryCode || !row.rate) return row;
+      if (row.destinationId !== destinationId || !row.rate) return row;
       const input = parseMoneyInput(row.amount);
       const output = convertedValue(row, input);
       return {
@@ -161,35 +275,78 @@ export default function DestinationBudgetPlanner({
     }));
   };
 
-  const removeDestination = countryCode => {
-    setRows(current => current.filter(row => row.countryCode !== countryCode));
-    onRemoveDestination(countryCode);
+  const removeDestination = destinationId => {
+    setRows(current => current.filter(row => row.destinationId !== destinationId));
+    onRemoveDestination(destinationId);
   };
 
   return (
     <View style={styles.wrapper}>
       <View>
         <Text style={styles.title}>Orçamento da viagem</Text>
-        <Text style={styles.subtitle}>Informe em reais e veja quanto terá na moeda de cada destino.</Text>
+        <Text style={styles.subtitle}>Defina o estilo da viagem e compare seus limites em qualquer moeda.</Text>
       </View>
 
-      <View style={styles.levels}>
-        {[
-          { id: 'economy', label: 'Barato' },
-          { id: 'balanced', label: 'Médio' },
-          { id: 'premium', label: 'Caro' },
-        ].map(level => {
-          const active = budgetLevel === level.id;
+      <View style={styles.preferenceBlock}>
+        <Text style={styles.fieldLabel}>ESTILO DE ORÇAMENTO</Text>
+        {(() => {
+          const selectedLevel = BUDGET_LEVELS.find(level => level.id === budgetLevel) || BUDGET_LEVELS[1];
           return (
             <TouchableOpacity
-              key={level.id}
-              style={[styles.level, active && styles.levelActive]}
-              onPress={() => onBudgetLevelChange(level.id)}
+              style={styles.levelSelector}
+              onPress={() => setLevelMenuOpen(current => !current)}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: levelMenuOpen }}
+              accessibilityLabel={`Estilo de orçamento: ${selectedLevel.label}`}
             >
-              <Text style={[styles.levelText, active && styles.levelTextActive]}>{level.label}</Text>
+              <View style={styles.levelIcon}>
+                <Ionicons name={getBudgetLevelIcon(selectedLevel.id)} size={20} color="#C4B5FD" />
+              </View>
+              <View style={styles.levelCopy}>
+                <Text style={styles.levelEyebrow}>{selectedLevel.eyebrow}</Text>
+                <Text style={styles.levelText}>{selectedLevel.label}</Text>
+                <Text style={styles.levelDescription} numberOfLines={2}>{selectedLevel.description}</Text>
+              </View>
+              <Ionicons name={levelMenuOpen ? 'chevron-up' : 'chevron-down'} size={19} color="#A78BFA" />
             </TouchableOpacity>
           );
-        })}
+        })()}
+        {levelMenuOpen && (
+          <View style={styles.levelMenu}>
+            {BUDGET_LEVELS.map(level => {
+              const active = budgetLevel === level.id;
+              return (
+                <TouchableOpacity
+                  key={level.id}
+                  style={[styles.levelOption, active && styles.levelOptionActive]}
+                  onPress={() => {
+                    onBudgetLevelChange(level.id);
+                    setLevelMenuOpen(false);
+                  }}
+                >
+                  <Ionicons name={getBudgetLevelIcon(level.id)} size={20} color={active ? '#C4B5FD' : '#858DAD'} />
+                  <View style={styles.levelCopy}>
+                    <Text style={[styles.levelText, active && styles.levelTextActive]}>{level.label}</Text>
+                    <Text style={styles.levelDescription}>{level.description}</Text>
+                  </View>
+                  {active && <Ionicons name="checkmark-circle" size={20} color="#A78BFA" />}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+        <Text style={styles.aiHint}>A IA usa esta escolha para decidir hospedagem, alimentação, transporte e passeios.</Text>
+      </View>
+
+      <CurrencyPicker
+        label="Moeda para comparar"
+        value={displayCurrency}
+        onChange={onDisplayCurrencyChange}
+        supportingText={`Compare seus limites em ${displayCurrency}. A moeda oficial de cada destino continua separada.`}
+      />
+
+      <View style={styles.divider}>
+        <Text style={styles.fieldLabel}>LIMITE POR DESTINO</Text>
       </View>
 
       {!rows.length ? (
@@ -198,15 +355,20 @@ export default function DestinationBudgetPlanner({
           <Text style={styles.emptyText}>Selecione os países em “Destinos da viagem” para montar o orçamento.</Text>
         </View>
       ) : rows.map(row => (
-        <View key={row.countryCode} style={styles.destinationCard}>
+        <View key={row.destinationId} style={styles.destinationCard}>
           <View style={styles.destinationHeader}>
             <View style={styles.destinationNameRow}>
               <CountryFlag countryCode={row.countryCode} width={27} height={18} borderRadius={3} />
-              <Text style={styles.destinationName}>{row.countryName}</Text>
+              <View style={styles.destinationCopy}>
+                <Text style={styles.destinationName}>{row.countryName}</Text>
+                <Text style={styles.destinationCurrencyText}>
+                  Moeda local: {row.destinationCurrency || 'identificando…'}
+                </Text>
+              </View>
             </View>
             <TouchableOpacity
               style={styles.removeButton}
-              onPress={() => removeDestination(row.countryCode)}
+              onPress={() => removeDestination(row.destinationId)}
               accessibilityLabel={`Remover ${row.countryName} do roteiro`}
             >
               <Ionicons name="trash-outline" size={18} color="#FF8AA0" />
@@ -219,30 +381,30 @@ export default function DestinationBudgetPlanner({
                 <ActivityIndicator size="small" color="#A78BFA" />
               ) : (
                 <Text style={styles.currencyCode}>
-                  {row.direction === LOCAL_TO_BASE ? (row.currency || '---') : baseCurrency}
+                  {row.direction === LOCAL_TO_BASE ? (row.comparisonCurrency || '---') : baseCurrency}
                 </Text>
               )}
               <TextInput
                 style={styles.amountInput}
                 value={row.amount}
-                onChangeText={value => updateAmount(row.countryCode, value)}
+                onChangeText={value => updateAmount(row.destinationId, value)}
                 placeholder="0"
                 placeholderTextColor="#687191"
                 keyboardType="decimal-pad"
-                editable={!row.loading && !!row.currency}
+                editable={!row.loading && !!row.comparisonCurrency}
               />
             </View>
             <TouchableOpacity
               style={styles.invertButton}
-              onPress={() => invertCurrency(row.countryCode)}
+              onPress={() => invertCurrency(row.destinationId)}
               disabled={row.loading || !!row.error}
-              accessibilityLabel={`Inverter moedas de ${row.countryName}`}
+              accessibilityLabel={`Inverter conversão de ${baseCurrency} e ${row.comparisonCurrency} em ${row.countryName}`}
             >
               <Ionicons name="swap-horizontal" size={19} color={row.error ? '#4D5574' : '#A78BFA'} />
             </TouchableOpacity>
             <View style={styles.convertedBox}>
               <Text style={styles.convertedCurrency}>
-                {row.direction === LOCAL_TO_BASE ? baseCurrency : (row.currency || '---')}
+                {row.direction === LOCAL_TO_BASE ? baseCurrency : (row.comparisonCurrency || '---')}
               </Text>
               <Text style={styles.convertedAmount} numberOfLines={1}>
                 {row.loading
@@ -256,7 +418,7 @@ export default function DestinationBudgetPlanner({
           {!!row.error && <Text style={styles.errorText}>{row.error}</Text>}
           {!!row.rateDate && (
             <Text style={styles.rateText}>
-              Cotação de {row.rateDate}
+              Comparação {baseCurrency} → {row.comparisonCurrency} • Cotação de {row.rateDate}
               {row.rateSource ? ' • Fonte: ' : ''}
               {row.rateSource === 'ExchangeRate-API' ? (
                 <Text style={styles.rateLink} onPress={() => Linking.openURL('https://www.exchangerate-api.com')}>
@@ -288,17 +450,28 @@ const styles = StyleSheet.create({
   wrapper: { gap: 15 },
   title: { color: '#F7F7F2', fontSize: 20, fontWeight: '900' },
   subtitle: { color: '#8F96B3', fontSize: 12, marginTop: 4 },
-  levels: { flexDirection: 'row', gap: 8 },
-  level: { flex: 1, minHeight: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#202744', borderWidth: 1, borderColor: 'rgba(255,255,255,0.09)' },
-  levelActive: { backgroundColor: '#6C2BD9', borderColor: '#9B6EF3' },
-  levelText: { color: '#A5ACC8', fontSize: 13, fontWeight: '800' },
+  preferenceBlock: { gap: 8 },
+  fieldLabel: { color: '#A5ACC8', fontSize: 10, fontWeight: '900', letterSpacing: 0.9 },
+  levelSelector: { minHeight: 88, flexDirection: 'row', alignItems: 'center', gap: 11, padding: 13, borderRadius: 14, backgroundColor: 'rgba(108,43,217,0.2)', borderWidth: 1, borderColor: 'rgba(167,139,250,0.45)' },
+  levelIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: 'rgba(139,92,246,0.18)' },
+  levelCopy: { flex: 1, gap: 2 },
+  levelEyebrow: { color: '#A78BFA', fontSize: 9, fontWeight: '900', letterSpacing: 0.8, textTransform: 'uppercase' },
+  levelText: { color: '#F7F7F2', fontSize: 14, fontWeight: '900' },
   levelTextActive: { color: '#fff' },
+  levelDescription: { color: '#929AB7', fontSize: 10, lineHeight: 15 },
+  levelMenu: { gap: 6, padding: 7, borderRadius: 14, backgroundColor: '#10162B', borderWidth: 1, borderColor: '#30395D' },
+  levelOption: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 11 },
+  levelOptionActive: { backgroundColor: 'rgba(139,92,246,0.14)' },
+  aiHint: { color: '#747D9D', fontSize: 9, lineHeight: 14 },
+  divider: { paddingTop: 3 },
   empty: { alignItems: 'center', gap: 8, backgroundColor: '#10162B', borderRadius: 15, padding: 22, borderWidth: 1, borderColor: 'rgba(139,92,246,0.18)' },
   emptyText: { color: '#8F96B3', fontSize: 11, lineHeight: 17, textAlign: 'center' },
   destinationCard: { backgroundColor: '#10162B', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', gap: 11 },
   destinationHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   destinationNameRow: { flexDirection: 'row', alignItems: 'center', gap: 9, flex: 1 },
+  destinationCopy: { flex: 1, gap: 2 },
   destinationName: { color: '#F7F7F2', fontSize: 14, fontWeight: '900' },
+  destinationCurrencyText: { color: '#7F88A8', fontSize: 9, fontWeight: '700' },
   removeButton: { width: 35, height: 35, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,88,118,0.08)' },
   valuesRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   amountBox: { flex: 1, minWidth: 125, minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, borderRadius: 12, backgroundColor: '#202744', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },

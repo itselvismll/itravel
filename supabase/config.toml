@@ -8,10 +8,12 @@ verify_jwt = true
 verify_jwt = false
 
 [auth]
-site_url = "https://journi.expo.app"
+site_url = "https://journi.expo.app/"
 additional_redirect_urls = [
   "https://journi.expo.app/**",
+  "http://localhost:8081",
   "http://localhost:8081/**",
+  "http://localhost:8093",
   "http://localhost:19006/**",
   "journi://**"
 ]
