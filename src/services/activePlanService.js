@@ -75,6 +75,38 @@ export const resolveActivePlan = (plans) => {
 };
 
 /**
+ * O que o globo deve mostrar depois de uma releitura dos roteiros.
+ *
+ * O BUG QUE ESTA FUNÇÃO EXISTE PARA IMPEDIR
+ *
+ * O estado "qual roteiro está aplicado" era reconstruído a cada releitura, e
+ * QUALQUER imperfeição na leitura virava "nenhum roteiro aplicado": o mapa
+ * limpava sozinho. O caminho mais fácil de provocar isso é sair do app e voltar
+ * — abrir a rota no Google Maps, por exemplo. Na volta, o auth-js recupera a
+ * sessão e emite `SIGNED_IN`; o app relê os roteiros; e a primeira requisição
+ * depois de retomar é justamente a que mais falha (socket morto, token em
+ * renovação, rede ainda acordando). Falhou, roteiro some do globo.
+ *
+ * A regra aqui separa as três respostas possíveis, que antes eram duas:
+ *
+ *   • leitura boa  → vale o que ela diz, inclusive "nenhum" (quem removeu o
+ *                    roteiro do mapa em outro aparelho precisa ver isso aqui);
+ *   • leitura ruim → NÃO se sabe nada de novo; fica o que já estava na tela;
+ *   • leitura parcial (`activeUnknown`) → a lista veio, mas sem a informação de
+ *                    qual está aplicado. Também é "não se sabe", não é "nenhum".
+ *
+ * @param {object | null} current roteiro aplicado agora
+ * @param {{ success?: boolean, data?: Array<any>, activeUnknown?: boolean }} result
+ *   o que getSavedTripPlans devolveu
+ * @returns {object | null}
+ */
+export const nextActivePlan = (current, result) => {
+  if (!result?.success) return current ?? null;
+  if (result.activeUnknown) return current ?? null;
+  return resolveActivePlan(result.data);
+};
+
+/**
  * Aplica um roteiro no globo (ou remove o atual, com `planId` nulo).
  *
  * @param {string | null} planId
