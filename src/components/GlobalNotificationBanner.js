@@ -3,7 +3,7 @@ import { supabase } from '../services/supabase';
 import { navigateFromOutside } from '../navigation/navigationRef';
 import { getRoute, isRouteRegistered } from '../utils/notificationRouting';
 import NotificationBanner from './NotificationBanner';
-import { isSocialNotification } from '../utils/socialNotifications';
+import { isKnownNotification } from '../utils/socialNotifications';
 import { openPostgresChangesChannel } from '../services/realtimeChannel';
 
 const VISIBLE_FOR_MS = 2500;
@@ -35,7 +35,7 @@ export default function GlobalNotificationBanner({ userId, suppressed = false })
     let cancelled = false;
 
     const enqueue = async (row) => {
-      if (!row || !isSocialNotification(row)) return;
+      if (!row || !isKnownNotification(row)) return;
 
       // O payload de postgres_changes traz só a linha crua, sem join. O perfil do autor é
       // buscado à parte para o banner ter avatar e nome.

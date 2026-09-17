@@ -747,10 +747,28 @@ test('map, currencies, and social notifications do not depend on partial provide
   assert.match(currency, /world-countries@latest\/dist\/countries\.json/);
   assert.match(currency, /open\.er-api\.com\/v6\/latest/);
   assert.match(currency, /api\.frankfurter\.dev\/v2\/rate/);
-  assert.match(socialTypes, /\['follow', 'comment', 'like'\]/);
-  assert.match(notifications, /\.in\('type', SOCIAL_NOTIFICATION_TYPES\)/);
-  assert.match(feed, /\.in\('type', SOCIAL_NOTIFICATION_TYPES\)/);
-  assert.match(banner, /isSocialNotification\(row\)/);
+  // As sociais continuam sendo exatamente estas três; a Fase 2 acrescentou uma
+  // família SEPARADA (trip_*) em vez de diluir esta.
+  assert.match(socialTypes, /SOCIAL_NOTIFICATION_TYPES = Object\.freeze\(\['follow', 'comment', 'like'\]\)/);
+  assert.match(socialTypes, /TRIP_NOTIFICATION_TYPES = Object\.freeze\(\['trip_invite', 'trip_joined', 'trip_edit'\]\)/);
+
+  // O BUG QUE ISTO PEGA: tipo que não entra na lista COMBINADA não aparece na
+  // tela e nunca é marcado como lido — o sino fica preso num número que o usuário
+  // não tem onde tocar para zerar. A lista é filtro, não documentação.
+  assert.match(socialTypes, /NOTIFICATION_TYPES = Object\.freeze\(\[[\s\S]{0,120}\.\.\.SOCIAL_NOTIFICATION_TYPES/);
+  assert.match(socialTypes, /NOTIFICATION_TYPES = Object\.freeze\(\[[\s\S]{0,160}\.\.\.TRIP_NOTIFICATION_TYPES/);
+
+  // As telas usam a combinada, senão a notificação de viagem some.
+  assert.match(notifications, /\.in\('type', NOTIFICATION_TYPES\)/);
+  assert.match(feed, /\.in\('type', NOTIFICATION_TYPES\)/);
+  assert.match(banner, /isKnownNotification\(row\)/);
+
+  // E o check do banco precisa aceitar os três tipos novos, senão o trigger de
+  // convite falha no insert e o convite não chega a ninguém.
+  const tripNotifications = read('supabase/migrations/20260917130000_trip_edit_log_and_notifications.sql');
+  for (const tipo of ['trip_invite', 'trip_joined', 'trip_edit']) {
+    assert.match(tripNotifications, new RegExp(`'${tipo}'`), `${tipo} fora do check`);
+  }
   assert.match(migration, /drop trigger if exists on_message_created_notify/);
   assert.match(migration, /delete from public\.notifications where type in \('message', 'passport'\)/);
   assert.match(migration, /sync_photo_like_notification/);

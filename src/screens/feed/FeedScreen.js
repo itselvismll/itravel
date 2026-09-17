@@ -18,7 +18,7 @@ import Avatar from '../../components/Avatar';
 import CountryFlag from '../../components/CountryFlag';
 import ShareToJourniModal from '../../components/ShareToJourniModal';
 import { confirm, notify } from '../../utils/dialogs';
-import { SOCIAL_NOTIFICATION_TYPES, isSocialNotification } from '../../utils/socialNotifications';
+import { NOTIFICATION_TYPES, isKnownNotification } from '../../utils/socialNotifications';
 import { openPostgresChangesChannel } from '../../services/realtimeChannel';
 import useTabBarContentPadding from '../../hooks/useTabBarContentPadding';
 
@@ -107,7 +107,7 @@ export default function FeedScreen({ navigation }) {
         .select('id', { count: 'exact', head: true })
         .eq('user_id', userId)
         .eq('read', false)
-        .in('type', SOCIAL_NOTIFICATION_TYPES),
+        .in('type', NOTIFICATION_TYPES),
     ]);
     if (messagesResult.success) setUnreadMessages(messagesResult.data);
     setUnreadNotifications(notificationsResult.count || 0);
@@ -128,7 +128,7 @@ export default function FeedScreen({ navigation }) {
           .select('id', { count: 'exact', head: true })
           .eq('user_id', user.id)
           .eq('read', false)
-          .in('type', SOCIAL_NOTIFICATION_TYPES),
+          .in('type', NOTIFICATION_TYPES),
       ]);
 
       if (feedResult.success) {
@@ -193,7 +193,7 @@ export default function FeedScreen({ navigation }) {
             filter: `user_id=eq.${currentUser.id}`,
           },
           handler: payload => {
-            if (isSocialNotification(payload.new)) refreshPendingCounts(currentUser.id);
+            if (isKnownNotification(payload.new)) refreshPendingCounts(currentUser.id);
           },
         },
       ],

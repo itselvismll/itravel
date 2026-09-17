@@ -9,7 +9,7 @@ import { supabase, getCurrentUser } from '../services/supabase';
 import { COLORS } from '../utils/constants';
 import Avatar from '../components/Avatar';
 import { getNotificationDestination } from '../utils/notificationRouting';
-import { SOCIAL_NOTIFICATION_TYPES } from '../utils/socialNotifications';
+import { NOTIFICATION_TYPES } from '../utils/socialNotifications';
 
 const TYPE_ICON = {
   follow:  { name: 'person-add',    color: '#6C2BD9' },
@@ -52,7 +52,7 @@ export default function NotificationsScreen({ navigation }) {
         actor:actor_id(id, username, display_name, avatar_url)
       `)
       .eq('user_id', user.id)
-      .in('type', SOCIAL_NOTIFICATION_TYPES)
+      .in('type', NOTIFICATION_TYPES)
       .order('created_at', { ascending: false })
       .limit(50);
 
@@ -76,7 +76,7 @@ export default function NotificationsScreen({ navigation }) {
       .from('notifications')
       .update({ read: true })
       .eq('user_id', user.id)
-      .in('type', SOCIAL_NOTIFICATION_TYPES)
+      .in('type', NOTIFICATION_TYPES)
       .eq('read', false);
   }, []);
 
