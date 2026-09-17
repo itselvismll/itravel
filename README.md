@@ -99,6 +99,37 @@ npx expo start --ios
 npx expo start --android
 ```
 
+## Deploy do site (journi.expo.app)
+
+```bash
+npm run deploy:web           # exporta, verifica e publica em produção
+npm run deploy:web -- --dry  # exporta e verifica, sem publicar
+```
+
+**Use sempre o script.** Não rode `expo export -p web` e `eas deploy` separados,
+na mão: em 15/09/2026 a produção foi ao ar com o bundle sem nenhuma variável
+`EXPO_PUBLIC_*` e o app quebrou no boot para todos os usuários, com
+"Configuração do Supabase ausente".
+
+A falha é silenciosa por natureza — o `expo export` não sabe que aquelas
+variáveis são obrigatórias, termina com exit 0 e entrega um site que não abre. O
+script fecha esse buraco: ele guarda o `.env.local` (para os ajustes locais não
+vazarem para produção), exporta, **abre o bundle gerado e confere que as chaves
+do Supabase e do Mapbox estão lá dentro**, publica, e devolve o `.env.local` no
+lugar mesmo se algo falhar no meio. Faltando qualquer chave, ele aborta e não
+publica nada.
+
+Para conferir o que está no ar sem abrir o navegador:
+
+```bash
+curl -s https://journi.expo.app/ | grep -o '_expo/static/js/web/[^"]*.js'
+# baixe esse arquivo e procure por SUPABASE_URL:
+# "https://..." = build com as chaves   |   void 0 = build sem as chaves
+```
+
+O rollback de um deploy ruim é feito pelo painel, promovendo o deployment
+anterior: <https://expo.dev/accounts/itselvismll/projects/journi/hosting/deployments>
+
 ## Estrutura do projeto
 
 ```
