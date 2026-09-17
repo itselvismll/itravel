@@ -16,6 +16,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   TextInput,
+  Linking,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
@@ -26,8 +28,13 @@ import CountryBadgeMarkers from '../../components/map/CountryBadgeMarkers';
 import CountryFillLayer from '../../components/map/CountryFillLayer';
 import PlanRouteLayer from '../../components/map/PlanRouteLayer';
 import PlanDayTabs from '../../components/map/PlanDayTabs';
+import NearbyPlacesSheet from '../../components/map/NearbyPlacesSheet';
+import useNearbyPlaces from '../../hooks/useNearbyPlaces';
+import { badgeCountries, planPointCountries } from '../../components/map/planBadges';
+import { buildDayInfo } from '../../components/map/planDayStrip';
 import CountryDetailModal from '../../components/map/CountryDetailModal';
 import CountryFlag from '../../components/CountryFlag';
+import { getCountryNamePtByCode } from '../../utils/countryUtils';
 import GuidedFirstCountryCard from '../../components/onboarding/GuidedFirstCountryCard';
 import FirstCountryCelebration from '../../components/onboarding/FirstCountryCelebration';
 import { useOnboarding } from '../../context/OnboardingContext';
@@ -40,6 +47,7 @@ import {
   MIN_COUNTRY_QUERY_LENGTH,
 } from '../../utils/geoSearch';
 import { planDays } from '../../components/map/planRoute';
+import { walkingDirectionsUrl } from '../../utils/mapsLink';
 
 // Denominador de partida do pill, usado só enquanto o GeoJSON não chegou. Assim
 // que `countries` carrega, o total passa a ser o tamanho real da lista — é o
@@ -95,11 +103,111 @@ export default function GlobeScreen({ navigation }) {
   // cria layer nenhuma — o globo fica só com países visitados e wishlist. O
   // controle de aplicar/remover mora na tela de roteiros salvos, não aqui: o
   // globo não ganha botão nem card sobreposto.
-  const { points: planPoints, activePlanId } = useActivePlan();
+  const { points: planPoints, activePlanId, activePlan } = useActivePlan();
 
   // Dia em foco no roteiro; `null` mostra a viagem inteira, que é como ela abre.
   const [selectedDay, setSelectedDay] = useState(null);
   const planDayList = useMemo(() => planDays(planPoints), [planPoints]);
+
+  // ── A parada aberta, e o grupo aberto ────────────────────────────────────
+  // Este estado mora AQUI, e não dentro da camada do mapa, porque ele é o mesmo
+  // nas duas plataformas: na web o mapa é um canvas ao lado; no iOS/Android é
+  // uma WebView. Em ambos, quem desenha a folha é o React Native, e o mapa só
+  // avisa o que foi tocado. Foi o que permitiu o roteiro chegar ao nativo sem
+  // reescrever nada da lógica.
+  const [selectedStop, setSelectedStop] = useState(null);
+  const [clusterGroup, setClusterGroup] = useState(null);
+
+  // O lugar da lista que está aceso no mapa, e a altura que a folha ocupa.
+  //
+  // A altura é medida pela própria folha e desce até a camada do mapa: é ela que
+  // diz quanto da tela está coberto, e sem ela a área a pé — desenhada em volta
+  // da parada, no meio do mapa — nasceria atrás da lista que acabou de abrir.
+  const [focusedPlace, setFocusedPlace] = useState(null);
+  const [sheetHeight, setSheetHeight] = useState(0);
+
+  // A área a pé e os lugares dentro dela. O hook é React puro — sem mapa, sem
+  // DOM — e a área que ele devolve volta para a camada como prop, pronta para
+  // desenhar.
+  const nearby = useNearbyPlaces(selectedStop);
+
+  const handleSelectStop = useCallback((properties) => {
+    if (!properties) return;
+    setClusterGroup(null);
+    // O destaque pertence à parada anterior: a lista inteira vai ser outra.
+    setFocusedPlace(null);
+    setSelectedStop(properties);
+  }, []);
+
+  // Toque na LINHA da lista: acende o lugar no mapa e leva a câmera até ele.
+  // Tocar de novo apaga — é o mesmo gesto, e sem isso não haveria como desfazer
+  // o destaque sem fechar a folha.
+  const handleFocusPlace = useCallback((place) => {
+    setFocusedPlace((current) => (current?.id === place?.id ? null : place));
+  }, []);
+
+  // Toque no ícone de rota: sai do Journi para o app de mapas do aparelho, com o
+  // trajeto a pé já montado. É uma ação deliberada, num alvo próprio — por isso
+  // ela não mora no toque da linha.
+  const handleNavigatePlace = useCallback(async (place) => {
+    const url = walkingDirectionsUrl(place, Platform.OS);
+    if (!url) return;
+
+    // Sem `catch` a promessa rejeitada de um aparelho sem app de mapas viraria
+    // um unhandled rejection — e um app de mapas ausente não é motivo para
+    // barulho: quem tocou volta para a folha, que continua na tela.
+    try {
+      await Linking.openURL(url);
+    } catch {
+      /* segue como estava */
+    }
+  }, []);
+
+  const handleSelectCluster = useCallback((members) => {
+    if (!members?.length) return;
+    setSelectedStop(null);
+    setClusterGroup({ count: members.length, members });
+  }, []);
+
+  const handleDismissPlanSelection = useCallback(() => {
+    setSelectedStop(null);
+    setClusterGroup(null);
+    setFocusedPlace(null);
+  }, []);
+
+  // Trocar de roteiro ou de dia fecha a folha: ela pertence a uma parada
+  // específica, e essa parada pode nem estar mais na tela.
+  useEffect(() => {
+    handleDismissPlanSelection();
+  }, [activePlanId, selectedDay, handleDismissPlanSelection]);
+
+  // Em que país cai cada parada. Calculado onde a geometria existe — aqui, no
+  // web; dentro do DOM Component, no nativo — e entregue à camada, que carimba o
+  // código na feature. É de lá que a bandeira do cabeçalho da folha sai.
+  const planCountryCodes = useMemo(
+    () => planPointCountries(planPoints, geoData),
+    [planPoints, geoData]
+  );
+
+  // Data e lugar de cada dia, que é o que a faixa do seletor escreve nas
+  // pílulas e na legenda. O país entra como reserva do lugar: nem toda parada
+  // traz `location`, mas a geometria sempre sabe em que país ela caiu.
+  const planDayInfo = useMemo(
+    () => buildDayInfo(
+      planPoints,
+      activePlan?.plan_data,
+      planCountryCodes.map((code) => (code ? getCountryNamePtByCode(code, '') : ''))
+    ),
+    [planPoints, activePlan, planCountryCodes]
+  );
+
+  // Com roteiro aplicado, só os países por onde ele passa mantêm bandeira no
+  // globo: os pinos numerados e o traçado do dia já disputam a mesma região da
+  // tela, e a bandeira de cada vizinho era a terceira camada nessa disputa.
+  const visibleBadgeCountries = useMemo(
+    () => badgeCountries(countries, planCountryCodes, planPoints.length > 0),
+    [countries, planCountryCodes, planPoints.length]
+  );
 
   // Trocar de roteiro volta para "Todos": o dia 3 do roteiro anterior não quer
   // dizer nada no novo, e pior — se o novo tiver dois dias, o filtro esconderia
@@ -229,6 +337,28 @@ export default function GlobeScreen({ navigation }) {
     [openCountry]
   );
 
+  // As três ações do roteiro que atravessam a ponte do DOM Component. São
+  // `async` porque toda função passada a um DOM Component é assíncrona por
+  // natureza — a chamada vira mensagem e não tem como devolver valor na hora.
+  // Fora isso, elas são os MESMOS handlers que a web chama direto.
+  const handleNativeSelectStop = useCallback(
+    async (properties) => {
+      handleSelectStop(properties);
+    },
+    [handleSelectStop]
+  );
+
+  const handleNativeSelectCluster = useCallback(
+    async (members) => {
+      handleSelectCluster(members);
+    },
+    [handleSelectCluster]
+  );
+
+  const handleNativeDismiss = useCallback(async () => {
+    handleDismissPlanSelection();
+  }, [handleDismissPlanSelection]);
+
   const handleNativeMapFailure = useCallback(async (message) => {
     setNativeMapError(message || 'Não foi possível carregar o globo');
   }, []);
@@ -267,8 +397,19 @@ export default function GlobeScreen({ navigation }) {
             points={planPoints}
             planId={activePlanId}
             selectedDay={selectedDay}
+            countryCodes={planCountryCodes}
+            nearbyArea={nearby.area}
+            focusPlace={focusedPlace}
+            bottomInset={sheetHeight}
+            onSelectStop={handleSelectStop}
+            onSelectCluster={handleSelectCluster}
+            onDismiss={handleDismissPlanSelection}
           />
-          <CountryBadgeMarkers map={map} countries={countries} onSelect={openCountry} />
+          <CountryBadgeMarkers
+            map={map}
+            countries={visibleBadgeCountries}
+            onSelect={openCountry}
+          />
         </View>
       ) : isFocused ? (
         <View style={styles.mapWrapper}>
@@ -276,7 +417,16 @@ export default function GlobeScreen({ navigation }) {
             visitedCodes={visitedCodes}
             wishlistCodes={wishlistCodes}
             focusCountry={nativeFocusCountry}
+            planPoints={planPoints}
+            planId={activePlanId}
+            selectedDay={selectedDay}
+            nearbyArea={nearby.area}
+            focusPlace={focusedPlace}
+            bottomInset={sheetHeight}
             onSelectCountry={handleNativeCountrySelect}
+            onSelectPlanStop={handleNativeSelectStop}
+            onSelectPlanCluster={handleNativeSelectCluster}
+            onDismissPlanSelection={handleNativeDismiss}
             onCountriesResolved={handleNativeCountriesResolved}
             onMapFailure={handleNativeMapFailure}
             dom={{
@@ -299,7 +449,7 @@ export default function GlobeScreen({ navigation }) {
               style={styles.assistantBar}
             >
               <Ionicons name="sparkles-outline" size={18} color="#6C2BD9" />
-              <Text style={styles.assistantText}>✈️ Planejar viagem com IA...</Text>
+              <Text style={styles.assistantText}>Planejar viagem com IA...</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -356,36 +506,62 @@ export default function GlobeScreen({ navigation }) {
         )}
       </View>
 
-      {/* Países visitados — pill no canto inferior direito.
-          Mora fora do fluxo do globo e ACIMA da tab bar. A barra é absoluta e
-          não reserva espaço nenhum no layout, então sem somar TAB_BAR_CLEARANCE
-          o pill nasce atrás dela. O inset entra por fora, para o aparelho com
-          barra de gestos.
-          O contador é o número real de visitados sobre o total de países que o
-          globo desenha. */}
-      {isWeb ? (
+      {/* Seletor de dia: no TOPO, logo abaixo da barra de IA, e nas duas
+          plataformas. Ele deixou o rodapé porque lá disputava o canto com o
+          contador de países — e deixou de ser web-only porque o roteiro agora é
+          desenhado também no globo nativo. */}
+      {/* Some enquanto a busca está aberta: os resultados descem exatamente por
+          aqui, e duas superfícies no mesmo lugar deixariam os chips por cima da
+          lista de países. */}
+      {!showCountrySearch && (
         <PlanDayTabs
           days={planDayList}
           selectedDay={selectedDay}
           onSelect={setSelectedDay}
-          // Acima do pill de países visitados, que ocupa o canto inferior
-          // direito. O topo é da barra de IA e da busca.
-          style={{ bottom: TAB_BAR_CLEARANCE + insets.bottom + PLAN_TABS_LIFT }}
+          dayInfo={planDayInfo}
+          style={{ top: PLAN_TABS_TOP }}
         />
-      ) : null}
+      )}
 
+      {/* Contador de países: texto, não mais um pill.
+          Ele mora fora do fluxo do globo e ACIMA da tab bar — a barra é absoluta
+          e não reserva espaço nenhum no layout, então sem somar
+          TAB_BAR_CLEARANCE o texto nasce atrás dela. O inset entra por fora,
+          para o aparelho com barra de gestos.
+          Virou texto porque um pill com borda e fundo dava a ele o mesmo peso
+          visual dos controles que o usuário TOCA, e este não é tocável: é uma
+          estatística de canto de tela. */}
       <View
-        style={[styles.visitedPill, { bottom: TAB_BAR_CLEARANCE + insets.bottom }]}
+        style={[styles.visitedStat, { bottom: TAB_BAR_CLEARANCE + insets.bottom }]}
         accessibilityRole="text"
         accessibilityLabel={`${visitedCount} de ${totalCountries} países visitados`}
       >
-        <Ionicons name="location" size={14} color="#6C2BD9" />
         <Text style={styles.visitedCount}>{visitedCount}</Text>
         <Text style={styles.visitedTotal}>de {totalCountries} países</Text>
       </View>
 
+      {/* A folha da parada: a MESMA nas duas plataformas — no nativo ela flutua
+          sobre a WebView do globo, no web sobre o canvas. */}
+      <NearbyPlacesSheet
+        stop={selectedStop}
+        cluster={clusterGroup}
+        places={nearby.places}
+        loading={nearby.loading}
+        failed={nearby.failed}
+        minutes={nearby.minutes}
+        onSelectStop={handleSelectStop}
+        onFocusPlace={handleFocusPlace}
+        onNavigatePlace={handleNavigatePlace}
+        focusedPlaceId={focusedPlace?.id || null}
+        onHeightChange={setSheetHeight}
+        onClose={handleDismissPlanSelection}
+        bottom={TAB_BAR_CLEARANCE + insets.bottom + SHEET_LIFT}
+      />
+
+      {/* O aviso divide o topo esquerdo com o seletor de dia: quando há dias
+          para escolher, ele desce para baixo da fileira de chips. */}
       {(loading || error || nativeMapError) && (
-        <View style={styles.notice}>
+        <View style={[styles.notice, planDayList.length > 1 && styles.noticeBelowTabs]}>
           <Text style={error || nativeMapError ? styles.error : styles.statText}>
             {error || nativeMapError || 'Carregando países…'}
           </Text>
@@ -424,22 +600,18 @@ export default function GlobeScreen({ navigation }) {
   );
 }
 
-// backdrop-filter é CSS: só existe no web, e no nativo a chave seria ignorada
-// (com aviso do RN). Fora do web o pill fica no fundo sólido translúcido.
-const blur =
-  process.env.EXPO_OS === 'web'
-    ? { backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }
-    : null;
-
 const glass = {
   backgroundColor: 'rgba(13,19,38,0.92)',
   borderWidth: 1,
   borderColor: 'rgba(108,43,217,0.4)',
 };
 
-// Altura do pill de países visitados mais uma folga, para as abas de dia
-// ficarem em cima dele em vez de disputarem o mesmo canto.
-const PLAN_TABS_LIFT = 52;
+// Abaixo da barra de IA (44px de altura a partir do topo 16) mais uma folga.
+const PLAN_TABS_TOP = 70;
+
+// A folha sobe um pouco acima do contador de países, para não cobrir a
+// estatística no canto.
+const SHEET_LIFT = 30;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#05070F' },
@@ -515,38 +687,40 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     flex: 1,
   },
-  visitedPill: {
+  visitedStat: {
     position: 'absolute',
     right: 16,
     // `bottom` vem do componente (16 + safe area inset).
     zIndex: 1001,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(13,19,38,0.85)',
-    borderWidth: 1,
-    borderColor: 'rgba(108,43,217,0.4)',
-    ...blur,
+    alignItems: 'baseline',
+    gap: 4,
   },
   visitedCount: {
-    color: '#FFFFFF',
+    color: 'rgba(255,255,255,0.85)',
     fontFamily: 'Poppins_600SemiBold',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '700',
+    // A sombra faz as vezes do fundo que o pill dava: o texto claro precisa
+    // continuar legível sobre deserto, neve e nuvem.
+    textShadowColor: 'rgba(5,7,15,0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   visitedTotal: {
-    color: '#7A7E8C',
+    color: 'rgba(255,255,255,0.55)',
     fontFamily: 'Poppins_400Regular',
-    fontSize: 12,
+    fontSize: 11,
+    textShadowColor: 'rgba(5,7,15,0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   statText: {
     color: 'rgba(255,255,255,0.65)',
     fontFamily: 'Poppins_400Regular',
     fontSize: 11,
   },
+  noticeBelowTabs: { top: PLAN_TABS_TOP + 48 },
   notice: {
     position: 'absolute',
     top: 76,

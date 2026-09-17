@@ -12,6 +12,8 @@
 //      falso, sem browser e sem WebGL.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const path = require('path');
 const { loadEsm } = require('./helpers/load-esm.cjs');
 
 const MAPBOX_TOKEN = 'pk.test';
@@ -477,4 +479,118 @@ test('a área não colide com as sources e layers do roteiro', () => {
   for (const id of [...ISOCHRONE_LAYER_IDS, ISOCHRONE_SOURCE_ID]) {
     assert.equal(planIds.has(id), false, `${id} colide com o roteiro`);
   }
+});
+
+// ── Destaque do lugar tocado na lista ────────────────────────────────────────
+//
+// A área responde "até onde dá para ir"; ela não responde "qual deles é o
+// Fórum Romano". O destaque é essa segunda resposta, e é um ponto de cada vez:
+// acender os doze lugares da lista devolveria ao mapa a poluição que este
+// redesenho tirou dele.
+
+const {
+  NEARBY_FOCUS_HALO_LAYER_ID,
+  NEARBY_FOCUS_LAYER_IDS,
+  NEARBY_FOCUS_PIN_LAYER_ID,
+  NEARBY_FOCUS_SOURCE_ID,
+  attachNearbyFocusLayers,
+  buildNearbyFocusData,
+  detachNearbyFocusLayers,
+  updateNearbyFocusData,
+} = isochroneLayer;
+
+const PLACE = { id: 'x', name: 'Fórum Romano', longitude: 12.4853, latitude: 41.8925 };
+
+test('o lugar em foco vira uma feature; sem lugar, a coleção fica vazia', () => {
+  const data = buildNearbyFocusData(PLACE);
+  assert.equal(data.features.length, 1);
+  assert.deepEqual(data.features[0].geometry.coordinates, [12.4853, 41.8925]);
+  assert.equal(data.features[0].properties.name, 'Fórum Romano');
+
+  assert.equal(buildNearbyFocusData(null).features.length, 0);
+  // Coordenada inválida não vira ponto aceso no meio do Atlântico.
+  assert.equal(buildNearbyFocusData({ longitude: null, latitude: 41.9 }).features.length, 0);
+});
+
+test('o destaque monta acima do roteiro e é idempotente', () => {
+  const map = fakeMap();
+
+  assert.equal(attachNearbyFocusLayers(map, { place: PLACE }), true);
+  assert.equal(attachNearbyFocusLayers(map, { place: PLACE }), true);
+
+  for (const layerId of NEARBY_FOCUS_LAYER_IDS) {
+    assert.ok(map.getLayer(layerId), `${layerId} não foi criada`);
+  }
+  assert.equal(map.inserted.filter((item) => item.id === NEARBY_FOCUS_PIN_LAYER_ID).length, 1);
+
+  // O ponto precisa de borda branca: ele é da mesma cor do preenchimento da área
+  // e, sem ela, sumiria justamente dentro da área onde sempre está.
+  assert.equal(map.getLayer(NEARBY_FOCUS_PIN_LAYER_ID).paint['circle-stroke-color'], '#FFFFFF');
+  assert.equal(map.getLayer(NEARBY_FOCUS_HALO_LAYER_ID).paint['circle-color'], ISOCHRONE_COLOR);
+});
+
+test('trocar de lugar troca só os dados; apagar não remove a layer', () => {
+  const map = fakeMap();
+  attachNearbyFocusLayers(map, { place: PLACE });
+
+  const outro = { id: 'y', name: 'Museus Capitolinos', longitude: 12.4828, latitude: 41.8931 };
+  assert.equal(updateNearbyFocusData(map, outro), true);
+  assert.deepEqual(
+    map.getSource(NEARBY_FOCUS_SOURCE_ID).data.features[0].geometry.coordinates,
+    [12.4828, 41.8931]
+  );
+
+  assert.equal(updateNearbyFocusData(map, null), true);
+  assert.equal(map.getSource(NEARBY_FOCUS_SOURCE_ID).data.features.length, 0);
+  assert.ok(map.getLayer(NEARBY_FOCUS_PIN_LAYER_ID), 'a layer não deveria ter sido removida');
+});
+
+test('o destaque sai inteiro quando a folha fecha', () => {
+  const map = fakeMap();
+  attachNearbyFocusLayers(map, { place: PLACE });
+
+  detachNearbyFocusLayers(map);
+
+  for (const layerId of NEARBY_FOCUS_LAYER_IDS) assert.equal(map.getLayer(layerId), undefined);
+  assert.equal(map.getSource(NEARBY_FOCUS_SOURCE_ID), undefined);
+  // Desmontar duas vezes acontece quando o próprio mapa é destruído no meio.
+  detachNearbyFocusLayers(map);
+  detachNearbyFocusLayers(null);
+});
+
+test('o contorno da área é tracejado e sobrevive à folha por cima', () => {
+  const map = fakeMap();
+  attachIsochroneLayers(map, { feature: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [RING] } } });
+
+  const outline = map.getLayer(ISOCHRONE_OUTLINE_LAYER_ID);
+  // Com o preenchimento em 0,14, o contorno é o que resta da área na faixa de
+  // mapa acima da lista — ele precisa ler sobre satélite claro.
+  assert.ok(outline.paint['line-opacity'] >= 0.6);
+  assert.deepEqual(outline.paint['line-dasharray'], [3, 2]);
+  assert.ok(ISOCHRONE_FILL_OPACITY <= 0.2, 'o preenchimento deve continuar discreto');
+});
+
+test('o destaque de área está desligado por flag, com o código de pé', () => {
+  // Mesmo padrão do INSTAGRAM_FEATURE_ENABLED: a decisão de produto é desligar o
+  // DESENHO, não apagar a implementação. Se este teste começar a falhar porque a
+  // flag virou `true`, é religamento deliberado — e aí é só atualizar aqui.
+  assert.equal(isochroneLayer.NEARBY_AREA_FEATURE_ENABLED, false);
+
+  const layer = fs.readFileSync(
+    path.resolve(__dirname, '..', 'src/components/map/PlanRouteLayer.web.js'),
+    'utf8'
+  );
+
+  // As três portas: desenhar, atualizar e enquadrar a câmera pela área.
+  const guards = layer.match(/if \(!NEARBY_AREA_FEATURE_ENABLED\)/g) || [];
+  assert.equal(guards.length, 3, 'toda entrada do desenho da área precisa passar pela flag');
+
+  // A BUSCA continua ligada: ela não é desenho, é o que define quais lugares
+  // entram na lista e recorta a busca da Search Box.
+  const hook = fs.readFileSync(
+    path.resolve(__dirname, '..', 'src/hooks/useNearbyPlaces.js'),
+    'utf8'
+  );
+  assert.match(hook, /fetchIsochrone\(/);
+  assert.doesNotMatch(hook, /NEARBY_AREA_FEATURE_ENABLED/);
 });

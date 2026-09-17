@@ -19,6 +19,8 @@ export const PLAN_HALO_LAYER_ID = 'journi-plan-halo';
 export const PLAN_PIN_LAYER_ID = 'journi-plan-pin';
 export const PLAN_NUMBER_LAYER_ID = 'journi-plan-number';
 export const PLAN_LABEL_LAYER_ID = 'journi-plan-label';
+export const PLAN_CLUSTER_LAYER_ID = 'journi-plan-cluster';
+export const PLAN_CLUSTER_COUNT_LAYER_ID = 'journi-plan-cluster-count';
 
 // Ordem de criação = ordem de empilhamento. Todas entram ancoradas no mesmo
 // primeiro symbol layer da style, depois do território pintado: o roteiro fica
@@ -30,6 +32,8 @@ export const PLAN_LAYER_IDS = [
   PLAN_PIN_LAYER_ID,
   PLAN_NUMBER_LAYER_ID,
   PLAN_LABEL_LAYER_ID,
+  PLAN_CLUSTER_LAYER_ID,
+  PLAN_CLUSTER_COUNT_LAYER_ID,
 ];
 
 // Zoom em que o pino deixa de ser só o número e ganha ícone + nome do lugar.
@@ -105,19 +109,33 @@ export const dayColor = (day) => {
 
 // ── Ícones por categoria ─────────────────────────────────────────────────────
 // Mesmo enum da Edge Function e de planGeography.PLACE_CATEGORIES.
-export const CATEGORY_EMOJI = {
-  restaurante: '🍝',
-  atracao: '🏛️',
-  compras: '🛍️',
-  hotel: '🏨',
-  transporte: '🚉',
-  natureza: '🌳',
-  vida_noturna: '🍸',
-  outro: '📍',
+//
+// ÍCONES VETORIAIS, NÃO EMOJI. O emoji é desenhado pela fonte do SISTEMA: o
+// mesmo 🏛️ sai colorido e arredondado no iPhone, chapado no Android e de outra
+// família ainda no Windows — três aparências para o mesmo dado, nenhuma delas
+// escolhida por nós. Num mapa escuro e com satélite por baixo isso é pior do
+// que parece: o emoji carrega o próprio fundo claro e a própria paleta, que
+// briga com a cor do dia no pino ao lado.
+//
+// Os nomes são do Ionicons (@expo/vector-icons), na variante outline — a mesma
+// família dos outros controles do app.
+export const CATEGORY_ICON = {
+  restaurante: 'restaurant-outline',
+  atracao: 'business-outline',
+  compras: 'bag-handle-outline',
+  hotel: 'bed-outline',
+  transporte: 'train-outline',
+  natureza: 'leaf-outline',
+  vida_noturna: 'wine-outline',
+  outro: 'location-outline',
 };
 
+/** Cor dos ícones de categoria desenhados no mapa: o creme da marca, que é o
+ * mesmo tom do rótulo com o nome do lugar logo ao lado. */
+export const CATEGORY_ICON_COLOR = '#F7F7F2';
+
 export const categoryIconId = (category) =>
-  `journi-cat-${CATEGORY_EMOJI[category] ? category : 'outro'}`;
+  `journi-cat-${CATEGORY_ICON[category] ? category : 'outro'}`;
 
 // ── Dados ────────────────────────────────────────────────────────────────────
 
@@ -139,14 +157,32 @@ export const categoryIconId = (category) =>
  * faria a linha parecer errada. O `order` original continua nas properties, para
  * quem precisar dele.
  *
+ * O terceiro argumento é o país de cada parada, na ordem dos pontos
+ * (planBadges.planPointCountries). Ele vira `countryCode` nas properties e sai
+ * daqui direto para o cabeçalho da folha, que é o único lugar onde a bandeira
+ * aparece desde que ela saiu de cima do pino. Também é opcional: sem geometria
+ * carregada a parada simplesmente não tem bandeira.
+ *
  * @param {Array<{day:number, order:number, title?:string, description?:string,
  *   category?:string, latitude:number, longitude:number}>} points
  * @param {Map<number, { points?: Array<any>, coordinates?: Array<any>|null }>} [routes]
+ * @param {{ countryCodes?: Array<string | null> }} [options]
  * @returns {{ points: any, lines: any }}
  */
-export const buildPlanRouteData = (points, routes) => {
+export const buildPlanRouteData = (points, routes, { countryCodes } = {}) => {
   const list = points ?? [];
   const byDay = new Map();
+
+  // Índice por coordenada, e não pela identidade do objeto: a Optimization do
+  // Mapbox devolve os pontos do dia reordenados, e nada garante que sejam os
+  // MESMOS objetos que entraram.
+  const countryByCoordinate = new Map();
+  if (Array.isArray(countryCodes)) {
+    list.forEach((point, index) => {
+      const code = countryCodes[index];
+      if (code) countryByCoordinate.set(`${point?.longitude},${point?.latitude}`, code);
+    });
+  }
 
   // Agrupa preservando a ordem de entrada (getPlanPoints já ordena por dia e
   // sequência), para o dia sem rota otimizada continuar exatamente como estava.
@@ -187,6 +223,9 @@ export const buildPlanRouteData = (points, routes) => {
           description: point?.description || '',
           category: point?.category || 'outro',
           icon: categoryIconId(point?.category),
+          countryCode: countryByCoordinate.get(`${point?.longitude},${point?.latitude}`) || '',
+          latitude: point.latitude,
+          longitude: point.longitude,
           color,
         },
       });
@@ -248,6 +287,16 @@ const EMPTY = { type: 'FeatureCollection', features: [] };
 // referência), grande o bastante para o número caber quando a câmera desce.
 const PIN_RADIUS = ['interpolate', ['linear'], ['zoom'], 2, 7, 6, 10, 12, 13];
 const HALO_RADIUS = ['interpolate', ['linear'], ['zoom'], 2, 9.5, 6, 13, 12, 16.5];
+
+// O badge de grupo é maior que o pino que ele substitui — precisa caber "+3" e
+// precisa ler como "aqui tem mais de uma coisa", não como uma parada gorda.
+const CLUSTER_RADIUS = ['interpolate', ['linear'], ['zoom'], 2, 10, 6, 13, 12, 17];
+
+// Uma parada solta e um grupo saem da MESMA source: o que separa as duas metades
+// é a marca que planClusters.js carimba na feature. Sem estes filtros, o pino
+// numerado apareceria embaixo do badge do grupo.
+const SINGLE_FILTER = ['!=', ['get', 'cluster'], true];
+const CLUSTER_FILTER = ['==', ['get', 'cluster'], true];
 
 /** @param {any} map */
 export const isStyleReady = (map) => Boolean(map?.getStyle?.()?.layers?.length);
@@ -358,6 +407,7 @@ export const attachPlanRouteLayers = (map, { data } = {}) => {
         id: PLAN_HALO_LAYER_ID,
         type: 'circle',
         source: PLAN_POINT_SOURCE_ID,
+        filter: SINGLE_FILTER,
         paint: {
           'circle-radius': HALO_RADIUS,
           'circle-color': '#0D1326',
@@ -375,6 +425,7 @@ export const attachPlanRouteLayers = (map, { data } = {}) => {
         id: PLAN_PIN_LAYER_ID,
         type: 'circle',
         source: PLAN_POINT_SOURCE_ID,
+        filter: SINGLE_FILTER,
         paint: {
           'circle-radius': PIN_RADIUS,
           'circle-color': ['get', 'color'],
@@ -396,6 +447,7 @@ export const attachPlanRouteLayers = (map, { data } = {}) => {
         id: PLAN_NUMBER_LAYER_ID,
         type: 'symbol',
         source: PLAN_POINT_SOURCE_ID,
+        filter: SINGLE_FILTER,
         layout: withFont({
           'text-field': ['get', 'orderLabel'],
           'text-size': ['interpolate', ['linear'], ['zoom'], 2, 9, 6, 11, 12, 14],
@@ -421,6 +473,7 @@ export const attachPlanRouteLayers = (map, { data } = {}) => {
         id: PLAN_LABEL_LAYER_ID,
         type: 'symbol',
         source: PLAN_POINT_SOURCE_ID,
+        filter: SINGLE_FILTER,
         minzoom: PLAN_LABEL_ZOOM,
         layout: withFont({
           'icon-image': ['get', 'icon'],
@@ -446,6 +499,57 @@ export const attachPlanRouteLayers = (map, { data } = {}) => {
     );
   }
 
+  // ── Grupos ────────────────────────────────────────────────────────────────
+  // Duas ou mais paradas que se encostam na tela viram UM badge com a contagem.
+  // A cor vem pronta da feature: a do dia, quando o grupo é todo do mesmo dia, e
+  // o vidro escuro quando ele mistura dias (ver planClusters.js).
+  if (!map.getLayer(PLAN_CLUSTER_LAYER_ID)) {
+    map.addLayer(
+      {
+        id: PLAN_CLUSTER_LAYER_ID,
+        type: 'circle',
+        source: PLAN_POINT_SOURCE_ID,
+        filter: CLUSTER_FILTER,
+        paint: {
+          'circle-radius': CLUSTER_RADIUS,
+          'circle-color': ['get', 'color'],
+          'circle-opacity': 0.95,
+          // Anel mais grosso que o do pino: é o que diz "isto abre", e é o que
+          // segura a leitura do badge escuro sobre satélite escuro.
+          'circle-stroke-color': '#FFFFFF',
+          'circle-stroke-width': 2,
+          'circle-stroke-opacity': 0.95,
+        },
+      },
+      beforeId
+    );
+  }
+
+  if (!map.getLayer(PLAN_CLUSTER_COUNT_LAYER_ID)) {
+    map.addLayer(
+      {
+        id: PLAN_CLUSTER_COUNT_LAYER_ID,
+        type: 'symbol',
+        source: PLAN_POINT_SOURCE_ID,
+        filter: CLUSTER_FILTER,
+        layout: withFont({
+          'text-field': ['get', 'countLabel'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 2, 10, 6, 12, 12, 14],
+          // Mesma razão do número da parada: um badge sem a contagem não é um
+          // badge, é uma bolinha.
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        }),
+        paint: {
+          'text-color': '#FFFFFF',
+          'text-halo-color': 'rgba(13,19,38,0.55)',
+          'text-halo-width': 0.6,
+        },
+      },
+      beforeId
+    );
+  }
+
   return true;
 };
 
@@ -457,12 +561,24 @@ const BASE_FILTERS = {
   [PLAN_LINE_FALLBACK_LAYER_ID]: ['!=', ['get', 'routed'], true],
 };
 
+/** As layers cujo recorte por dia é feito por FILTRO. Ver setPlanDayFilter. */
+const DAY_FILTERED_LAYER_IDS = [PLAN_LINE_LAYER_ID, PLAN_LINE_FALLBACK_LAYER_ID];
+
 /**
- * Mostra só um dia do roteiro, ou todos.
+ * Mostra só um dia do roteiro, ou todos — nas LINHAS.
  *
- * Filtro na layer, e não dados diferentes na source: a geometria já está no
- * worker, e trocar de dia é só mudar o que se pinta dela. É o que faz a troca
- * ser instantânea, sem reenviar nada nem refazer as chamadas do Mapbox.
+ * As paradas ficaram de fora desta função, e a razão é o agrupamento. Um badge
+ * "+3" pode juntar paradas de dias diferentes, e uma feature de grupo não tem
+ * um `day` só para o filtro comparar: o dia 2 escondido levaria junto o grupo
+ * inteiro, sumindo com paradas do dia que está em foco.
+ *
+ * Então o recorte das paradas acontece ANTES, nos dados: quem chama filtra a
+ * lista por dia, agrupa o que sobrou (planClusters.js) e manda o resultado pela
+ * source. Custa uma `setData` de algumas dezenas de pontos — o mesmo trabalho
+ * que o filtro de layer economizava, feito num lugar onde ele está certo.
+ *
+ * As linhas continuam no filtro: elas são uma feature por dia, sem agrupamento
+ * nenhum, e a geometria delas é a parte pesada que não vale reenviar.
  *
  * @param {any} map
  * @param {number | null} day dia a exibir; null/undefined mostra o roteiro todo
@@ -473,7 +589,7 @@ export const setPlanDayFilter = (map, day) => {
 
   const dayFilter = Number.isFinite(day) ? ['==', ['get', 'day'], Number(day)] : null;
 
-  for (const layerId of PLAN_LAYER_IDS) {
+  for (const layerId of DAY_FILTERED_LAYER_IDS) {
     if (!map.getLayer?.(layerId)) continue;
 
     const base = BASE_FILTERS[layerId] || null;
@@ -486,6 +602,27 @@ export const setPlanDayFilter = (map, day) => {
   }
 
   return true;
+};
+
+/**
+ * As paradas de um dia, ou todas.
+ *
+ * O par da função acima: é este recorte que vai para a source depois de passar
+ * pelo agrupamento. Fica aqui, e não na tela, porque a regra é a mesma nas três
+ * plataformas — e porque é puro, então o teste a exercita sem mapa nenhum.
+ *
+ * @param {{ features?: any[] }} pointData
+ * @param {number | null} day
+ * @returns {{ type: 'FeatureCollection', features: any[] }}
+ */
+export const filterPointsByDay = (pointData, day) => {
+  const features = pointData?.features ?? [];
+  if (!Number.isFinite(day)) return { type: 'FeatureCollection', features: [...features] };
+
+  return {
+    type: 'FeatureCollection',
+    features: features.filter((feature) => Number(feature?.properties?.day) === Number(day)),
+  };
 };
 
 /**
@@ -566,46 +703,50 @@ export const bindPlanPointClick = (map, onSelect) => {
   };
 };
 
-// Lado do bitmap do ícone, em pixels de dispositivo. 64 com pixelRatio 2 dá um
-// emoji de 32 CSS px, nítido em tela retina e pequeno o bastante para os oito
-// caberem no atlas sem custo.
-const ICON_SIZE = 64;
-
 /**
- * Rasteriza os oito emojis de categoria e registra cada um como imagem do mapa.
+ * Liga o toque no badge de grupo ao callback da tela.
  *
- * Só aqui existe dependência de browser (canvas 2D) — por isso a função recebe o
- * mapa e fica fora do caminho de todas as puras acima.
+ * Irmão de bindPlanPointClick, e separado dele de propósito: o toque numa parada
+ * abre "o que tem por perto", o toque num grupo o abre. Um handler só que
+ * decidisse pelo `properties.cluster` misturaria dois gestos com respostas
+ * diferentes no mesmo lugar.
  *
  * @param {any} map
+ * @param {(properties: any, coordinates: [number, number]) => void} onSelect
+ * @returns {() => void} função de limpeza
  */
-export const registerCategoryIcons = (map) => {
-  if (!map?.addImage || typeof document === 'undefined') return;
+export const bindPlanClusterClick = (map, onSelect) => {
+  if (!map?.on) return () => {};
 
-  for (const [category, emoji] of Object.entries(CATEGORY_EMOJI)) {
-    const id = categoryIconId(category);
-    if (map.hasImage?.(id)) continue;
+  const layers = [PLAN_CLUSTER_LAYER_ID, PLAN_CLUSTER_COUNT_LAYER_ID];
 
-    const canvas = document.createElement('canvas');
-    canvas.width = ICON_SIZE;
-    canvas.height = ICON_SIZE;
-    const context = canvas.getContext('2d');
-    if (!context) return;
+  const handleClick = (event) => {
+    const feature = event?.features?.[0];
+    if (!feature) return;
+    onSelect(feature.properties, feature.geometry?.coordinates);
+  };
+  const enter = () => {
+    map.getCanvas().style.cursor = 'pointer';
+  };
+  const leave = () => {
+    map.getCanvas().style.cursor = '';
+  };
 
-    context.font = `${ICON_SIZE * 0.72}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.fillText(emoji, ICON_SIZE / 2, ICON_SIZE / 2);
+  layers.forEach((layerId) => {
+    map.on('click', layerId, handleClick);
+    map.on('mouseenter', layerId, enter);
+    map.on('mouseleave', layerId, leave);
+  });
 
-    map.addImage(id, context.getImageData(0, 0, ICON_SIZE, ICON_SIZE), { pixelRatio: 2 });
-  }
+  return () => {
+    layers.forEach((layerId) => {
+      map.off('click', layerId, handleClick);
+      map.off('mouseenter', layerId, enter);
+      map.off('mouseleave', layerId, leave);
+    });
+  };
 };
 
-/** Tira do mapa as imagens que registerCategoryIcons criou. */
-export const unregisterCategoryIcons = (map) => {
-  if (!map?.removeImage) return;
-  for (const category of Object.keys(CATEGORY_EMOJI)) {
-    const id = categoryIconId(category);
-    if (map.hasImage?.(id)) map.removeImage(id);
-  }
-};
+// O desenho dos ícones de categoria como imagens do mapa vive em
+// categoryIconImages.js: ele precisa de canvas e da fonte de ícones carregada,
+// e este módulo continua sendo exercitado no teste sem browser nenhum.

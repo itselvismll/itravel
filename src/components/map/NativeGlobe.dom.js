@@ -4,6 +4,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import GlobeMap from './GlobeMap.web';
 import CountryBadgeMarkers from './CountryBadgeMarkers.web';
 import CountryFillLayer from './CountryFillLayer.web';
+import PlanRouteLayer from './PlanRouteLayer.web';
+import { badgeCountries, planPointCountries } from './planBadges';
 import { getWorldGeoData } from '../../services/geoService';
 import { buildCountryAnchors } from './countryCentroids';
 import { statusOf } from './countryStatus';
@@ -30,12 +32,33 @@ import { getGeoCountryAlpha3, getGeoCountryName } from '../../utils/geo-country-
  * ~238 objetos rasos — a tela usa isso para a busca e para a contagem, que é
  * tudo que ela precisava. A geometria não atravessa: mandar a FeatureCollection
  * pela ponte só trocaria o parse duplicado por um stringify + parse, que é pior.
+ *
+ * O ROTEIRO TAMBÉM É DESENHADO AQUI.
+ *
+ * Nada impedia isso tecnicamente — este é o mesmo MapLibre da web, e
+ * `PlanRouteLayer.web` roda aqui dentro sem mudar uma linha. O que faltava era
+ * o encanamento: as paradas chegam por prop (objetos rasos, serializáveis), e o
+ * que o usuário toca volta pelos callbacks. O estado da folha e a busca dos
+ * lugares próximos ficam do lado React Native, onde já estão para a web — é por
+ * isso que este arquivo não ganhou regra nenhuma, só fiação.
+ *
+ * A geometria continua sem atravessar: o país de cada parada — a bandeira do
+ * cabeçalho da folha — é resolvido AQUI, que é onde o GeoJSON existe.
  */
 export default function NativeGlobe({
   visitedCodes = [],
   wishlistCodes = [],
   focusCountry = null,
+  planPoints = [],
+  planId = null,
+  selectedDay = null,
+  nearbyArea = null,
+  focusPlace = null,
+  bottomInset = 0,
   onSelectCountry,
+  onSelectPlanStop,
+  onSelectPlanCluster,
+  onDismissPlanSelection,
   onCountriesResolved,
   onMapFailure,
   dom: _dom,
@@ -72,6 +95,19 @@ export default function NativeGlobe({
   const countriesByCode = useMemo(
     () => new Map(countries.map((country) => [country.code, country])),
     [countries]
+  );
+
+  // Mesmas duas linhas que a GlobeScreen roda no web, pelos mesmos motivos — e é
+  // exatamente esse o ponto de a regra viver em planBadges.js: ela não foi
+  // reescrita para o nativo, foi importada.
+  const planCodes = useMemo(
+    () => planPointCountries(planPoints, geoData),
+    [planPoints, geoData]
+  );
+
+  const visibleCountries = useMemo(
+    () => badgeCountries(countries, planCodes, planPoints.length > 0),
+    [countries, planCodes, planPoints.length]
   );
 
   useEffect(() => {
@@ -157,7 +193,20 @@ export default function NativeGlobe({
         wishlist={wishlist}
         onSelectCountry={selectCountryByCode}
       />
-      <CountryBadgeMarkers map={map} countries={countries} onSelect={selectCountry} />
+      <PlanRouteLayer
+        map={map}
+        points={planPoints}
+        planId={planId}
+        selectedDay={selectedDay}
+        countryCodes={planCodes}
+        nearbyArea={nearbyArea}
+        focusPlace={focusPlace}
+        bottomInset={bottomInset}
+        onSelectStop={onSelectPlanStop}
+        onSelectCluster={onSelectPlanCluster}
+        onDismiss={onDismissPlanSelection}
+      />
+      <CountryBadgeMarkers map={map} countries={visibleCountries} onSelect={selectCountry} />
     </div>
   );
 }

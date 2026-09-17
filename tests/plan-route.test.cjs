@@ -22,13 +22,16 @@ const planRoute = loadEsm('src/components/map/planRoute.js', {
 
 const {
   BASE_DAY_COLORS,
-  CATEGORY_EMOJI,
+  CATEGORY_ICON,
   PLAN_HALO_LAYER_ID,
   PLAN_LABEL_LAYER_ID,
   PLAN_LABEL_ZOOM,
   PLAN_LAYER_IDS,
   PLAN_LINE_LAYER_ID,
   PLAN_LINE_FALLBACK_LAYER_ID,
+  PLAN_CLUSTER_LAYER_ID,
+  PLAN_CLUSTER_COUNT_LAYER_ID,
+  filterPointsByDay,
   planDays,
   setPlanDayFilter,
   PLAN_LINE_SOURCE_ID,
@@ -189,9 +192,15 @@ test('a ordem de visita do dia é a ordem dos vértices da linha', () => {
   assert.ok(first[0] < second[0] && second[0] < third[0]);
 });
 
-test('todas as categorias do enum têm ícone', () => {
-  for (const category of Object.keys(CATEGORY_EMOJI)) {
+test('todas as categorias do enum têm ícone, e nenhum deles é emoji', () => {
+  const EMOJI = /[←-⇿⌀-➿⬀-⯿️🀀-🫿]/u;
+
+  for (const [category, icon] of Object.entries(CATEGORY_ICON)) {
     assert.equal(categoryIconId(category), `journi-cat-${category}`);
+    // O ícone é um NOME do Ionicons. Um emoji aqui voltaria a ser desenhado pela
+    // fonte do sistema — colorido e de família diferente em cada aparelho.
+    assert.doesNotMatch(icon, EMOJI, `${category} voltou a ser emoji`);
+    assert.match(icon, /^[a-z-]+$/);
   }
 });
 
@@ -288,8 +297,8 @@ test('o rótulo com o nome do lugar só aparece no nível de cidade', () => {
   const numero = map.getLayer(PLAN_NUMBER_LAYER_ID).layout;
   assert.equal(numero.minzoom, undefined);
   assert.equal(numero['text-allow-overlap'], true);
-  // O emoji entra por icon-image, nunca no text-field (os glyphs da Stadia não
-  // têm emoji).
+  // O ícone entra por icon-image, nunca no text-field: os glyphs da Stadia são
+  // Noto Sans e não têm a fonte de ícones.
   const rotulo = map.getLayer(PLAN_LABEL_LAYER_ID).layout;
   assert.deepEqual(rotulo['icon-image'], ['get', 'icon']);
   assert.deepEqual(rotulo['text-field'], ['get', 'title']);
@@ -436,7 +445,7 @@ test('um dia com rota e outro sem convivem no mesmo roteiro', () => {
 
 // ── Filtro de dia ────────────────────────────────────────────────────────────
 
-test('o filtro de dia esconde os outros dias sem tocar nos dados', () => {
+test('o filtro de dia recorta as linhas sem tocar na geometria delas', () => {
   const map = fakeMap();
   const data = buildPlanRouteData([point(1, 1), point(1, 2), point(2, 1), point(2, 2)]);
   attachPlanRouteLayers(map, { data });
@@ -444,12 +453,16 @@ test('o filtro de dia esconde os outros dias sem tocar nos dados', () => {
 
   assert.equal(setPlanDayFilter(map, 2), true);
 
-  // Nada de setData: a geometria já está no worker e trocar de dia é só mudar o
-  // que se pinta dela.
+  // Nada de setData: a geometria das linhas já está no worker e trocar de dia é
+  // só mudar o que se pinta dela.
   for (const [kind] of map.calls) assert.equal(kind, 'setFilter');
 
-  // Nas layers de ponto, o filtro é só o dia.
-  assert.deepEqual(map.getLayer(PLAN_PIN_LAYER_ID).filter, ['==', ['get', 'day'], 2]);
+  // As PARADAS não são filtradas por layer, e isso é deliberado: um badge de
+  // grupo pode juntar paradas de dias diferentes e não tem um `day` único para
+  // o filtro comparar — esconder o dia 2 levaria junto o grupo inteiro, sumindo
+  // com paradas do dia em foco. O recorte delas acontece nos dados, antes do
+  // agrupamento (filterPointsByDay).
+  assert.deepEqual(map.getLayer(PLAN_PIN_LAYER_ID).filter, ['!=', ['get', 'cluster'], true]);
 
   // Nas de linha, o dia entra JUNTO com o `routed` — se o dia sobrescrevesse o
   // filtro base, a rota real e a reta apareceriam as duas ao mesmo tempo.
@@ -472,11 +485,25 @@ test('voltar para "todos" devolve o filtro base, não nenhum filtro', () => {
   setPlanDayFilter(map, 1);
   setPlanDayFilter(map, null);
 
-  // O ponto volta sem filtro nenhum...
-  assert.equal(map.getLayer(PLAN_PIN_LAYER_ID).filter, undefined);
-  // ...mas a linha PRECISA manter o `routed`, senão as duas layers desenhariam
-  // a mesma feature e o tracejado apareceria por baixo da rota real.
+  // A linha PRECISA manter o `routed`, senão as duas layers desenhariam a mesma
+  // feature e o tracejado apareceria por baixo da rota real.
   assert.deepEqual(map.getLayer(PLAN_LINE_LAYER_ID).filter, ['==', ['get', 'routed'], true]);
+});
+
+test('o recorte por dia das paradas acontece nos dados', () => {
+  const data = buildPlanRouteData([point(1, 1), point(1, 2), point(2, 1)]);
+
+  const onlyDayTwo = filterPointsByDay(data.points, 2);
+  assert.deepEqual(
+    onlyDayTwo.features.map((feature) => feature.properties.day),
+    [2]
+  );
+
+  // Sem dia escolhido, tudo passa — e sempre numa coleção NOVA, para o chamador
+  // nunca mexer sem querer na coleção que alimenta as linhas.
+  const all = filterPointsByDay(data.points, null);
+  assert.equal(all.features.length, 3);
+  assert.notEqual(all.features, data.points.features);
 });
 
 test('filtrar antes das layers existirem não quebra', () => {
@@ -490,15 +517,38 @@ test('os dias do roteiro saem ordenados e sem repetição', () => {
   assert.deepEqual(planDays(undefined), []);
 });
 
-test('toda layer do roteiro responde ao filtro de dia', () => {
-  // Uma layer esquecida aqui deixaria, por exemplo, o rótulo do dia 3 na tela
-  // com o mapa mostrando o dia 1.
+test('toda layer de linha responde ao filtro de dia', () => {
+  // Uma layer de linha esquecida aqui deixaria o traçado do dia 3 na tela com o
+  // mapa mostrando o dia 1.
   const map = fakeMap();
   attachPlanRouteLayers(map, { data: buildPlanRouteData([point(1, 1), point(2, 1)]) });
   setPlanDayFilter(map, 1);
 
-  for (const layerId of PLAN_LAYER_IDS) {
+  for (const layerId of [PLAN_LINE_LAYER_ID, PLAN_LINE_FALLBACK_LAYER_ID]) {
     const filter = JSON.stringify(map.getLayer(layerId).filter);
     assert.match(filter, /"day"/, `${layerId} não filtra por dia`);
+  }
+});
+
+test('cada layer de parada desenha um lado só do agrupamento', () => {
+  // Sem esta separação o pino numerado apareceria embaixo do badge do grupo que
+  // existe justamente para substituí-lo.
+  const map = fakeMap();
+  attachPlanRouteLayers(map, { data: buildPlanRouteData([point(1, 1), point(1, 2)]) });
+
+  for (const layerId of [PLAN_PIN_LAYER_ID, PLAN_HALO_LAYER_ID, PLAN_NUMBER_LAYER_ID, PLAN_LABEL_LAYER_ID]) {
+    assert.deepEqual(
+      map.getLayer(layerId).filter,
+      ['!=', ['get', 'cluster'], true],
+      `${layerId} deveria desenhar só parada solta`
+    );
+  }
+
+  for (const layerId of [PLAN_CLUSTER_LAYER_ID, PLAN_CLUSTER_COUNT_LAYER_ID]) {
+    assert.deepEqual(
+      map.getLayer(layerId).filter,
+      ['==', ['get', 'cluster'], true],
+      `${layerId} deveria desenhar só grupo`
+    );
   }
 });
