@@ -216,7 +216,11 @@ test('a varredura defensiva de purge_account conhece as tabelas novas', () => {
 
 // ── Tradução linhas ↔ telas ──────────────────────────────────────────────────
 
-const tripItinerary = loadEsm('src/utils/tripItinerary.js');
+// `planDayNumber` vem de planDayStrip: é a conta única que numera um dia do
+// roteiro, e tripItinerary usa a mesma em vez de uma cópia.
+const tripItinerary = loadEsm('src/utils/tripItinerary.js', {
+  '../components/map/planDayStrip': loadEsm('src/components/map/planDayStrip.js'),
+});
 const { itineraryFromRows, itineraryToRowsPayload } = tripItinerary;
 
 const dayRow = (dayNumber, activities = []) => ({

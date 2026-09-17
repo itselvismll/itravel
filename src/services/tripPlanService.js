@@ -12,9 +12,10 @@ const TRIP_SELECT = `
   *,
   trip_members!inner (user_id, role, status, is_active_on_map),
   trip_days (
-    id, day_number, date, theme,
+    id, day_number, date, theme, updated_at, last_edited_by,
     trip_activities (
       id, position, period, title, description, location, duration,
+      updated_at, last_edited_by,
       estimated_cost, map_query, official_url, purchase_note, indoor,
       latitude, longitude, coordinate_source, approximate_coordinate, category,
       rating, review_count, opening_hours, verification_source, place_id, extra
@@ -151,19 +152,43 @@ export const saveTripPlan = async ({ planId, request, plan }) => {
     };
   }
 
-  // O roteiro em linhas, que é o caminho novo de leitura e escrita. O jsonb
-  // acima continua gravado como rede de segurança desta fase — se algo der
-  // errado aqui, a viagem ainda tem o roteiro inteiro.
-  const { error: itineraryError } = await supabase.rpc('replace_trip_itinerary', {
+  // O roteiro em linhas, que é o caminho de leitura e escrita. O jsonb acima
+  // continua gravado como rede de segurança — se algo der errado aqui, a viagem
+  // ainda tem o roteiro inteiro.
+  //
+  // `sync_trip_itinerary` e não `replace_trip_itinerary`: a antiga apagava o
+  // roteiro e reinseria, o que numa viagem compartilhada significa a segunda
+  // pessoa a salvar apagando o trabalho da primeira. A nova casa item a item pelo
+  // `id` e RECUSA sobrescrever parada que mudou no banco depois de esta cópia ter
+  // sido lida — é o que `updatedAt` no payload está fazendo ali.
+  const { data: syncResult, error: itineraryError } = await supabase.rpc('sync_trip_itinerary', {
     p_trip_id: data.id,
     p_days: itineraryToRowsPayload(plan),
   });
 
+  if (itineraryError) {
+    return {
+      success: true,
+      data,
+      warning: 'O roteiro foi salvo, mas a sincronização com os participantes falhou. '
+        + 'Salve de novo para compartilhar as mudanças.',
+    };
+  }
+
+  // Conflito não é erro: é outra pessoa tendo mexido na mesma parada primeiro. O
+  // salvamento vale, a versão dela fica, e o usuário PRECISA saber — foi para não
+  // perder trabalho em silêncio que a guarda existe. Avisar é metade do valor
+  // dela.
+  const conflicts = Number(syncResult?.conflicts) || 0;
+
   return {
     success: true,
     data,
-    warning: itineraryError
-      ? 'O roteiro foi salvo, mas a sincronização com os participantes falhou. Salve de novo para compartilhar as mudanças.'
+    conflicts,
+    warning: conflicts
+      ? `${conflicts === 1 ? 'Uma parada foi' : `${conflicts} paradas foram`} alterada${conflicts === 1 ? '' : 's'} `
+        + 'por outro participante enquanto você editava, e a versão dele foi mantida. '
+        + 'Recarregue a viagem para ver como ela está agora.'
       : undefined,
   };
 };

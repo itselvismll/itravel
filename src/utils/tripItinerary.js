@@ -14,11 +14,24 @@
 // acontece aqui. Módulo puro — sem rede, sem Supabase, sem React —, exercitado
 // no teste sem banco nenhum.
 
+import { planDayNumber } from '../components/map/planDayStrip';
+
 /** snake_case do banco → camelCase do app, campo a campo. */
 const activityFromRow = (row, index) => {
   const extra = (row?.extra && typeof row.extra === 'object') ? row.extra : {};
 
   return {
+    // ── A IDENTIDADE DA LINHA, e por que ela agora sobe até a tela ──
+    //
+    // Estes três campos eram descartados aqui, e o efeito disso estava no banco:
+    // sem o `id`, o app não tinha como dizer QUAL parada ele estava salvando, e a
+    // única escrita possível era apagar o roteiro inteiro e reinserir. Com o id
+    // de volta, `sync_trip_itinerary` casa item a item — e o histórico, a autoria
+    // e a guarda de conflito passam a ter em que se apoiar.
+    //
+    // `updatedAt` é a VERSÃO de que esta cópia partiu. Ela volta no salvamento, e
+    // é o que permite ao banco recusar sobrescrever uma parada que outra pessoa
+    // mexeu no meio do caminho.
     // O que o app espera com nome próprio.
     order: Number(row?.position) || index + 1,
     period: row?.period ?? '',
@@ -42,10 +55,30 @@ const activityFromRow = (row, index) => {
     verificationSource: row?.verification_source ?? undefined,
     placeId: row?.place_id ?? undefined,
 
-    // O que a IA mandou e o schema ainda não modela. Vem por último para nunca
-    // sobrescrever um campo que TEM coluna — se um dia `extra` guardar um
-    // `title` antigo, quem vale é a coluna.
+    // O que a IA mandou e o schema ainda não modela. Vem depois dos campos com
+    // coluna, então um valor guardado em `extra` PREVALECE sobre o da coluna
+    // quando os dois existem.
     ...extra,
+
+    // ── A IDENTIDADE DA LINHA, e por que ela vem DEPOIS de `extra` ──
+    //
+    // Estes três campos eram descartados aqui, e o efeito estava no banco: sem o
+    // `id`, o app não tinha como dizer QUAL parada estava salvando, e apagar o
+    // roteiro inteiro e reinserir era a única escrita possível. Com o id de volta,
+    // `sync_trip_itinerary` casa item a item — e o histórico, a autoria e a guarda
+    // de conflito passam a ter em que se apoiar.
+    //
+    // Ficam por último porque identidade não se negocia com conteúdo. `extra`
+    // guarda o que a IA mandou; se algum dia ele trouxer um `id`, ele estaria
+    // apontando esta parada para OUTRA linha do banco — e o save escreveria no
+    // lugar errado. Aqui a linha sempre vence.
+    //
+    // `updatedAt` é a VERSÃO de que esta cópia partiu. Ela volta no salvamento, e
+    // é o que permite ao banco recusar sobrescrever uma parada que outra pessoa
+    // mexeu no meio do caminho.
+    id: row?.id ?? undefined,
+    updatedAt: row?.updated_at ?? undefined,
+    lastEditedBy: row?.last_edited_by ?? undefined,
   };
 };
 
@@ -68,7 +101,14 @@ export const itineraryFromRows = (dayRows) => {
     // aqui, onde a regra é testável.
     .sort((a, b) => (Number(a?.day_number) || 0) - (Number(b?.day_number) || 0))
     .map((day, index) => ({
-      day: Number(day?.day_number) || index + 1,
+      // Mesma razão do `id` da parada: sem ele, o dia seria recriado a cada save.
+      id: day?.id ?? undefined,
+      updatedAt: day?.updated_at ?? undefined,
+      lastEditedBy: day?.last_edited_by ?? undefined,
+      // A mesma conta única, só com o campo do banco (`day_number`) no lugar do
+      // campo do app (`day`). A regra é uma: o número declarado quando houver,
+      // senão a posição na lista, 1-based.
+      day: planDayNumber({ day: day?.day_number }, index),
       date: day?.date ?? null,
       theme: day?.theme ?? '',
       activities: [...(day?.trip_activities ?? [])]
@@ -93,11 +133,21 @@ export const itineraryToRowsPayload = (plan) => {
   if (!Array.isArray(days)) return [];
 
   return days.map((day, dayIndex) => ({
-    day: Number(day?.day) || dayIndex + 1,
+    // `id` e `updatedAt` VOLTAM para o banco, e é isso que transforma o
+    // salvamento de "apaga tudo e reinsere" em "sincroniza o que mudou". Item sem
+    // `id` é item novo — que é o caso do roteiro recém-gerado pela IA, onde não há
+    // id nenhum e tudo é inserção.
+    id: day?.id ?? undefined,
+    updatedAt: day?.updatedAt ?? undefined,
+    // `planDayNumber` e não uma cópia da fórmula: era a sexta cópia dela no
+    // projeto, e numeração duplicada é a raiz da família de bugs de "dia errado".
+    day: planDayNumber(day, dayIndex),
     date: day?.date ?? null,
     theme: day?.theme ?? '',
     activities: (Array.isArray(day?.activities) ? day.activities : []).map((activity, index) => ({
       ...activity,
+      id: activity?.id ?? undefined,
+      updatedAt: activity?.updatedAt ?? undefined,
       order: Number(activity?.order) || index + 1,
     })),
   }));
