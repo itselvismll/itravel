@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -16,6 +16,31 @@ import { saveTripPlan } from '../../services/tripPlanService';
 import { notify } from '../../utils/dialogs';
 import { toBrazilianDate } from '../../utils/dateUtils';
 import ShareToJourniModal from '../../components/ShareToJourniModal';
+import TripCoverHeader from '../../components/trip/TripCoverHeader';
+import TripTravelers from '../../components/trip/TripTravelers';
+import { getTripMembers } from '../../services/tripMemberService';
+import { getTourismImage } from '../../services/tourismImageService';
+import TripShortcutBar from '../../components/trip/TripShortcutBar';
+import PlanDayTabs from '../../components/map/PlanDayTabs';
+import {
+  activeDayFromScroll,
+  buildDayInfo,
+  planDayNumber,
+  scrollTargetForDay,
+} from '../../components/map/planDayStrip';
+import {
+  dayFocusReducer,
+  initialDayFocus,
+  measureContentOffset,
+} from '../../components/map/planDayFocus';
+import { formatAssistantError } from '../../utils/assistantErrors';
+import {
+  countPlanStops,
+  coverSearchTerm,
+  destinationTitle,
+  tripChips,
+  tripDurationDays,
+} from '../../utils/tripSummary';
 
 const TABS = [
   { id: 'itinerary', label: 'Roteiro', icon: 'map-outline' },
@@ -54,6 +79,271 @@ export default function AssistantResultScreen({ route, navigation }) {
   const [adjusting, setAdjusting] = useState(false);
   const [adjustments, setAdjustments] = useState([]);
   const [shareVisible, setShareVisible] = useState(false);
+
+  // ── Capa e viajantes (Fase 1) ────────────────────────────────────────────
+  // Duas buscas independentes e opcionais: a viagem abre inteira sem nenhuma
+  // das duas. A capa é ilustração; a lista de viajantes, hoje, é sempre você.
+  const [coverUrl, setCoverUrl] = useState(null);
+
+  // ── Índice de dias (o mesmo seletor do mapa, com outro papel) ────────────
+  //
+  // No globo a faixa FILTRA: escolher o dia 3 esconde os outros. Aqui ela
+  // INDEXA: escolher o dia 3 rola a lista até ele, e o dia destacado acompanha
+  // a leitura. Mesmo componente, mesma aparência; o que muda é de onde vem o
+  // dia em foco e o que o toque provoca.
+  const scrollRef = useRef(null);
+  const dayRefs = useRef({});
+  const dayOffsetsRef = useRef({});
+
+  // Onde a lista está rolada AGORA. Não é enfeite: é o que converte a medida
+  // crua de um cartão para a régua em que `scrollTo` trabalha (ver measureDay).
+  const scrollYRef = useRef(0);
+
+  // O dia em foco sai de uma MÁQUINA DE ESTADOS, e não de um `useState` solto,
+  // porque ele tem duas fontes que competem — o toque do usuário e a leitura da
+  // rolagem — e decidir quem ganha é metade do conserto. A regra mora em
+  // planDayFocus.js, testada sem tela.
+  const [dayFocus, dispatchFocus] = useReducer(dayFocusReducer, initialDayFocus);
+  const readingDay = dayFocus.day;
+
+  const dayList = useMemo(
+    () => (plan.days || [])
+      .map(planDayNumber)
+      .sort((a, b) => a - b),
+    [plan.days]
+  );
+
+  const dayInfo = useMemo(
+    () => buildDayInfo(
+      // O mesmo número normalizado do cartão e de `dayList`: sem isso, um
+      // roteiro sem `day` mandaria todas as paradas para o dia 1 e a legenda da
+      // faixa mostraria o lugar errado em todos os dias.
+      (plan.days || []).flatMap((day, index) => (day?.activities || []).map((activity) => ({
+        day: planDayNumber(day, index),
+        location: activity?.location,
+      }))),
+      plan,
+      []
+    ),
+    [plan]
+  );
+
+  /**
+   * Onde cada cartão de dia está DENTRO do conteúdo do ScrollView.
+   *
+   * POR QUE MEDIR ASSIM, E NÃO POR `onLayout`
+   *
+   * O `onLayout` de um cartão devolve a posição dele dentro do pai imediato — a
+   * lista —, e a lista muda de lugar depois do primeiro layout: a lista de
+   * viajantes chega quando a consulta responde e empurra tudo para baixo. No
+   * web isso é pior ainda, porque ali o `onLayout` é implementado com
+   * ResizeObserver: ele dispara quando a view muda de TAMANHO, não quando ela
+   * muda de POSIÇÃO. A soma "onde a lista começa + onde o cartão está nela"
+   * ficava congelada no valor do primeiro quadro.
+   *
+   * POR QUE `findNodeHandle` MATOU O TOQUE POR COMPLETO
+   *
+   * Este é o terceiro conserto desta mesma função, e o segundo errado. O de
+   * antes media contra `findNodeHandle(scrollRef)` — um NÚMERO. Nesta versão do
+   * React Native (0.83, arquitetura nova) isso não mede nada:
+   *
+   *     // ReactNativeElement.js
+   *     if (!(relativeToNativeNode instanceof ReactNativeElement)) {
+   *       console.error('ref.measureLayout must be called with a ref to a native component');
+   *       return;   // <- não chama onSuccess NEM onFail
+   *     }
+   *
+   * Sai sem chamar callback nenhum. A Promise aqui NUNCA resolvia, o `await`
+   * em `scrollToDay` ficava pendurado para sempre e o toque na pílula não
+   * produzia reação alguma — nem certa, nem errada. O mesmo pendurava o
+   * `Promise.all` da remedida, então nem as posições de reserva existiam. Foi
+   * exatamente o relato: "clicar num dia não rola pra ele, nenhuma reação".
+   *
+   * DUAS MUDANÇAS, E A SEGUNDA IMPORTA MAIS QUE A PRIMEIRA
+   *
+   * 1. Medir contra `getInnerViewRef()`, que é a view de CONTEÚDO do ScrollView
+   *    e é um nó nativo de verdade — a forma que a arquitetura nova aceita. De
+   *    quebra ela é a régua certa: a posição já vem em coordenada de conteúdo,
+   *    que é o que `scrollTo` espera, sem somar nem descontar rolagem.
+   *
+   * 2. NUNCA MAIS ESPERAR PARA SEMPRE. Um callback nativo que não vem não pode
+   *    travar a tela: passado o prazo, a medida desiste e devolve `null`, e
+   *    quem chamou cai nas posições de reserva vindas do `onLayout`. É isso que
+   *    transforma "o botão morreu" em "o botão funciona um pouco pior".
+   */
+  const measureDay = useCallback((day) => measureContentOffset({
+    node: dayRefs.current[day],
+    // A view de CONTEÚDO, e não o ScrollView: é um nó nativo de verdade (a
+    // arquitetura nova recusa o número do `findNodeHandle`) e é a régua que o
+    // `scrollTo` usa. A conta, o prazo e o motivo estão em planDayFocus.js.
+    contentNode: scrollRef.current?.getInnerViewRef?.(),
+  }), []);
+
+  /**
+   * As posições de reserva, vindas do `onLayout`.
+   *
+   * O `onLayout` de um cartão dá a posição dele dentro da LISTA; o `onLayout` da
+   * lista dá onde a lista começa dentro do conteúdo. Somados, dão a mesma coisa
+   * que o `measureLayout` daria. É menos preciso — no web o `onLayout` não
+   * dispara para mudança de posição —, mas tem uma qualidade que a medida nativa
+   * não tem: ele SEMPRE existe, sem depender de callback nenhum. É a rede que
+   * impede que uma API quebrada volte a matar o toque por inteiro.
+   */
+  const listTopRef = useRef(0);
+  const layoutOffsetsRef = useRef({});
+  const offsetsFromLayout = useCallback(() => {
+    const base = listTopRef.current || 0;
+    return Object.fromEntries(
+      Object.entries(layoutOffsetsRef.current)
+        .filter(([, y]) => Number.isFinite(y))
+        .map(([day, y]) => [day, base + Number(y)])
+    );
+  }, []);
+
+  /** As melhores posições disponíveis: as medidas, se houver; senão as do layout. */
+  const currentOffsets = useCallback(() => (
+    Object.keys(dayOffsetsRef.current).length ? dayOffsetsRef.current : offsetsFromLayout()
+  ), [offsetsFromLayout]);
+
+  /**
+   * Remede todos os dias. Roda quando o conteúdo muda de tamanho — que é
+   * exatamente quando as posições antigas deixam de valer.
+   *
+   * A `geração` existe porque cada cartão pede uma remedida ao terminar o
+   * layout: numa viagem de 21 dias são 21 pedidos quase simultâneos, e eles
+   * terminam fora de ordem. Sem o selo, um lote velho sobrescrevia o resultado
+   * de um lote mais novo e as posições voltavam a ficar erradas.
+   */
+  const measureGenerationRef = useRef(0);
+  const refreshDayOffsets = useCallback(async () => {
+    const geracao = (measureGenerationRef.current += 1);
+
+    const measured = await Promise.all(
+      Object.keys(dayRefs.current).map(async (day) => [day, await measureDay(day)])
+    );
+    if (geracao !== measureGenerationRef.current) return;
+
+    const validas = measured.filter(([, y]) => Number.isFinite(y));
+    // Um lote inteiro sem resposta não apaga o que já se sabia: manter as
+    // posições anteriores é sempre melhor do que ficar sem nenhuma.
+    if (validas.length) dayOffsetsRef.current = Object.fromEntries(validas);
+  }, [measureDay]);
+
+  /** @param {number} day */
+  const scrollToDay = useCallback(async (day) => {
+    // O destaque muda ANTES de qualquer medida, e sem depender dela.
+    //
+    // Era aqui que as setas morriam: a função saía cedo quando a posição não
+    // estava medida, e saía ANTES de marcar o dia — então o toque na seta não
+    // rolava nada e também não mexia na faixa. Nada acontecia, literalmente.
+    //
+    // E `choose` faz mais do que marcar: ele cala o scroll-spy pelo tempo da
+    // animação. Sem isso, a rolagem que esta função dispara emite eventos de
+    // scroll que reescrevem o dia em foco no caminho, e quem decide o destaque
+    // deixa de ser o toque. No ÚLTIMO dia isso nunca acerta — o ScrollView não
+    // rola além do fim do conteúdo, o cartão não alcança a linha de leitura e o
+    // destaque voltava para o penúltimo, sempre.
+    dispatchFocus({ type: 'choose', day, now: Date.now() });
+
+    const measured = await measureDay(day);
+    const offsets = Number.isFinite(measured)
+      ? { [day]: measured }
+      : currentOffsets();
+
+    const target = scrollTargetForDay(offsets, day);
+    if (target === null) return;
+
+    scrollRef.current?.scrollTo?.({ y: target, animated: true });
+  }, [measureDay, currentOffsets]);
+
+  const handleScroll = useCallback((event) => {
+    scrollYRef.current = event.nativeEvent.contentOffset.y;
+
+    const day = activeDayFromScroll(currentOffsets(), scrollYRef.current);
+    if (day !== null) dispatchFocus({ type: 'scrolled', day, now: Date.now() });
+  }, [currentOffsets]);
+
+  // O dedo na lista tem prioridade sobre a trava: quem rola a tela está lendo
+  // outro dia, e o destaque precisa acompanhar na hora em vez de esperar o
+  // prazo da animação acabar.
+  const handleScrollBegin = useCallback(() => {
+    dispatchFocus({ type: 'grabbed', now: Date.now() });
+  }, []);
+
+  // A rolagem parou: o spy volta a mandar antes do prazo. É só um atalho — o
+  // prazo sozinho já solta a trava, porque este evento não é confiável no
+  // Android nem no react-native-web.
+  const handleScrollSettled = useCallback(() => {
+    dispatchFocus({ type: 'settled', now: Date.now() });
+  }, []);
+  const [members, setMembers] = useState([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+
+  // O título da capa com TODOS os destinos. `plan.destinationCountry` é um país
+  // só: uma viagem Itália + Croácia + Eslováquia se anunciava como "Itália".
+  const destination = useMemo(
+    () => destinationTitle(
+      request.destinations,
+      request.destination || plan.destinationCountry || plan.title || ''
+    ),
+    [request.destinations, request.destination, plan.destinationCountry, plan.title]
+  );
+
+  // O termo da BUSCA não é o título: "Itália, Croácia e Eslováquia" não casa com
+  // nada no Wikimedia e a capa ficava sem foto. A busca vai pelo primeiro
+  // destino; o título continua mostrando todos.
+  const coverTerm = useMemo(
+    () => coverSearchTerm(
+      request.destinations,
+      request.destination || plan.destinationCountry || plan.title || ''
+    ),
+    [request.destinations, request.destination, plan.destinationCountry, plan.title]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!coverTerm) return undefined;
+
+    // O serviço já tem cache próprio (memória + localStorage), então reabrir a
+    // viagem não repete a ida ao Wikimedia.
+    getTourismImage(null, coverTerm).then((image) => {
+      if (!cancelled) setCoverUrl(image?.url || null);
+    });
+
+    return () => { cancelled = true; };
+  }, [coverTerm]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!planId) {
+      setMembers([]);
+      return undefined;
+    }
+
+    setMembersLoading(true);
+    getTripMembers(planId).then((result) => {
+      if (cancelled) return;
+      setMembers(result.data);
+      setMembersLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [planId]);
+
+  // Os chips da capa. `travelers` é o número de PARTICIPANTES quando a viagem já
+  // existe no banco — hoje sempre 1, e é esse número que vai crescer sozinho
+  // quando o convite existir. Antes de salvar, vale o que foi pedido no
+  // planejador, que é a única informação disponível.
+  const coverChips = useMemo(() => tripChips({
+    startDate: request.startDate,
+    durationDays: tripDurationDays({
+      startDate: request.startDate,
+      endDate: request.endDate,
+      planDays: (plan.days || []).length,
+    }),
+    travelers: members.length || Number(request.travelers) || null,
+    stops: countPlanStops(plan),
+  }), [request.startDate, request.endDate, request.travelers, plan, members.length]);
 
   const checklistProgress = useMemo(() => {
     const items = plan.checklist || [];
@@ -149,7 +439,7 @@ export default function AssistantResultScreen({ route, navigation }) {
     });
     setRegenerating('');
     if (!result.success) {
-      notify('Não foi possível trocar a atividade', result.error);
+      notify('Não foi possível trocar a atividade', formatAssistantError(result));
       return;
     }
     setPlan(result.plan);
@@ -188,7 +478,13 @@ export default function AssistantResultScreen({ route, navigation }) {
     });
     setAdjusting(false);
     if (!result.success) {
-      notify('Não foi possível ajustar o roteiro', result.error || 'Tente novamente.');
+      // Com o código, a falha deixa de ser um beco sem saída: ele localiza a
+      // requisição no log da Edge Function, onde estão `providerStatus` e
+      // `providerReason` — quem de fato recusou, e por quê.
+      notify(
+        'Não foi possível ajustar o roteiro',
+        formatAssistantError(result, 'Tente novamente em instantes.')
+      );
       return;
     }
 
@@ -203,32 +499,58 @@ export default function AssistantResultScreen({ route, navigation }) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}>
-          <Ionicons name="arrow-back" size={22} color="#F7F7F2" />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle} numberOfLines={1}>{plan.title || request.destination}</Text>
-          <Text style={styles.headerSub}>
-            {request.startDate ? `${toBrazilianDate(request.startDate)} → ${toBrazilianDate(request.endDate)} · ` : ''}
-            {request.travelers} viajante(s)
-          </Text>
-        </View>
-        <TouchableOpacity onPress={() => setShareVisible(true)} style={styles.iconButton}>
-          <Ionicons name="share-outline" size={21} color="#AAB1CC" />
-        </TouchableOpacity>
-      </View>
+      {/* A capa É o cabeçalho: ela carrega a navegação (voltar e as três ações)
+          nos botões flutuantes, e a barra de atalhos logo abaixo. O cabeçalho
+          compacto que existia aqui — voltar, título e compartilhar — dizia as
+          mesmas coisas numa faixa a mais. */}
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        onScrollBeginDrag={handleScrollBegin}
+        onScrollEndDrag={handleScrollSettled}
+        onMomentumScrollEnd={handleScrollSettled}
+        // A lista de viajantes chega depois e empurra tudo para baixo: é aqui
+        // que as posições antigas deixam de valer.
+        onContentSizeChange={refreshDayOffsets}
+        // Um evento por quadro, e não os 16 por segundo de antes: este evento
+        // deixou de ser só o destaque de leitura — é dele que sai a rolagem
+        // atual usada para converter a medida dos cartões (ver measureDay). Com
+        // 64ms, um toque logo depois de uma rolagem media contra uma posição de
+        // até quatro quadros atrás.
+        scrollEventThrottle={16}
+      >
+        <TripCoverHeader
+          destination={destination}
+          photoUrl={coverUrl}
+          chips={coverChips}
+          onBack={() => navigation.goBack()}
+          // Esta tela vive no stack raiz; a aba do globo vive dentro de "Main".
+          // `navigate('Map')` não encontrava rota nenhuma daqui e o toque não
+          // fazia nada — é a mesma forma que o botão de roteiros salvos já usa,
+          // algumas linhas abaixo.
+          onOpenMap={() => navigation.navigate('Main', { screen: 'Map' })}
+          // "Editar" é a aba Ajustar, que é onde se pede mudança no roteiro.
+          onEdit={() => setActiveTab('chat')}
+          // Hoje a única ação extra da tela é compartilhar; quando houver outras,
+          // os três pontinhos viram menu.
+          onMore={() => setShareVisible(true)}
+        />
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
-        {TABS.map(tab => (
-          <TouchableOpacity key={tab.id} onPress={() => setActiveTab(tab.id)} style={[styles.tab, activeTab === tab.id && styles.tabActive]}>
-            <Ionicons name={/** @type {any} */ (tab.icon)} size={16} color={activeTab === tab.id ? '#fff' : '#8D95B4'} />
-            <Text style={[styles.tabText, activeTab === tab.id && styles.tabTextActive]}>{tab.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+        <TripShortcutBar
+          items={TABS}
+          activeId={activeTab}
+          onSelect={setActiveTab}
+          style={styles.shortcutBar}
+        />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {activeTab === 'itinerary' && <TripTravelers members={members} loading={membersLoading} />}
+
+        {/* O resumo é da aba ROTEIRO: ele fala de dias, custo total e ritmo. Em
+            Checklist ou Dicas ele era um cabeçalho fixo repetindo o que a aba
+            não está mostrando. */}
+        {activeTab === 'itinerary' ? (
         <View style={styles.summaryCard}>
           <View style={styles.summaryTop}>
             <View style={styles.aiBadge}><Ionicons name="sparkles" size={13} color="#C4B5FD" /><Text style={styles.aiBadgeText}>ROTEIRO PERSONALIZADO</Text></View>
@@ -267,16 +589,66 @@ export default function AssistantResultScreen({ route, navigation }) {
           </View>
           {!!plan.weatherNote && <View style={styles.weatherBox}><Ionicons name="partly-sunny-outline" size={18} color="#35D3C8" /><Text style={styles.weatherText}>{plan.weatherNote}</Text></View>}
         </View>
+        ) : null}
+
+        {activeTab === 'itinerary' && dayList.length > 1 ? (
+          <PlanDayTabs
+            days={dayList}
+            selectedDay={readingDay}
+            // Aqui a faixa é ÍNDICE, não filtro: o dia destacado é o que está
+            // sendo lido, e "desmarcar" não significa nada — esta tela descarta
+            // `null`. Sem isto, tocar na pílula em destaque (que é justamente a
+            // do dia a que você acabou de rolar) mandava `null` e o toque não
+            // fazia nada.
+            deselectable={false}
+            onSelect={(day) => (day === null ? null : scrollToDay(day))}
+            dayInfo={dayInfo}
+            style={styles.dayIndex}
+          />
+        ) : null}
 
         {activeTab === 'itinerary' && (
-          <View style={styles.listGap}>
-            {(plan.days || []).map((day, dayIndex) => (
-              <View key={`${day.day}-${day.date}`} style={styles.dayCard}>
+          <View
+            style={styles.listGap}
+            // Onde a LISTA começa dentro do conteúdo. É a metade de baixo das
+            // posições de reserva; a outra metade é o `onLayout` de cada cartão.
+            onLayout={(event) => { listTopRef.current = event.nativeEvent.layout.y; }}
+          >
+            {(plan.days || []).map((day, dayIndex) => {
+              // O MESMO número que `dayList` calcula, e não `day.day` cru.
+              //
+              // Roteiro gerado pela IA nem sempre traz `day` em todo dia, e
+              // `dayList` já cobria isso caindo para a posição na lista. O
+              // cartão, porém, guardava a referência sob `day.day` — que nessas
+              // horas é `undefined`. A pílula pedia a posição do dia 3, não
+              // achava referência nenhuma, caía nas posições guardadas e rolava
+              // para outro lugar. Um número só, calculado de um jeito só.
+              const dayNumber = planDayNumber(day, dayIndex);
+
+              return (
+              <View
+                key={`${dayNumber}-${day.date}`}
+                ref={(node) => {
+                  // Referência morta é pior do que referência ausente: ela entra
+                  // na remedida, falha, e some do mapa de posições sem avisar.
+                  if (node) dayRefs.current[dayNumber] = node;
+                  else delete dayRefs.current[dayNumber];
+                }}
+                style={styles.dayCard}
+                // Duas funções num evento só: avisa que vale remedir (um cartão
+                // que muda de altura mexe na posição de todos os seguintes) e
+                // GUARDA a posição do cartão dentro da lista, que é a posição de
+                // reserva usada quando a medida nativa não responde.
+                onLayout={(event) => {
+                  layoutOffsetsRef.current[dayNumber] = event.nativeEvent.layout.y;
+                  refreshDayOffsets();
+                }}
+              >
                 <View style={styles.dayHeader}>
-                  <View style={styles.dayNumber}><Text style={styles.dayNumberText}>{day.day}</Text></View>
+                  <View style={styles.dayNumber}><Text style={styles.dayNumberText}>{dayNumber}</Text></View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.dayTitle}>{day.theme}</Text>
-                    <Text style={styles.dayDate}>{day.date ? toBrazilianDate(day.date) : `Dia ${day.day}`}</Text>
+                    <Text style={styles.dayDate}>{day.date ? toBrazilianDate(day.date) : `Dia ${dayNumber}`}</Text>
                   </View>
                 </View>
                 {(day.activities || []).map((activity, activityIndex) => {
@@ -301,16 +673,25 @@ export default function AssistantResultScreen({ route, navigation }) {
                             <Text style={styles.activityTitle}>{activity.title}</Text>
                             <Text style={styles.activityDescription}>{activity.description}</Text>
                             <View style={styles.metaRow}>
-                              <Text style={styles.location} numberOfLines={1}>📍 {activity.location}</Text>
+                              <View style={styles.locationRow}>
+                                <Ionicons name="location-outline" size={12} color="#7A7E8C" />
+                                <Text style={styles.location} numberOfLines={1}>{activity.location}</Text>
+                              </View>
                               <Text style={styles.cost}>{formatMoney(activity.estimatedCost, plan.budget?.currency || request.currency)}</Text>
                             </View>
                             {(activity.rating || activity.openingHours?.length || activity.verificationSource) && (
                               <View style={styles.verifiedRow}>
                                 {!!activity.rating && (
-                                  <Text style={styles.verifiedText}>★ {activity.rating}{activity.reviewCount ? ` (${activity.reviewCount})` : ''}</Text>
+                                  <View style={styles.verifiedItem}>
+                                    <Ionicons name="star" size={11} color="#FF9A00" />
+                                    <Text style={styles.verifiedText}>{activity.rating}{activity.reviewCount ? ` (${activity.reviewCount})` : ''}</Text>
+                                  </View>
                                 )}
                                 {!!activity.openingHours?.length && (
-                                  <Text style={styles.verifiedText} numberOfLines={1}>◷ {activity.openingHours[0]}</Text>
+                                  <View style={styles.verifiedItem}>
+                                    <Ionicons name="time-outline" size={11} color="#7A7E8C" />
+                                    <Text style={styles.verifiedText} numberOfLines={1}>{activity.openingHours[0]}</Text>
+                                  </View>
                                 )}
                                 {!!activity.verificationSource && (
                                   <Text style={styles.verifiedSource}>{activity.verificationSource}</Text>
@@ -346,7 +727,8 @@ export default function AssistantResultScreen({ route, navigation }) {
                   );
                 })}
               </View>
-            ))}
+              );
+            })}
           </View>
         )}
 
@@ -521,15 +903,13 @@ function TipPanel({ title, icon, color, items = [] }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0D1326' },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 15, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
+  // O cabeçalho compacto e as abas em pill saíram: a capa virou o cabeçalho
+  // (com os botões flutuantes) e as abas viraram a TripShortcutBar.
   iconButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#1B2240', alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { color: '#F7F7F2', fontSize: 16, fontWeight: '800' },
-  headerSub: { color: '#858DAD', fontSize: 10, marginTop: 2 },
-  tabs: { gap: 8, paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
-  tab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 13, paddingVertical: 9, borderRadius: 99, backgroundColor: '#171D36' },
-  tabActive: { backgroundColor: '#6C2BD9' },
-  tabText: { color: '#8D95B4', fontSize: 12, fontWeight: '700' },
-  tabTextActive: { color: '#fff' },
+  shortcutBar: { marginTop: 20, marginHorizontal: 6 },
+  // A faixa de dias é `position: absolute` no mapa (ela flutua sobre o globo);
+  // aqui ela é conteúdo da lista, então volta ao fluxo.
+  dayIndex: { position: 'relative', paddingHorizontal: 0 },
   content: { width: '100%', maxWidth: 860, alignSelf: 'center', padding: 15, paddingBottom: 50, gap: 14 },
   summaryCard: { padding: 18, borderRadius: 19, backgroundColor: '#171D36', borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)', gap: 12 },
   summaryTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
@@ -566,6 +946,11 @@ const styles = StyleSheet.create({
   activityDescription: { color: '#9BA2BF', fontSize: 12, lineHeight: 18, marginTop: 5 },
   metaRow: { flexDirection: 'row', gap: 8, justifyContent: 'space-between', marginTop: 8 },
   location: { color: '#7F87A6', fontSize: 10, flex: 1 },
+  // As linhas que seguram ícone + texto. O ícone substituiu os glifos 📍, ★ e ◷,
+  // que eram desenhados pela fonte do sistema e variavam de tamanho e cor entre
+  // aparelhos.
+  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 },
+  verifiedItem: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   cost: { color: '#35D3C8', fontSize: 10, fontWeight: '800' },
   verifiedRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 7 },
   verifiedText: { color: '#D5D8E8', fontSize: 9, fontWeight: '700' },

@@ -29,15 +29,10 @@ import {
   toBrazilianDate,
   toIsoDate,
 } from '../../utils/dateUtils';
+import { formatAssistantError } from '../../utils/assistantErrors';
 import { formatMoneyInput, parseMoneyInput } from '../../services/currencyService';
 
 const TRAVELER_TYPES = ['Solo', 'Casal', 'Família', 'Amigos', 'Trabalho'];
-const formatAssistantError = ({ error, code, requestId }) => {
-  const friendlyMessage = error || 'Não foi possível gerar seu roteiro agora. Tente novamente.';
-  const shortRequestId = String(requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(-6);
-  const safeCode = String(code || 'PLANNER_UNEXPECTED_ERROR').replace(/[^A-Z0-9_]/gi, '').toUpperCase();
-  return `${friendlyMessage}\nCódigo: ${safeCode}-${shortRequestId || createAssistantRequestId().slice(-6)}`;
-};
 const initialForm = {
   origin: '',
   originDetails: null,
