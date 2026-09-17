@@ -11,13 +11,23 @@ const babel = require('@babel/core');
 /**
  * @param {string} relativePath caminho a partir da raiz do repo
  * @param {Record<string, any>} [deps] módulos que o arquivo importa, por especificador
+ * @param {{ jsx?: boolean }} [options] `jsx` compila componentes React, e não só
+ *   módulos puros — é o que permite RENDERIZAR uma tela no teste em vez de ler o
+ *   código-fonte dela com expressão regular.
  */
-const loadEsm = (relativePath, deps = {}) => {
+const loadEsm = (relativePath, deps = {}, options = {}) => {
   const filename = path.resolve(__dirname, '..', '..', relativePath);
   const { code } = babel.transformSync(fs.readFileSync(filename, 'utf8'), {
     filename,
     babelrc: false,
     configFile: false,
+    // `classic` e não `automatic`: o runtime automático injeta um
+    // `require('react/jsx-runtime')` que o carregador teria de saber resolver. O
+    // clássico compila para `React.createElement`, e o React já vem pelo import
+    // que o próprio componente faz.
+    presets: options.jsx
+      ? [['@babel/preset-react', { runtime: 'classic' }]]
+      : [],
     plugins: ['@babel/plugin-transform-modules-commonjs'],
   });
 
