@@ -68,7 +68,12 @@ export default function CountryGridSection({
 
       {isEmpty && emptyState ? (
         <View style={styles.empty}>
-          <Text style={styles.emptyIcon}>{emptyState.icon || '🧳'}</Text>
+          <Ionicons
+            name={/** @type {any} */ (emptyState.icon || 'bag-outline')}
+            size={26}
+            color="rgba(255,255,255,0.3)"
+            style={styles.emptyIcon}
+          />
           <Text style={styles.emptyText}>{emptyState.text}</Text>
         </View>
       ) : (
@@ -174,6 +179,6 @@ const styles = StyleSheet.create({
   moreCount: { fontSize: 16, fontWeight: '800', color: '#46371E' },
   moreLabel: { fontSize: 8, fontWeight: '700', color: '#8A7B5E', letterSpacing: 0.4 },
   empty: { alignItems: 'center', paddingVertical: 20, gap: 10 },
-  emptyIcon: { fontSize: 32 },
+  emptyIcon: { marginBottom: 2 },
   emptyText: { fontSize: 12, color: '#bbb', textAlign: 'center', lineHeight: 18 },
 });

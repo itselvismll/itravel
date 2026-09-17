@@ -452,7 +452,7 @@ export default function PhotoUploader({
             <View style={styles.starPicker}>
               {[1,2,3,4,5].map(star => (
                 <TouchableOpacity key={star} onPress={() => setRating(star)} disabled={uploading}>
-                  <Text style={[styles.starPickIcon, { color: star <= rating ? '#6C2BD9' : '#e0e0e0' }]}>★</Text>
+                  <Ionicons name="star" size={28} color={star <= rating ? '#6C2BD9' : '#e0e0e0'} style={styles.starPickIcon} />
                 </TouchableOpacity>
               ))}
             </View>

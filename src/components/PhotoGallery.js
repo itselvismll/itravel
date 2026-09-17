@@ -149,7 +149,7 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
       setCoverPhotoId(photoId);
       if (onCoverPhotoSet) onCoverPhotoSet(photoId, photoUrl);
       loadPhotos();
-      notify('Capa definida', 'Foto definida como capa! ⭐');
+      notify('Capa definida', 'Foto definida como capa!');
     } else {
       Alert.alert('Erro', 'Não foi possível definir a foto de capa.');
     }
@@ -232,7 +232,7 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
             {item.rating > 0 && (
               <View style={styles.photoStarsRow}>
                 {[1,2,3,4,5].map(s => (
-                  <Text key={s} style={{ color: s <= item.rating ? '#6C2BD9' : '#e0e0e0', fontSize: 11 }}>★</Text>
+                  <Ionicons key={s} name="star" size={11} color={s <= item.rating ? '#6C2BD9' : '#e0e0e0'} />
                 ))}
               </View>
             )}
@@ -409,7 +409,7 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
                         {photo.rating > 0 && (
                           <View style={{ flexDirection: 'row', gap: 1, marginTop: 2 }}>
                             {[1,2,3,4,5].map(s => (
-                              <Text key={s} style={{ color: s <= photo.rating ? '#6C2BD9' : '#e0e0e0', fontSize: 10 }}>★</Text>
+                              <Ionicons key={s} name="star" size={10} color={s <= photo.rating ? '#6C2BD9' : '#e0e0e0'} />
                             ))}
                           </View>
                         )}

@@ -1,9 +1,12 @@
+// `icon` é um nome do Ionicons (@expo/vector-icons), não um emoji: o emoji é
+// desenhado pela fonte do sistema e sai diferente em cada aparelho, sem relação
+// com a paleta do app.
 export const TRAVELER_LEVELS = [
-  { level: 1, name: 'Iniciante',       icon: '🌱', minCountries: 0  },
-  { level: 2, name: 'Viajante',        icon: '🧳', minCountries: 2  },
-  { level: 3, name: 'Explorador',      icon: '🧭', minCountries: 5  },
-  { level: 4, name: 'Globetrotter',    icon: '🌍', minCountries: 10 },
-  { level: 5, name: 'Lenda Viajante',  icon: '👑', minCountries: 20 },
+  { level: 1, name: 'Iniciante',       icon: 'leaf-outline',     minCountries: 0  },
+  { level: 2, name: 'Viajante',        icon: 'bag-outline',      minCountries: 2  },
+  { level: 3, name: 'Explorador',      icon: 'compass-outline',  minCountries: 5  },
+  { level: 4, name: 'Globetrotter',    icon: 'earth-outline',    minCountries: 10 },
+  { level: 5, name: 'Lenda Viajante',  icon: 'trophy-outline',   minCountries: 20 },
 ];
 
 export const getLevelInfo = (countryCount) => {

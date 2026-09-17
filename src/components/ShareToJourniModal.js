@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Avatar from './Avatar';
 import { getShareRecipients, shareWithUser } from '../services/messageService';
 import { notify } from '../utils/dialogs';
+import { INSTAGRAM_FEATURE_ENABLED } from '../utils/instagram';
 
 /**
  * `onInstagramShare` é opcional de propósito: quem chama decide se a opção faz
@@ -50,7 +51,13 @@ export default function ShareToJourniModal({ visible, onClose, resource, onExter
       <View style={styles.overlay}>
         <View style={styles.sheet}>
           <View style={styles.header}><Text style={styles.title}>Compartilhar</Text><TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color="#F7F7F2" /></TouchableOpacity></View>
-          {!!onInstagramShare && (
+          {/* Desativado por decisão de produto — ver INSTAGRAM_FEATURE_ENABLED
+              em utils/instagram.js.
+
+              A trava fica AQUI, e não em quem passa a prop, porque este é o
+              ponto único por onde o botão aparece: um segundo chamador no futuro
+              herda a flag sem precisar lembrar dela. */}
+          {INSTAGRAM_FEATURE_ENABLED && !!onInstagramShare && (
             <TouchableOpacity
               style={styles.instagram}
               onPress={() => { onClose(); onInstagramShare(); }}

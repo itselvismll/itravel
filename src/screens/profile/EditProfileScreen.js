@@ -32,7 +32,7 @@ import {
   normalizeBio,
   validateBio,
 } from '../../utils/bio';
-import { normalizeInstagramUsername } from '../../utils/instagram';
+import { INSTAGRAM_FEATURE_ENABLED, normalizeInstagramUsername } from '../../utils/instagram';
 
 // Teto bruto do TextInput. Fica ACIMA do limite real para o excedente poder ser
 // digitado, contado e mostrado em vermelho — o corte seco no limite esconderia
@@ -146,7 +146,7 @@ export default function EditProfileScreen({ navigation, route }) {
       return;
     }
     if (contemPalavraProibida(displayName) || contemPalavraProibida(username)) {
-      setErrorMessage('⚠️ Nome inadequado. Por favor escolha outro nome.');
+      setErrorMessage('Nome inadequado. Por favor escolha outro nome.');
       return;
     }
 
@@ -162,7 +162,7 @@ export default function EditProfileScreen({ navigation, route }) {
     // Barra ANTES de gravar: o constraint do banco recusaria com um 23514, cuja
     // mensagem crua não diz à pessoa o que fazer. Campo vazio segue em frente —
     // é opcional, e vira null lá.
-    if (instagramInvalido) {
+    if (INSTAGRAM_FEATURE_ENABLED && instagramInvalido) {
       setErrorMessage('O @ do Instagram só aceita letras, números, ponto e underline.');
       return;
     }
@@ -202,9 +202,19 @@ export default function EditProfileScreen({ navigation, route }) {
         display_name: displayName.trim(),
         username: normalizedUsername,
         bio: bioCheck.value,
-        // Sempre enviado, inclusive vazio: é assim que apagar o campo funciona.
-        // Mandar só quando preenchido deixaria o @ antigo no banco para sempre.
-        instagram_username: instagramNormalizado,
+        // Com a feature ligada, é enviado SEMPRE, inclusive vazio: é assim que
+        // apagar o campo funciona. Mandar só quando preenchido deixaria o @
+        // antigo no banco para sempre.
+        //
+        // Com a feature desligada, a chave nem entra no update — e isso não é
+        // arrumação, é o que impede uma regressão séria: a migration da coluna
+        // AINDA NÃO foi aplicada em produção, então mandar `instagram_username`
+        // faria o PostgREST recusar o UPDATE inteiro por coluna inexistente. O
+        // campo está escondido, mas o salvamento de nome, username, bio e avatar
+        // quebraria para todo mundo.
+        // Ternário e não `&&`: a flag é a constante literal `false`, e o
+        // TypeScript estreita o tipo para `false`, que não pode ser espalhado.
+        ...(INSTAGRAM_FEATURE_ENABLED ? { instagram_username: instagramNormalizado } : {}),
         ...(avatarFile && { avatar_url: finalAvatarUrl }),
       });
 
@@ -408,40 +418,46 @@ export default function EditProfileScreen({ navigation, route }) {
             </Text>
           </View>
 
-          <View style={styles.divider} />
+          {/* Campo de Instagram: desativado por decisao de produto — ver
+              INSTAGRAM_FEATURE_ENABLED em utils/instagram.js. */}
+          {INSTAGRAM_FEATURE_ENABLED && (
+            <>
+            <View style={styles.divider} />
 
-          <Text style={styles.label}>Instagram</Text>
-          <View style={styles.instagramRow}>
-            {/* O @ é desenhado FORA do campo, como prefixo fixo. Dentro do valor
-                ele seria salvo junto e teria de ser retirado depois; como rótulo
-                ele diz o formato esperado sem a pessoa precisar digitá-lo — e
-                quem digitar assim mesmo continua funcionando, porque a
-                normalização tira. */}
-            <Text style={styles.instagramPrefix}>@</Text>
-            <TextInput
-              style={[styles.input, styles.instagramInput]}
-              value={instagram}
-              onChangeText={(text) => {
-                setInstagram(text);
-                setErrorMessage('');
-              }}
-              placeholder="seu.usuario"
-              placeholderTextColor="#bbb"
-              autoCapitalize="none"
-              autoCorrect={false}
-              // Sem `keyboardType="url"`: o teclado de URL esconde o underline,
-              // que é caractere válido de username no Instagram.
-              maxLength={90}
-              accessibilityLabel="Nome de usuário no Instagram"
-            />
-          </View>
-          <Text
-            style={{ fontSize: 10, color: instagramInvalido ? '#ef4444' : '#bbb', marginTop: 4 }}
-          >
-            {instagramInvalido
-              ? 'Use apenas letras, números, ponto e underline.'
-              : 'Opcional. Pode colar o link do seu perfil — o @ é removido automaticamente.'}
-          </Text>
+            <Text style={styles.label}>Instagram</Text>
+            <View style={styles.instagramRow}>
+              {/* O @ é desenhado FORA do campo, como prefixo fixo. Dentro do valor
+                  ele seria salvo junto e teria de ser retirado depois; como rótulo
+                  ele diz o formato esperado sem a pessoa precisar digitá-lo — e
+                  quem digitar assim mesmo continua funcionando, porque a
+                  normalização tira. */}
+              <Text style={styles.instagramPrefix}>@</Text>
+              <TextInput
+                style={[styles.input, styles.instagramInput]}
+                value={instagram}
+                onChangeText={(text) => {
+                  setInstagram(text);
+                  setErrorMessage('');
+                }}
+                placeholder="seu.usuario"
+                placeholderTextColor="#bbb"
+                autoCapitalize="none"
+                autoCorrect={false}
+                // Sem `keyboardType="url"`: o teclado de URL esconde o underline,
+                // que é caractere válido de username no Instagram.
+                maxLength={90}
+                accessibilityLabel="Nome de usuário no Instagram"
+              />
+            </View>
+            <Text
+              style={{ fontSize: 10, color: instagramInvalido ? '#ef4444' : '#bbb', marginTop: 4 }}
+            >
+              {instagramInvalido
+                ? 'Use apenas letras, números, ponto e underline.'
+                : 'Opcional. Pode colar o link do seu perfil — o @ é removido automaticamente.'}
+            </Text>
+            </>
+          )}
         </View>
 
         {errorMessage ? (

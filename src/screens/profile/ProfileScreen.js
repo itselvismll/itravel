@@ -33,6 +33,7 @@ import { getLevelInfo } from '../../utils/travelerLevels';
 import TravelerLevelCard from '../../components/profile/TravelerLevelCard';
 import { confirm, notify } from '../../utils/dialogs';
 import {
+  INSTAGRAM_FEATURE_ENABLED,
   shareToInstagramStories,
   STORIES_OK,
   STORIES_SEM_APP,
@@ -322,8 +323,12 @@ export default function ProfileScreen({ navigation }) {
             gravado também é normalizado. */}
         {profile?.bio ? <Text style={styles.bio}>{normalizeBio(profile.bio)}</Text> : null}
 
-        {/* Badge do Instagram. Opcional: o componente devolve null sem @. */}
-        <InstagramBadge username={profile?.instagram_username} style={{ marginTop: 8 }} />
+        {/* Badge do Instagram. Desativado por decisao de produto — ver
+            INSTAGRAM_FEATURE_ENABLED em utils/instagram.js. O componente ja devolve
+            null sem @; a flag e o que segura a feature inteira. */}
+        {INSTAGRAM_FEATURE_ENABLED && (
+          <InstagramBadge username={profile?.instagram_username} style={{ marginTop: 8 }} />
+        )}
 
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
@@ -363,13 +368,31 @@ export default function ProfileScreen({ navigation }) {
         levelInfo={levelInfo}
       />
 
+      {/* Minhas viagens, logo abaixo do selo de nível.
+          Ela vivia no fim da tela, depois das listas de países e colada no botão
+          de compartilhar o passaporte — lugar de rodapé para o que é hoje o
+          conteúdo mais acionável do perfil. */}
+      <TouchableOpacity
+        style={styles.tripPlansBtn}
+        onPress={() => navigation.navigate('SavedTrips')}
+      >
+        <View style={styles.tripPlansIcon}>
+          <Ionicons name="map-outline" size={20} color="#C4B5FD" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.tripPlansTitle}>Minhas viagens</Text>
+          <Text style={styles.tripPlansSubtitle}>Acesse roteiros, orçamento e checklist</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color="#8D95B4" />
+      </TouchableOpacity>
+
       {/* Passaporte */}
       <CountryGridSection
         countries={visitedCountries}
         title="Passaporte"
         icon="book-outline"
         emptyState={{
-          icon: '🧳',
+          icon: 'bag-outline',
           text: 'Seus carimbos aparecem aqui conforme você visita novos países',
         }}
       />
@@ -384,20 +407,6 @@ export default function ProfileScreen({ navigation }) {
           accentBorderColor="#00A89C"
         />
       )}
-
-      <TouchableOpacity
-        style={styles.tripPlansBtn}
-        onPress={() => navigation.navigate('SavedTrips')}
-      >
-        <View style={styles.tripPlansIcon}>
-          <Ionicons name="map-outline" size={20} color="#C4B5FD" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.tripPlansTitle}>Minhas viagens planejadas</Text>
-          <Text style={styles.tripPlansSubtitle}>Acesse roteiros, orçamento e checklist</Text>
-        </View>
-        <Ionicons name="chevron-forward" size={20} color="#8D95B4" />
-      </TouchableOpacity>
 
       {/* Botão compartilhar passaporte */}
       <TouchableOpacity style={styles.shareBtn} onPress={() => setPassportShareVisible(true)}>
@@ -510,6 +519,10 @@ export default function ProfileScreen({ navigation }) {
       profile={profile}
       avatarUrl={avatarUrl}
       levelInfo={levelInfo}
+      onSavedTrips={() => {
+        setSettingsVisible(false);
+        navigation.navigate('SavedTrips');
+      }}
       onEditProfile={() => {
         setSettingsVisible(false);
         navigation.navigate('EditProfile', { profile });

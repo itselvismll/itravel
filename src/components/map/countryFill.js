@@ -321,14 +321,33 @@ export const repaintCountryLayers = (map, { visited, wishlist }) => {
  * caiu dentro de um país. O cursor vira mãozinha em cima do território, que é o
  * que avisa que dá para clicar.
  *
+ * QUEM ESTIVER POR CIMA GANHA. Um toque que cai num pino do roteiro cai TAMBÉM
+ * no território embaixo dele, e o MapLibre entrega o evento às duas layers — são
+ * registros independentes, nenhum "consome" o clique do outro. Era esse o motivo
+ * de tocar numa parada abrir o modal do país por cima do que o usuário pediu.
+ *
+ * Daí o `blockedBy`: as layers que, quando estão sob o dedo, respondem no lugar
+ * do país. O hit-test explícito é o mesmo recurso que PlanRouteLayer.web.js já
+ * usa para não apagar a área no instante em que ela foi pedida.
+ *
+ * A lista chega por parâmetro, e não importada: este módulo pinta países e não
+ * tem por que saber que roteiro existe.
+ *
  * @param {any} map
  * @param {(alpha3: string) => void} onSelect
+ * @param {{ blockedBy?: string[] }} [options]
  * @returns {() => void} função de limpeza
  */
-export const bindCountryClick = (map, onSelect) => {
+export const bindCountryClick = (map, onSelect, { blockedBy = [] } = {}) => {
   if (!map?.on) return () => {};
 
   const handleClick = (event) => {
+    const blocking = blockedBy.filter((layerId) => map.getLayer?.(layerId));
+    if (blocking.length) {
+      const hits = map.queryRenderedFeatures?.(event.point, { layers: blocking });
+      if (hits?.length) return;
+    }
+
     const alpha3 = event?.features?.[0]?.properties?.alpha3;
     if (alpha3) onSelect(alpha3);
   };

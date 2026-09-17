@@ -37,6 +37,24 @@ import CountryRequirementsCard from '../CountryRequirementsCard';
 const EMPTY_PHOTO_STATS = { photoCount: 0, cityCount: 0, favoriteCount: 0 };
 
 /**
+ * Título de seção com ícone.
+ *
+ * Os ícones daqui eram emoji (🍕, 🗺️, 🏆, 🌍), desenhados pela fonte do sistema:
+ * a mesma seção saía colorida e arredondada no iPhone e chapada no Android, sem
+ * nenhuma relação com a paleta do app. Agora são glifos do Ionicons, na variante
+ * outline e na cor de acento — monocromáticos, do mesmo tamanho e alinhados com
+ * o texto ao lado.
+ *
+ * @param {{ icon: any, children: any, style?: any }} props
+ */
+const SectionTitle = ({ icon, children, style }) => (
+  <View style={styles.sectionTitleRow}>
+    <Ionicons name={icon} size={14} color="#6C2BD9" />
+    <Text style={[styles.infoSectionTitle, style]}>{children}</Text>
+  </View>
+);
+
+/**
  * @param {{
  *   visible: boolean,
  *   country: { code: string, name: string } | null,
@@ -147,14 +165,14 @@ export default function CountryDetailModal({
         const result = await unmarkCountryAsVisited(user.id, country.code);
         if (result.success) {
           onVisitedChange?.(countryCodeAlpha2, false);
-          Alert.alert('✅ Removido', `${country.name} foi removido dos países visitados`);
+          Alert.alert('Removido', `${country.name} foi removido dos países visitados`);
         }
       } else {
         const result = await markCountryAsVisited(user.id, country.code, country.name);
         if (result.success) {
           onVisitedChange?.(countryCodeAlpha2, true);
           if (!suppressVisitedAlert) {
-            Alert.alert('🎉 Marcado!', `${country.name} foi adicionado aos países visitados!`);
+            Alert.alert('Marcado!', `${country.name} foi adicionado aos países visitados!`);
           }
         }
       }
@@ -265,7 +283,7 @@ export default function CountryDetailModal({
                     onPress={() => setShowCountryInfo(!showCountryInfo)}
                   >
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={styles.accordionIcon}>🌍</Text>
+                      <Ionicons name="earth-outline" size={16} color="#6C2BD9" style={styles.accordionIcon} />
                       <Text style={styles.accordionTitle}>Sobre o país</Text>
                     </View>
                     <Ionicons
@@ -318,7 +336,7 @@ export default function CountryDetailModal({
 
                       {details.cultural?.foods?.length > 0 && (
                         <View style={styles.infoSection}>
-                          <Text style={styles.infoSectionTitle}>🍕 Comidas típicas</Text>
+                          <SectionTitle icon="restaurant-outline">Comidas típicas</SectionTitle>
                           <View style={styles.tagsRow}>
                             {details.cultural.foods.map((item, i) => (
                               <View key={i} style={styles.tag}>
@@ -331,7 +349,7 @@ export default function CountryDetailModal({
 
                       {details.cultural?.attractions?.length > 0 && (
                         <View style={styles.infoSection}>
-                          <Text style={styles.infoSectionTitle}>🗺️ Pontos turísticos</Text>
+                          <SectionTitle icon="map-outline">Pontos turísticos</SectionTitle>
                           <View style={styles.tagsRow}>
                             {details.cultural.attractions.map((item, i) => (
                               <View key={i} style={[styles.tag, styles.tagOrange]}>
@@ -344,9 +362,9 @@ export default function CountryDetailModal({
 
                       {borderCountries.length > 0 && (
                         <View style={styles.infoSection}>
-                          <Text style={styles.infoSectionTitle}>
-                            🌍 Países vizinhos ({borderCountries.length})
-                          </Text>
+                          <SectionTitle icon="earth-outline">
+                            Países vizinhos ({borderCountries.length})
+                          </SectionTitle>
                           {borderCountries.slice(0, 3).map((border, i) => (
                             <View key={i} style={styles.neighborRow}>
                               <CountryFlag
@@ -378,7 +396,7 @@ export default function CountryDetailModal({
                     <View style={{ marginHorizontal: 12, marginTop: 10 }}>
                       {Object.entries(topPlaces).map(([city, places]) => (
                         <View key={city} style={styles.topPlacesCard}>
-                          <Text style={styles.topPlacesTitle}>🏆 Top lugares em {city}</Text>
+                          <SectionTitle icon="trophy-outline" style={styles.topPlacesTitle}>Top lugares em {city}</SectionTitle>
                           {places.map((place, i) => (
                             <View key={place.name} style={styles.topPlaceRow}>
                               <Text style={styles.topPlaceRank}>{i + 1}º</Text>
@@ -402,7 +420,7 @@ export default function CountryDetailModal({
                   {/* Seção de fotos */}
                   <View style={styles.photosSection}>
                     <View style={styles.sectionHeader}>
-                      <Text style={styles.sectionTitle}>📸 Suas Fotos</Text>
+                      <SectionTitle icon="images-outline" style={styles.sectionTitle}>Suas Fotos</SectionTitle>
                     </View>
 
                     <TouchableOpacity
@@ -643,7 +661,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   accordionIcon: {
-    fontSize: 16,
+    // O ícone é vetorial: o que sobra aqui é só o alinhamento com o título.
+    marginRight: 2,
   },
   accordionTitle: {
     fontSize: 14,
@@ -693,6 +712,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#0D1326',
+  },
+  // A linha que segura ícone + título. O `marginBottom` saiu do texto e veio
+  // para cá: com o ícone ao lado, quem espaça a seção é a linha, não a palavra.
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     marginBottom: 8,
   },
   tagsRow: {

@@ -140,7 +140,12 @@ const ShareCard = forwardRef(
         <View style={styles.identityRow}>
           <Text style={styles.username} numberOfLines={1}>@{username}</Text>
           <View style={styles.levelBadge}>
-            <Text style={styles.levelIcon}>{levelInfo.current.icon}</Text>
+            {/* SEM ÍCONE, de propósito — e não é esquecimento da troca de emoji
+                por ícone vetorial. Ver o cabeçalho deste arquivo: a exportação
+                web (toPng com skipFonts) não embute fontes customizadas, então
+                um glifo do Ionicons viraria uma caixa vazia no PNG compartilhado.
+                O emoji que estava aqui saiu junto com os outros; o nome do nível
+                ao lado já diz o que o ícone dizia. */}
             <Text style={styles.levelText}>
               {levelInfo.current.name} nível {levelInfo.current.level}
             </Text>
@@ -156,7 +161,7 @@ const ShareCard = forwardRef(
         {/* 4. Card — países visitados (todos, em grid, até 3 linhas) */}
         <View style={styles.gridCard}>
           {visitedGrid.visible.length === 0 ? (
-            <Text style={styles.emptyText}>Sua jornada está só começando ✈</Text>
+            <Text style={styles.emptyText}>Sua jornada está só começando</Text>
           ) : (
             <View style={styles.visitedGrid}>
               {visitedGrid.visible.map((code, i) => (
@@ -257,7 +262,6 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     paddingHorizontal: 12,
   },
-  levelIcon: { fontSize: 13 },
   levelText: { color: '#B79CF2', fontFamily: 'Poppins_700Bold', fontSize: 11 },
 
   heroRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, marginTop: 16 },

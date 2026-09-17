@@ -25,6 +25,7 @@ import CountryGridSection from '../../components/profile/CountryGridSection';
 import Avatar from '../../components/Avatar';
 import { normalizeBio } from '../../utils/bio';
 import InstagramBadge from '../../components/profile/InstagramBadge';
+import { INSTAGRAM_FEATURE_ENABLED } from '../../utils/instagram';
 import { getLevelInfo } from '../../utils/travelerLevels';
 import TravelerLevelCard from '../../components/profile/TravelerLevelCard';
 import StarRating from '../../components/StarRating';
@@ -315,8 +316,12 @@ export default function PublicProfileScreen({ route, navigation }) {
               não abre vão vertical aqui. */}
           {profile.bio ? <Text style={styles.bio}>{normalizeBio(profile.bio)}</Text> : null}
 
-          {/* Badge do Instagram. Opcional: o componente devolve null sem @. */}
-          <InstagramBadge username={profile?.instagram_username} style={{ marginTop: 8 }} />
+          {/* Badge do Instagram. Desativado por decisao de produto — ver
+              INSTAGRAM_FEATURE_ENABLED em utils/instagram.js. O componente ja devolve
+              null sem @; a flag e o que segura a feature inteira. */}
+          {INSTAGRAM_FEATURE_ENABLED && (
+            <InstagramBadge username={profile?.instagram_username} style={{ marginTop: 8 }} />
+          )}
 
           <View style={styles.statsRow}>
             <View style={styles.statItem}>

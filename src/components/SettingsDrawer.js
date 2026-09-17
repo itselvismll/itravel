@@ -91,6 +91,7 @@ export default function SettingsDrawer({
   avatarUrl,
   levelInfo,
   onEditProfile,
+  onSavedTrips,
   onSupport,
   onBlockedUsers,
   onLogout,
@@ -195,6 +196,10 @@ export default function SettingsDrawer({
 
             <View style={styles.section}>
               <DrawerItem icon="person-outline" label="Editar perfil" onPress={onEditProfile} />
+              {/* Atalho para a mesma tela que o perfil abre. Ele existe aqui
+                  porque o menu é o caminho que não depende de rolar o perfil
+                  até encontrar o cartão. */}
+              <DrawerItem icon="map-outline" label="Minhas viagens" onPress={onSavedTrips} />
               <DrawerItem
                 icon="help-circle-outline"
                 label="Ajuda e suporte"

@@ -37,6 +37,8 @@ test('AI failures keep a request id from the provider attempt to the planner scr
   const handler = read('supabase/functions/travel-assistant/index.ts');
   const assistant = read('src/services/assistantService.js');
   const planner = read('src/screens/assistant/TripPlannerScreen.js');
+  const resultScreen = read('src/screens/assistant/AssistantResultScreen.js');
+  const errors = read('src/utils/assistantErrors.js');
   for (const field of ['requestId', 'model', 'status', 'providerStatus', 'code', 'finishReason', 'durationMs']) {
     assert.match(handler, new RegExp(field));
   }
@@ -45,7 +47,14 @@ test('AI failures keep a request id from the provider attempt to the planner scr
   assert.doesNotMatch(handler, /providerMessage/);
   assert.match(assistant, /functionError\?\.code/);
   assert.match(assistant, /functionError\?\.requestId/);
-  assert.match(planner, /Código: \$\{safeCode\}-\$\{shortRequestId/);
+  // O código com o requestId é montado num lugar só (utils/assistantErrors) e
+  // usado nas DUAS telas. Ele já existia na de planejar; faltava na de ajustar,
+  // e foi justamente um erro no ajuste que ficou sem diagnóstico possível.
+  assert.match(errors, /Código: /);
+  assert.match(errors, /safeCode/);
+  assert.match(errors, /shortRequestId/);
+  assert.match(planner, /formatAssistantError/);
+  assert.match(resultScreen, /formatAssistantError\(result/);
 });
 
 test('travel planner is personalized, structured, cancellable, and editable', () => {
@@ -95,13 +104,16 @@ test('travel planner uses a calendar, blocks past dates, and sends ISO dates', (
   const planner = read('src/screens/assistant/TripPlannerScreen.js');
   const calendar = read('src/components/CalendarField.js');
   const dateUtils = read('src/utils/dateUtils.js');
-  const result = read('src/screens/assistant/AssistantResultScreen.js');
+  const summary = read('src/utils/tripSummary.js');
   assert.match(planner, /<CalendarField/);
   assert.match(planner, /A data de ida não pode estar no passado/);
   assert.match(planner, /startDate: form\.useDates \? toIsoDate\(form\.startDate\)/);
   assert.match(calendar, /disabled = startOfDay\(date\) < minimum/);
   assert.match(dateUtils, /parseBrazilianDate/);
-  assert.match(result, /toBrazilianDate\(request\.startDate\)/);
+  // A data da viagem é mostrada em formato brasileiro. Ela saía no subtítulo do
+  // cabeçalho compacto da tela de resultado; desde o refino da capa, sai no chip
+  // de data — o formato é o que este teste protege, não o lugar.
+  assert.match(summary, /toBrazilianDate\(startDate\)/);
 });
 
 test('saved travel plans are private and available from the profile', () => {
@@ -201,13 +213,18 @@ test('photo uploads always synchronize their country as visited', () => {
 test('map refreshes visits after uploads and counts them from normalized codes', () => {
   // Era a MapScreen quem normalizava os códigos do banco e desenhava o anel de
   // porcentagem. Com o globo no lugar dela, a normalização virou toAlpha3Set e a
-  // estatística virou o pill de países visitados — os dados são os mesmos.
+  // estatística virou o contador de países visitados — os dados são os mesmos.
+  //
+  // O contador deixou de ser um pill e virou texto discreto no canto: com o
+  // roteiro na tela, um pill com fundo e borda dava a uma estatística o mesmo
+  // peso visual dos controles que se tocam. O que este teste protege é o DADO,
+  // que não mudou.
   const status = read('src/components/map/countryStatus.js');
   const globe = stripComments(read('src/screens/map/GlobeScreen.js'));
   assert.match(status, /getAlpha3/);
   assert.match(status, /toAlpha3Set/);
   assert.match(globe, /visitedCount = visited\.size/);
-  assert.match(globe, /styles\.visitedPill/);
+  assert.match(globe, /styles\.visitedStat/);
 });
 
 test('the globe keeps the whole planet in frame instead of a bounded flat world', () => {
@@ -1001,7 +1018,11 @@ test('the itinerary layer is optional, isolated and drawn by GL layers', () => {
   assert.doesNotMatch(route, /from 'maplibre-gl'/);
 
   // Roteiro trocado repinta os dados; nada de recriar layer a cada aplicacao.
-  assert.match(layer, /updatePlanRouteData\(map, data\)/);
+  //
+  // Quem publica as paradas e o agrupamento, e nao o dado cru: as paradas que se
+  // encostam na tela viram um badge de contagem antes de chegar a source. As
+  // linhas seguem junto, sem agrupamento nenhum.
+  assert.match(layer, /updatePlanRouteData\(map, \{ points: clustered, lines: dataRef\.current\.lines \}\)/);
 
   // Enquadramento pelo conjunto dos pontos, com flyTo so no roteiro de um ponto.
   assert.match(layer, /map\.fitBounds\(bounds/);
@@ -1032,8 +1053,13 @@ test('only one itinerary can be applied to the globe at a time', () => {
   // O marcador visual e o toggle vivem na tela de roteiros salvos.
   assert.match(screen, /Aplicar no mapa/);
   assert.match(screen, /Remover do mapa/);
-  assert.match(screen, /Ativo no mapa/);
   assert.match(screen, /plan\.id === activePlanId/);
+
+  // O marcador de "está no globo" deixou a fileira de ações e virou um selo
+  // sobre a capa da viagem, no TripListCard — o que este teste protege é ele
+  // EXISTIR e vir do mesmo estado, não o lugar onde é desenhado.
+  assert.match(screen, /appliedToMap={isActive}/);
+  assert.match(read('src/components/trip/TripListCard.js'), /No globo/);
 });
 
 test('todo peso de Poppins usado no app está carregado no useFonts', () => {
@@ -1154,4 +1180,55 @@ test('toda tela sob a tab bar reserva folga no fim do conteúdo', () => {
   const feed = read('src/screens/feed/FeedScreen.js');
   assert.match(feed, /contentContainerStyle=\{\[styles\.body, \{ paddingBottom: tabBarPadding \}\]\}/);
   assert.doesNotMatch(stripComments(feed), /<View style=\{\{ height: 96 \}\} \/>/);
+});
+
+test('nenhum emoji pictográfico é usado como ícone de interface', () => {
+  // POR QUE ESTE TESTE EXISTE: a troca de emoji por ícone vetorial já tinha sido
+  // dada como feita uma vez, e os emojis continuavam na tela. Um relatório não
+  // prova nada; isto prova.
+  //
+  // O emoji é desenhado pela fonte do SISTEMA: o mesmo 🏛️ sai colorido e
+  // arredondado no iPhone, chapado no Android e de outra família no Windows —
+  // três aparências para o mesmo dado, nenhuma escolhida por nós, nenhuma
+  // combinando com a paleta do app. Ícone de UI é Ionicons (@expo/vector-icons).
+  //
+  // A varredura pega só o que é pictográfico (o bloco de emoji e o seletor de
+  // apresentação emoji). Sinais tipográficos — ✓, ✗, →, • — não entram: eles são
+  // pontuação, têm glifo em qualquer fonte de texto e são usados dentro de
+  // frases, não em lugar de ícone.
+  const PICTOGRAPHIC = /[\u{1F000}-\u{1FAFF}]|️/u;
+  const COMMENT = /^\s*(\/\/|\*|\/\*)/;
+
+  // As duas exceções conhecidas, ambas fora de slot de ícone:
+  const ALLOWED = new Map([
+    // Texto que sai do app: a mensagem compartilhada em outros aplicativos, onde
+    // o emoji é do conteúdo e não da interface.
+    ['src/screens/assistant/AssistantResultScreen.js', /Criado no Journi/],
+    // Bandeiras por emoji Unicode. Não é ícone: é a bandeira do país. A UI usa o
+    // CountryFlag (imagem) por causa dos sistemas sem glifo de bandeira, e esta
+    // função está sem nenhum consumidor no app.
+    ['src/utils/flagUtils.js', /return '/],
+  ]);
+
+  const offenders = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const absolute = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(absolute); continue; }
+      if (!/\.[jt]sx?$/.test(entry.name)) continue;
+
+      const relative = path.relative(root, absolute).split(path.sep).join('/');
+      const allowed = ALLOWED.get(relative);
+
+      fs.readFileSync(absolute, 'utf8').split(/\r?\n/).forEach((line, index) => {
+        if (!PICTOGRAPHIC.test(line)) return;
+        if (COMMENT.test(line)) return;
+        if (allowed && allowed.test(line)) return;
+        offenders.push(`${relative}:${index + 1}: ${line.trim().slice(0, 90)}`);
+      });
+    }
+  };
+  walk(path.join(root, 'src'));
+
+  assert.deepEqual(offenders, [], `emoji usado como ícone:\n${offenders.join('\n')}`);
 });

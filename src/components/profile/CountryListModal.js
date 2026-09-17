@@ -138,7 +138,7 @@ export default function CountryListModal({
           )}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Text style={styles.emptyIcon}>🔍</Text>
+              <Ionicons name="search-outline" size={32} color="rgba(255,255,255,0.35)" style={styles.emptyIcon} />
               <Text style={styles.emptyText}>
                 {query
                   ? `Nenhum país encontrado para "${query.trim()}".`

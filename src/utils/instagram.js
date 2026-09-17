@@ -20,6 +20,35 @@
 import { Linking, Platform } from 'react-native';
 
 /**
+ * DESATIVADA POR DECISÃO DE PRODUTO — não é código morto, é código em espera.
+ *
+ * Trello: https://trello.com/c/42SyRQ1E
+ * "[GROWTH] Instagram — badge na bio + compartilhar no Stories (PAUSADO)"
+ *
+ * A implementação está completa e funciona. O que está em aberto são duas
+ * decisões de produto, não defeitos:
+ *
+ * 1. UX DE CONECTAR — hoje o @ fica dentro do formulário completo de Editar
+ *    Perfil. A direção pretendida é um atalho visível no próprio perfil, no
+ *    estilo do "+" que o Instagram usa para conectar o Threads, em vez de um
+ *    campo enterrado num formulário.
+ *
+ * 2. VERIFICAÇÃO DO @ — hoje é texto livre, sem checagem nenhuma: qualquer
+ *    pessoa pode informar o @ de outra. Em discussão entre confirmar apenas que
+ *    o perfil existe (não prova posse) e OAuth oficial do Instagram (prova, mas
+ *    passa por aprovação da Meta).
+ *
+ * Só a EXIBIÇÃO está condicionada a esta flag. O schema, a migration, este
+ * módulo, o config plugin, o InstagramBadge e os testes continuam de pé — ligar
+ * de volta é trocar `false` por `true`.
+ *
+ * ATENÇÃO AO RELIGAR: a migration 20260914190000_profiles_instagram.sql ainda
+ * NÃO foi aplicada em produção. Ligar a flag antes de aplicá-la faz o salvamento
+ * do perfil falhar com coluna inexistente.
+ */
+export const INSTAGRAM_FEATURE_ENABLED = false;
+
+/**
  * O arroba do Instagram, normalizado.
  *
  * Aceita o que a pessoa realmente digita: com arroba, com espaço sobrando, com

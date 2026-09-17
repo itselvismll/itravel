@@ -460,7 +460,10 @@ export default function ExploreScreen({ navigation }) {
                             : 'Tendência sazonal'}
                         </Text>
                         {country.avgRating && (
-                          <Text style={styles.destRating}>★ {country.avgRating}</Text>
+                          <View style={styles.destRatingRow}>
+                            <Ionicons name="star" size={11} color="#FF9A00" />
+                            <Text style={styles.destRating}>{country.avgRating}</Text>
+                          </View>
                         )}
                       </View>
                       {!!country.imageSource && <Text style={styles.imageSource}>{country.imageSource}</Text>}
@@ -797,6 +800,7 @@ const styles = StyleSheet.create({
   destName: { color: 'white', fontSize: 13, fontWeight: '700' },
   destCount: { color: 'rgba(255,255,255,0.7)', fontSize: 10 },
   destRating: { color: '#6C2BD9', fontSize: 10, fontWeight: '600' },
+  destRatingRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   imageSource: { color: 'rgba(255,255,255,0.58)', fontSize: 8 },
   card: { backgroundColor: 'white', borderRadius: 12, margin: 12, padding: 14 },
   userRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: '#f0f0f0' },
