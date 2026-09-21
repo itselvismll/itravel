@@ -281,7 +281,8 @@ test('planning, messaging, passport, and explore improvements stay integrated', 
   assert.match(planner, /DestinationBudgetPlanner/);
   assert.match(planner, /LocationAutocomplete/);
   assert.match(planner, /MultiDestinationSelector/);
-  assert.match(planner, /formatMoneyInput/);
+  const budgetPlanner = read('src/components/DestinationBudgetPlanner.js');
+  assert.match(budgetPlanner, /formatMoneyInput/);
   assert.match(planner, /form\.travelerType === 'Casal'/);
   assert.match(result, /Abrir meus roteiros salvos/);
   assert.match(navigation, /name="Messages"/);
@@ -473,7 +474,7 @@ test('planner converts currencies, keeps free activities at zero, and exposes ve
   const explore = read('src/screens/explore/ExploreScreen.js');
 
   assert.match(currency, /api\.frankfurter\.dev\/v2\/rate/);
-  assert.match(planner, /destinationBudgets/);
+  assert.match(planner, /budgetLevel/);
   assert.match(planner, /destinations\.map/);
   assert.match(result, /Number\(value\) === 0/);
   assert.match(result, /Site oficial/);
@@ -509,22 +510,24 @@ test('long AI plans must contain exactly the requested duration and explain ever
   assert.match(assistant, /Math\.min\(65535, Math\.max\(8192, spec\.days \* 1100\)\)/);
   assert.match(assistant, /candidatePlan\.days\.length === spec\.days/);
   assert.match(assistant, /retorne somente o campo days/);
-  assert.match(assistant, /const chunkConcurrency = 1/);
+  assert.match(assistant, /const chunkConcurrency = 2/);
   assert.match(assistant, /Promise\.all\(/);
   assert.match(assistant, /gemini-3\.5-flash-lite/);
-  assert.match(assistant, /AbortSignal\.timeout\(28000\)/);
+  assert.match(assistant, /REQUEST_BUDGET_MS = 110000/);
+  assert.match(assistant, /Math\.min\(24000, Math\.max\(5000, remainingMs - 2000\)\)/);
   assert.match(assistant, /const aiContext =/);
   assert.match(assistant, /placeNames:/);
   assert.match(assistant, /dayDestinations:/);
   assert.match(assistant, /Siga dayDestinations exatamente/);
   assert.match(assistant, /const maxProviderAttempts = 2/);
-  assert.match(service, /MAX_DAYS_PER_ASSISTANT_REQUEST = 12/);
-  assert.match(service, /buildPlanSegments/);
-  assert.match(service, /mergeSegmentResults/);
+  assert.match(service, /ASSISTANT_PLANNER_VERSION = 2/);
+  assert.match(service, /requiredPlannerVersion: ASSISTANT_PLANNER_VERSION/);
+  assert.doesNotMatch(service, /buildPlanSegments/);
+  assert.doesNotMatch(service, /mergeSegmentResults/);
   assert.match(assistant, /getProviderRetryDelayMs/);
   assert.match(assistant, /geminiResponse\.status === 429/);
   assert.match(assistant, /model !== models\[models\.length - 1\]/);
-  assert.match(assistant, /await sleep\(400\)/);
+  assert.match(assistant, /const firstChunk = await generateChunk/);
   assert.match(assistant, /placeWindowSize/);
   assert.match(service, /activeAssistantRequests/);
   assert.match(assistant, /const usedActivityTitles = new Set/);
@@ -538,36 +541,49 @@ test('long AI plans must contain exactly the requested duration and explain ever
   assert.match(result, /purchaseNote/);
 });
 
-test('trip budget is allocated per destination and consolidated in BRL', () => {
+test('trip budget uses a travel style, a free currency converter, and grounded prices', () => {
   const planner = read('src/screens/assistant/TripPlannerScreen.js');
   const destinationBudget = read('src/components/DestinationBudgetPlanner.js');
   const currencyPicker = read('src/components/CurrencyPicker.js');
   const currency = read('src/services/currencyService.js');
+  const assistantService = read('src/services/assistantService.js');
   const assistant = read('supabase/functions/travel-assistant/index.ts');
   assert.match(planner, /<DestinationBudgetPlanner/);
-  assert.match(planner, /destinationBudgets/);
+  assert.match(planner, /converterBaseCurrency/);
   assert.match(destinationBudget, /Orçamento da viagem/);
-  assert.match(destinationBudget, /Moeda para comparar/);
+  assert.match(destinationBudget, /Conversor de moedas/);
   assert.match(destinationBudget, /onDisplayCurrencyChange/);
-  assert.match(destinationBudget, /A IA usa esta escolha para decidir hospedagem, alimentação, transporte e passeios/);
+  assert.match(destinationBudget, /Não existe limite por destino/);
   assert.match(destinationBudget, /Econômico/);
   assert.match(destinationBudget, /Equilibrado/);
   assert.match(destinationBudget, /Confortável/);
-  assert.match(destinationBudget, /TOTAL ESTIMADO/);
-  assert.match(destinationBudget, /Inverter conversão de/);
-  assert.match(destinationBudget, /BASE_TO_LOCAL/);
-  assert.match(destinationBudget, /destinationCurrency/);
-  assert.match(destinationBudget, /comparisonCurrency/);
-  assert.doesNotMatch(destinationBudget, /currency: displayCurrency/);
+  assert.match(destinationBudget, /Inverter \$\{converterBaseCurrency\} e \$\{displayCurrency\}/);
+  assert.match(destinationBudget, /onConverterBaseCurrencyChange/);
+  assert.doesNotMatch(destinationBudget, /LIMITE POR DESTINO/);
+  assert.doesNotMatch(destinationBudget, /TOTAL ESTIMADO/);
   assert.match(currencyPicker, /getAvailableCurrencies/);
+  assert.match(currencyPicker, /inline/);
   assert.match(currencyPicker, /Ex: dólar, euro ou USD/);
   assert.match(currency, /world-countries@latest\/dist\/countries\.json/);
   assert.match(currency, /currencyCatalogMemoryCache/);
   assert.match(currency, /'Argentine peso': 'ARS'/);
   assert.match(currency, /open\.er-api\.com\/v6\/latest/);
-  assert.match(assistant, /amountInBRL/);
+  assert.match(assistant, /googleSearch/);
+  assert.match(assistant, /const researchTravelPrices/);
+  assert.match(assistant, /Nunca use zero para Passagens ou Hospedagem/);
+  assert.match(assistant, /researchedBudget/);
+  assert.match(assistant, /AI_PRICE_ESTIMATE_OK/);
+  assert.match(assistant, /pricingMode: useGrounding \? 'live' : 'estimated'/);
+  assert.match(assistant, /Estimativa de mercado sem cotação ao vivo/);
+  assert.match(assistant, /useGrounding && \(response\.status === 429 \|\| response\.status === 403\)/);
+  assert.match(assistant, /plannerVersion: PLANNER_CONTRACT_VERSION/);
+  assert.match(assistant, /AI_INCOMPLETE_BUDGET/);
+  assert.match(assistant, /getGroundingSources/);
+  assert.match(assistant, /INVALID_ORIGIN/);
   assert.match(assistant, /Em economy, priorize hospedagem simples/);
   assert.match(assistant, /Em premium, priorize conforto/);
+  assert.match(assistantService, /validateGeneratedBudget/);
+  assert.match(assistantService, /AI_INCOMPLETE_BUDGET/);
 });
 
 test('password login preserves the Supabase error code and never hides an unknown failure', () => {
@@ -950,7 +966,8 @@ test('AI planner searches specific cities and airports with country flags', () =
   assert.match(geoSearch, /Promise\.allSettled/);
   assert.ok(municipalities.length >= 5570);
   assert.ok(municipalities.some(([name, state]) => name === 'Jundiaí' && state === 'SP'));
-  assert.match(budget, /destinationId/);
+  assert.doesNotMatch(budget, /destinationId/);
+  assert.match(budget, /Conversor de moedas/);
 });
 
 test('mobile performance safeguards keep heavy content bounded', () => {

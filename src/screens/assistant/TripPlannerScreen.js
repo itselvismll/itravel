@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import CalendarField from '../../components/CalendarField';
 import DestinationBudgetPlanner from '../../components/DestinationBudgetPlanner';
 import LocationAutocomplete from '../../components/LocationAutocomplete';
-import MultiDestinationSelector, { getTravelDestinationKey } from '../../components/MultiDestinationSelector';
+import MultiDestinationSelector from '../../components/MultiDestinationSelector';
 import { getCurrentUser, getVisitedCountries } from '../../services/supabase';
 import { getWishlist } from '../../services/socialService';
 import {
@@ -29,7 +29,6 @@ import {
   toBrazilianDate,
   toIsoDate,
 } from '../../utils/dateUtils';
-import { formatMoneyInput, parseMoneyInput } from '../../services/currencyService';
 
 const TRAVELER_TYPES = ['Solo', 'Casal', 'Família', 'Amigos', 'Trabalho'];
 const formatAssistantError = ({ error, code, requestId }) => {
@@ -51,12 +50,12 @@ const initialForm = {
   duration: '3',
   travelers: '1',
   travelerType: 'Solo',
-  budget: '',
-  destinationBudgets: [],
   budgetLevel: 'balanced',
-  budgetCurrency: 'BRL',
-  displayCurrency: 'BRL',
-  convertedBudget: 0,
+  converterAmount: 1,
+  converterBaseCurrency: 'BRL',
+  displayCurrency: 'USD',
+  converterResult: 0,
+  converterRate: 0,
   exchangeDate: '',
   pace: 'balanced',
   interests: [],
@@ -75,10 +74,9 @@ export default function TripPlannerScreen({ navigation, route }) {
       endDate: toBrazilianDate(initialRequest.endDate),
       travelers: String(initialRequest.travelers || initialForm.travelers),
       duration: String(initialRequest.duration || initialForm.duration),
-      budget: initialRequest.budget ? formatMoneyInput(initialRequest.budget) : '',
-      budgetCurrency: initialRequest.budgetCurrency || initialRequest.currency || 'BRL',
-      displayCurrency: initialRequest.displayCurrency || 'BRL',
-      destinationBudgets: initialRequest.destinationBudgets || [],
+      converterAmount: initialRequest.converterAmount || 1,
+      converterBaseCurrency: initialRequest.converterBaseCurrency || 'BRL',
+      displayCurrency: initialRequest.displayCurrency || 'USD',
       destinations: Array.isArray(initialRequest.destinations) && initialRequest.destinations.length
         ? initialRequest.destinations.map(item => typeof item === 'string' ? { code: '', name: item } : item)
         : initialRequest.destination
@@ -119,6 +117,7 @@ export default function TripPlannerScreen({ navigation, route }) {
   };
 
   const validate = () => {
+    if (!form.origin.trim()) return 'Informe a cidade ou o aeroporto de saída para pesquisarmos passagens reais.';
     if (!form.destinations.length) return 'Selecione pelo menos um destino para a viagem.';
     if (form.useDates) {
       const start = parseBrazilianDate(form.startDate);
@@ -173,13 +172,13 @@ export default function TripPlannerScreen({ navigation, route }) {
       endDate: form.useDates ? toIsoDate(form.endDate) : '',
       duration,
       travelers: Number(form.travelers),
-      budget: parseMoneyInput(form.budget),
+      budget: 0,
       currency: 'BRL',
       budgetCurrency: 'BRL',
       displayCurrency: form.displayCurrency,
-      convertedBudget: form.convertedBudget,
+      convertedBudget: 0,
       exchangeDate: form.exchangeDate,
-      destinationBudgets: form.destinationBudgets,
+      destinationBudgets: [],
     };
 
     try {
@@ -238,7 +237,7 @@ export default function TripPlannerScreen({ navigation, route }) {
 
         <FormSection icon="location-outline" title="Trajeto">
           <LocationAutocomplete
-            label="Saindo de (opcional)"
+            label="Saindo de"
             value={form.origin}
             onChange={(name, location) => setForm(current => ({
               ...current,
@@ -302,25 +301,20 @@ export default function TripPlannerScreen({ navigation, route }) {
 
         <FormSection icon="wallet-outline" title="Orçamento">
           <DestinationBudgetPlanner
-            destinations={form.destinations}
-            initialBudgets={form.destinationBudgets}
             budgetLevel={form.budgetLevel}
             onBudgetLevelChange={value => update('budgetLevel', value)}
+            converterBaseCurrency={form.converterBaseCurrency}
+            onConverterBaseCurrencyChange={value => update('converterBaseCurrency', value)}
             displayCurrency={form.displayCurrency}
             onDisplayCurrencyChange={value => update('displayCurrency', value)}
-            onChange={(destinationBudgets, total, convertedTotal, exchangeDate) => setForm(current => ({
+            initialAmount={form.converterAmount}
+            onConversionChange={conversion => setForm(current => ({
               ...current,
-              destinationBudgets,
-              budget: formatMoneyInput(Math.round(total)),
-              budgetCurrency: 'BRL',
-              convertedBudget: convertedTotal,
-              exchangeDate,
+              converterAmount: conversion.amount,
+              converterResult: conversion.convertedAmount,
+              converterRate: conversion.rate,
+              exchangeDate: conversion.rateDate,
             }))}
-            onRemoveDestination={destinationId => setForm(current => ({
-              ...current,
-              destinations: current.destinations.filter(item => getTravelDestinationKey(item) !== destinationId),
-            }))}
-            onAddDestination={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
           />
         </FormSection>
 

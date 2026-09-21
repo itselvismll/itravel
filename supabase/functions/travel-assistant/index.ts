@@ -57,7 +57,7 @@ const logProviderAttempt = (details: {
   durationMs: number
 }) => {
   const entry = { event: 'travel_assistant_provider_attempt', ...details }
-  if (details.code === 'AI_PROVIDER_OK') console.log(entry)
+  if (details.code.endsWith('_OK')) console.log(entry)
   else console.error(entry)
 }
 
@@ -106,6 +106,29 @@ const parseProviderJson = (value: unknown) => {
     }
   }
 }
+
+const PLANNER_CONTRACT_VERSION = 2
+const REQUEST_BUDGET_MS = 110000
+
+const getGroundingSources = (payload: any) => {
+  const chunks = payload?.candidates?.[0]?.groundingMetadata?.groundingChunks
+  if (!Array.isArray(chunks)) return []
+  return chunks.map((chunk: any) => ({
+    label: cleanText(chunk?.web?.title, 160) || 'Cotação consultada pela Pesquisa Google',
+    url: cleanText(chunk?.web?.uri, 1000),
+  })).filter((source: { url: string }) => /^https?:\/\//i.test(source.url))
+}
+
+const normalizeBudgetCategory = (value: unknown) => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+
+const getBudgetCategoryAmount = (plan: any, pattern: RegExp) => (
+  (plan?.budget?.items || []).reduce((sum: number, item: any) => (
+    pattern.test(normalizeBudgetCategory(item?.category)) ? sum + (Number(item?.amount) || 0) : sum
+  ), 0)
+)
 
 const cleanList = (value: unknown, maxItems = 12) => (
   Array.isArray(value)
@@ -373,121 +396,115 @@ const getLiveContext = async (
   const anchorLongitude = Number(capitalCoordinates?.[1]) || place?.longitude
   const planningHub = country?.capital?.[0] || place?.name || destination
 
-  let weather = null
-  let weatherSourceUrl = ''
-  let weatherCoverage = null
-  if (anchorLatitude && anchorLongitude) {
+  const weatherPromise = (async () => {
+    if (!anchorLatitude || !anchorLongitude) return { weather: null, weatherSourceUrl: '', weatherCoverage: null }
     const today = new Date().toISOString().slice(0, 10)
     const forecastLimit = addDays(new Date(), 15)
     const requestedStart = isIsoDate(startDate) ? startDate : today
     const requestedEnd = isIsoDate(endDate) ? endDate : addDays(new Date(), 6)
     const forecastStart = requestedStart < today ? today : requestedStart
     const forecastEnd = requestedEnd > forecastLimit ? forecastLimit : requestedEnd
-    if (forecastStart <= forecastEnd && requestedEnd >= today && requestedStart <= forecastLimit) {
-      const weatherUrl = new URL('https://api.open-meteo.com/v1/forecast')
-      weatherUrl.searchParams.set('latitude', String(anchorLatitude))
-      weatherUrl.searchParams.set('longitude', String(anchorLongitude))
-      weatherUrl.searchParams.set('daily', 'temperature_2m_max,temperature_2m_min,precipitation_probability_max')
-      weatherUrl.searchParams.set('timezone', 'auto')
-      weatherUrl.searchParams.set('start_date', forecastStart)
-      weatherUrl.searchParams.set('end_date', forecastEnd)
-      weatherSourceUrl = weatherUrl.toString()
-      weather = await fetchJson(weatherSourceUrl)
-      weatherCoverage = weather ? { startDate: forecastStart, endDate: forecastEnd, type: 'forecast' } : null
+    if (forecastStart > forecastEnd || requestedEnd < today || requestedStart > forecastLimit) {
+      return { weather: null, weatherSourceUrl: '', weatherCoverage: null }
     }
-  }
+    const weatherUrl = new URL('https://api.open-meteo.com/v1/forecast')
+    weatherUrl.searchParams.set('latitude', String(anchorLatitude))
+    weatherUrl.searchParams.set('longitude', String(anchorLongitude))
+    weatherUrl.searchParams.set('daily', 'temperature_2m_max,temperature_2m_min,precipitation_probability_max')
+    weatherUrl.searchParams.set('timezone', 'auto')
+    weatherUrl.searchParams.set('start_date', forecastStart)
+    weatherUrl.searchParams.set('end_date', forecastEnd)
+    const weatherSourceUrl = weatherUrl.toString()
+    const weather = await fetchJson(weatherSourceUrl)
+    return {
+      weather,
+      weatherSourceUrl,
+      weatherCoverage: weather ? { startDate: forecastStart, endDate: forecastEnd, type: 'forecast' } : null,
+    }
+  })()
 
-  const googlePlacesKey = Deno.env.get('GOOGLE_PLACES_API_KEY')
-  let realPlaces: any[] = []
-  let placesSourceUrl = ''
-  let placesProvider = ''
-  if (googlePlacesKey && anchorLatitude && anchorLongitude) {
-    placesSourceUrl = 'https://places.googleapis.com/v1/places:searchText'
-    const searchPlaces = async (textQuery: string, category: string, maxResultCount: number) => {
-      const placesData = await fetchJson(placesSourceUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': googlePlacesKey,
-          'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.regularOpeningHours,places.googleMapsUri,places.websiteUri',
-        },
-        body: JSON.stringify({
-          textQuery,
-          languageCode: 'pt-BR',
-          maxResultCount,
-          locationBias: {
-            circle: {
-              center: { latitude: anchorLatitude, longitude: anchorLongitude },
-              radius: 18000,
-            },
+  const placesPromise = (async () => {
+    const googlePlacesKey = Deno.env.get('GOOGLE_PLACES_API_KEY')
+    let realPlaces: any[] = []
+    let placesSourceUrl = ''
+    let placesProvider = ''
+    if (googlePlacesKey && anchorLatitude && anchorLongitude) {
+      placesSourceUrl = 'https://places.googleapis.com/v1/places:searchText'
+      const searchPlaces = async (textQuery: string, category: string, maxResultCount: number) => {
+        const placesData = await fetchJson(placesSourceUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': googlePlacesKey,
+            'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.regularOpeningHours,places.googleMapsUri,places.websiteUri',
           },
-        }),
-      })
-      return (placesData?.places || []).map((item: any) => ({ ...item, category }))
+          body: JSON.stringify({
+            textQuery,
+            languageCode: 'pt-BR',
+            maxResultCount,
+            locationBias: { circle: { center: { latitude: anchorLatitude, longitude: anchorLongitude }, radius: 18000 } },
+          }),
+        })
+        return (placesData?.places || []).map((item: any) => ({ ...item, category }))
+      }
+      const placeGroups = await Promise.all([
+        searchPlaces(`principais pontos turísticos ${interests.join(' ')} em ${destination}`, 'passeio', 12),
+        searchPlaces(`restaurantes de culinária local bem avaliados em ${destination}`, 'restaurante', 8),
+        searchPlaces(`hotéis bem avaliados em ${destination}`, 'hotel', 5),
+      ])
+      realPlaces = placeGroups.flat().map((item: any) => ({
+        placeId: item.id,
+        name: item.displayName?.text,
+        address: item.formattedAddress,
+        category: item.category,
+        latitude: item.location?.latitude,
+        longitude: item.location?.longitude,
+        rating: item.rating || null,
+        reviewCount: item.userRatingCount || null,
+        openingHours: item.regularOpeningHours?.weekdayDescriptions || [],
+        mapsUrl: item.googleMapsUri || '',
+        website: item.websiteUri || '',
+        provider: 'Google Places',
+      })).filter((item: any) => item.name)
+      placesProvider = realPlaces.length ? 'Google Places' : ''
     }
-    const placeGroups = await Promise.all([
-      searchPlaces(`principais pontos turísticos ${interests.join(' ')} em ${destination}`, 'passeio', 12),
-      searchPlaces(`restaurantes de culinária local bem avaliados em ${destination}`, 'restaurante', 8),
-      searchPlaces(`hotéis bem avaliados em ${destination}`, 'hotel', 5),
-    ])
-    realPlaces = placeGroups.flat().map((item: any) => ({
-      placeId: item.id,
-      name: item.displayName?.text,
-      address: item.formattedAddress,
-      category: item.category,
-      latitude: item.location?.latitude,
-      longitude: item.location?.longitude,
-      rating: item.rating || null,
-      reviewCount: item.userRatingCount || null,
-      openingHours: item.regularOpeningHours?.weekdayDescriptions || [],
-      mapsUrl: item.googleMapsUri || '',
-      website: item.websiteUri || '',
-      provider: 'Google Places',
-    })).filter((item: any) => item.name)
-    placesProvider = realPlaces.length ? 'Google Places' : ''
-  }
+    if (!realPlaces.length && anchorLatitude && anchorLongitude) {
+      const overpassQuery = `[out:json][timeout:15];(nwr(around:18000,${anchorLatitude},${anchorLongitude})[tourism~"attraction|museum|gallery|viewpoint|zoo|theme_park|hotel"][name];nwr(around:18000,${anchorLatitude},${anchorLongitude})[amenity~"restaurant|cafe"][name];);out center tags 40;`
+      const overpassEndpoints = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']
+      const overpassResults = await Promise.all(overpassEndpoints.map(async endpoint => {
+        const url = `${endpoint}?data=${encodeURIComponent(overpassQuery)}`
+        return { data: await fetchJson(url, { headers: { 'Accept-Language': 'pt-BR' } }, 4000), url }
+      }))
+      const successfulOverpass = overpassResults.find(item => item.data?.elements?.length)
+      placesSourceUrl = successfulOverpass?.url || overpassResults[0]?.url || ''
+      realPlaces = (successfulOverpass?.data?.elements || []).slice(0, 20).map((item: any) => ({
+        name: item.tags?.name,
+        category: item.tags?.amenity === 'restaurant' || item.tags?.amenity === 'cafe'
+          ? 'restaurante' : item.tags?.tourism === 'hotel' ? 'hotel' : 'passeio',
+        address: [item.tags?.['addr:street'], item.tags?.['addr:housenumber']].filter(Boolean).join(', '),
+        latitude: item.lat || item.center?.lat,
+        longitude: item.lon || item.center?.lon,
+        rating: null,
+        reviewCount: null,
+        openingHours: item.tags?.opening_hours ? [item.tags.opening_hours] : [],
+        mapsUrl: item.lat || item.center?.lat
+          ? `https://www.google.com/maps/search/?api=1&query=${item.lat || item.center.lat},${item.lon || item.center.lon}` : '',
+        website: item.tags?.website || '',
+        provider: 'OpenStreetMap',
+      })).filter((item: any) => item.name && item.latitude && item.longitude)
+      placesProvider = realPlaces.length ? 'OpenStreetMap' : ''
+    }
+    return { realPlaces, placesSourceUrl, placesProvider }
+  })()
 
-  if (!realPlaces.length && anchorLatitude && anchorLongitude) {
-    const overpassQuery = `[out:json][timeout:15];(nwr(around:18000,${anchorLatitude},${anchorLongitude})[tourism~"attraction|museum|gallery|viewpoint|zoo|theme_park|hotel"][name];nwr(around:18000,${anchorLatitude},${anchorLongitude})[amenity~"restaurant|cafe"][name];);out center tags 40;`
-    const overpassEndpoints = [
-      'https://overpass-api.de/api/interpreter',
-      'https://overpass.kumi.systems/api/interpreter',
-    ]
-    const overpassResults = await Promise.all(overpassEndpoints.map(async endpoint => {
-      const url = `${endpoint}?data=${encodeURIComponent(overpassQuery)}`
-      const data = await fetchJson(
-        url,
-        { headers: { 'Accept-Language': 'pt-BR' } },
-        4000,
-      )
-      return { data, url }
-    }))
-    const successfulOverpass = overpassResults.find(item => item.data?.elements?.length)
-    const osmData = successfulOverpass?.data
-    placesSourceUrl = successfulOverpass?.url || overpassResults[0]?.url || ''
-    realPlaces = (osmData?.elements || []).slice(0, 20).map((item: any) => ({
-      name: item.tags?.name,
-      category: item.tags?.amenity === 'restaurant' || item.tags?.amenity === 'cafe'
-        ? 'restaurante'
-        : item.tags?.tourism === 'hotel' ? 'hotel' : 'passeio',
-      address: [item.tags?.['addr:street'], item.tags?.['addr:housenumber']].filter(Boolean).join(', '),
-      latitude: item.lat || item.center?.lat,
-      longitude: item.lon || item.center?.lon,
-      rating: null,
-      reviewCount: null,
-      openingHours: item.tags?.opening_hours ? [item.tags.opening_hours] : [],
-      mapsUrl: item.lat || item.center?.lat
-        ? `https://www.google.com/maps/search/?api=1&query=${item.lat || item.center.lat},${item.lon || item.center.lon}`
-        : '',
-      website: item.tags?.website || '',
-      provider: 'OpenStreetMap',
-    })).filter((item: any) => item.name && item.latitude && item.longitude)
-    placesProvider = realPlaces.length ? 'OpenStreetMap' : ''
-  }
-
-  const exchange = currency === localCurrency
-    ? { base: currency, quote: localCurrency, rate: 1, date: new Date().toISOString().slice(0, 10) }
-    : await fetchJson(exchangeUrl)
+  const exchangePromise = currency === localCurrency
+    ? Promise.resolve({ base: currency, quote: localCurrency, rate: 1, date: new Date().toISOString().slice(0, 10) })
+    : fetchJson(exchangeUrl)
+  const [{ weather, weatherSourceUrl, weatherCoverage }, { realPlaces, placesSourceUrl, placesProvider }, exchange] = await Promise.all([
+    weatherPromise,
+    placesPromise,
+    exchangePromise,
+  ])
 
   return {
     place: place ? {
@@ -684,6 +701,231 @@ const planSchema = {
   },
 }
 
+const priceEstimateSchema = {
+  type: 'OBJECT',
+  required: ['total', 'currency', 'items', 'shoppingIncluded', 'scopeNote'],
+  properties: {
+    total: { type: 'NUMBER' },
+    currency: { type: 'STRING' },
+    shoppingIncluded: { type: 'BOOLEAN' },
+    scopeNote: { type: 'STRING' },
+    items: {
+      type: 'ARRAY',
+      minItems: 7,
+      maxItems: 7,
+      items: {
+        type: 'OBJECT',
+        required: ['category', 'amount', 'note'],
+        properties: {
+          category: { type: 'STRING' },
+          amount: { type: 'NUMBER' },
+          note: { type: 'STRING' },
+        },
+      },
+    },
+  },
+}
+
+const researchTravelPrices = async ({
+  apiKey,
+  models,
+  safeRequest,
+  requestId,
+  deadlineAt,
+}: {
+  apiKey: string
+  models: string[]
+  safeRequest: any
+  requestId: string
+  deadlineAt: number
+}) => {
+  const tripDescription = `Viagem: origem ${safeRequest.origin}; destinos ${safeRequest.destination}; ida ${safeRequest.startDate || 'flexível'}; volta ${safeRequest.endDate || 'flexível'}; ${safeRequest.duration} dias; ${safeRequest.travelers} viajante(s); perfil ${safeRequest.budgetLevel}; moeda ${safeRequest.currency}.`
+  const commonPriceRules = `Retorne exatamente estas sete categorias: Passagens, Hospedagem, Alimentação, Transporte local, Passeios e ingressos, Compras e Reserva. Use valores totais da viagem inteira na moeda solicitada. Passagens deve incluir ida, trechos entre destinos e volta quando necessários. Hospedagem deve cobrir as noites da viagem. Nunca use zero para Passagens ou Hospedagem. O total precisa ser a soma dos itens.`
+  const livePricePrompt = `Você é o pesquisador de preços do Journi. Pesquise preços atuais com a Pesquisa Google e responda somente em JSON.
+
+${tripDescription}
+
+${commonPriceRules} Em cada note, informe resumidamente a faixa consultada, quantidade relevante, fonte e data. Se não houver tarifa exata, use a faixa atual comparável encontrada e identifique como estimativa.`
+  const estimatedPricePrompt = `Você é o estimador de custos de viagem do Journi. Responda somente em JSON. A cotação ao vivo está indisponível, então produza uma estimativa conservadora baseada em faixas típicas de mercado, distância da rota, época, duração, número de viajantes e perfil escolhido. Não afirme que pesquisou preços ou fontes atuais.
+
+${tripDescription}
+
+${commonPriceRules} Em cada note, explique objetivamente a premissa usada e informe que é uma estimativa de mercado que precisa ser confirmada antes da compra.`
+  let lastFailure: any = {
+    success: false,
+    failureCode: 'AI_PRICE_RESEARCH_FAILED',
+    status: 502,
+    providerStatus: '',
+    providerReason: '',
+    recommendedRetryDelayMs: 0,
+  }
+
+  let useGrounding = true
+  for (const model of models.slice(0, 2)) {
+    let useStructuredSchema = true
+    for (let providerAttempt = 1; providerAttempt <= 2; providerAttempt += 1) {
+      const remainingMs = deadlineAt - Date.now()
+      if (remainingMs < 5000) {
+        return { ...lastFailure, failureCode: 'AI_PROVIDER_TIMEOUT' }
+      }
+      const attemptStartedAt = Date.now()
+      try {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+            signal: AbortSignal.timeout(Math.min(24000, Math.max(5000, remainingMs - 2000))),
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: useGrounding ? livePricePrompt : estimatedPricePrompt }] }],
+              ...(useGrounding ? { tools: [{ googleSearch: {} }] } : {}),
+              generationConfig: {
+                maxOutputTokens: 4096,
+                responseMimeType: 'application/json',
+                ...(useStructuredSchema ? { responseJsonSchema: toJsonSchema(priceEstimateSchema) } : {}),
+              },
+            }),
+          },
+        )
+        const data = await response.json().catch(() => null)
+        const providerStatus = cleanText(data?.error?.status, 80)
+        const providerReason = getProviderReason(data)
+        const finishReason = cleanText(data?.candidates?.[0]?.finishReason, 80)
+        if (!response.ok || !data) {
+          const failureCode = data
+            ? classifyProviderHttpError(response.status, providerStatus, providerReason)
+            : 'AI_PROVIDER_INVALID_RESPONSE'
+          const recommendedRetryDelayMs = response.status === 429
+            ? getProviderRetryDelayMs(response, data, providerAttempt)
+            : 0
+          lastFailure = {
+            success: false,
+            failureCode,
+            status: response.status,
+            providerStatus,
+            providerReason,
+            recommendedRetryDelayMs,
+          }
+          logProviderAttempt({
+            requestId,
+            model,
+            providerAttempt,
+            chunkStartDay: 0,
+            status: response.status,
+            providerStatus,
+            providerReason,
+            code: failureCode,
+            finishReason,
+            durationMs: Date.now() - attemptStartedAt,
+          })
+          if (
+            response.status === 400
+            && providerStatus === 'INVALID_ARGUMENT'
+            && useStructuredSchema
+            && providerAttempt < 2
+          ) {
+            useStructuredSchema = false
+            continue
+          }
+          if (useGrounding && (response.status === 429 || response.status === 403)) {
+            // Grounding com Pesquisa Google pode ter cota zero no tier gratuito. O próximo
+            // modelo gera uma estimativa declarada, sem fingir que consultou tarifa ao vivo.
+            useGrounding = false
+          }
+          break
+        }
+
+        const budget = parseProviderJson(data?.candidates?.[0]?.content?.parts?.[0]?.text)
+        const items = Array.isArray(budget?.items) ? budget.items.map((item: any) => ({
+          category: cleanText(item?.category, 80),
+          amount: Math.max(0, Number(item?.amount) || 0),
+          note: cleanText(item?.note, 500),
+        })) : []
+        const normalizedBudget = {
+          ...budget,
+          currency: safeRequest.currency,
+          items,
+          total: Math.round(items.reduce((sum: number, item: any) => sum + item.amount, 0) * 100) / 100,
+          shoppingIncluded: items.some((item: any) => /compras/i.test(item.category) && item.amount > 0),
+          scopeNote: useGrounding
+            ? cleanText(budget?.scopeNote, 500)
+            : 'Estimativa de mercado sem cotação ao vivo. Confirme passagens, hospedagem e ingressos antes da compra.',
+        }
+        const hasFlight = getBudgetCategoryAmount({ budget: normalizedBudget }, /passag|voo/) > 0
+        const hasHotel = safeRequest.duration <= 1
+          || getBudgetCategoryAmount({ budget: normalizedBudget }, /hosped|hotel/) > 0
+        if (items.length >= 7 && hasFlight && hasHotel) {
+          logProviderAttempt({
+            requestId,
+            model,
+            providerAttempt,
+            chunkStartDay: 0,
+            status: response.status,
+            providerStatus: 'OK',
+            providerReason: '',
+            code: useGrounding ? 'AI_PRICE_RESEARCH_OK' : 'AI_PRICE_ESTIMATE_OK',
+            finishReason,
+            durationMs: Date.now() - attemptStartedAt,
+          })
+          return {
+            success: true,
+            budget: normalizedBudget,
+            groundingSources: getGroundingSources(data),
+            pricingMode: useGrounding ? 'live' : 'estimated',
+          }
+        }
+        lastFailure = {
+          success: false,
+          failureCode: 'AI_INCOMPLETE_BUDGET',
+          status: response.status,
+          providerStatus: 'OK',
+          providerReason: '',
+          recommendedRetryDelayMs: 0,
+        }
+        logProviderAttempt({
+          requestId,
+          model,
+          providerAttempt,
+          chunkStartDay: 0,
+          status: response.status,
+          providerStatus: 'OK',
+          providerReason: '',
+          code: 'AI_INCOMPLETE_BUDGET',
+          finishReason,
+          durationMs: Date.now() - attemptStartedAt,
+        })
+        break
+      } catch (error) {
+        const failureCode = error instanceof DOMException && error.name === 'TimeoutError'
+          ? 'AI_PROVIDER_TIMEOUT'
+          : 'AI_PROVIDER_NETWORK_ERROR'
+        lastFailure = {
+          success: false,
+          failureCode,
+          status: 0,
+          providerStatus: '',
+          providerReason: '',
+          recommendedRetryDelayMs: 0,
+        }
+        logProviderAttempt({
+          requestId,
+          model,
+          providerAttempt,
+          chunkStartDay: 0,
+          status: 0,
+          providerStatus: '',
+          providerReason: '',
+          code: failureCode,
+          finishReason: '',
+          durationMs: Date.now() - attemptStartedAt,
+        })
+        break
+      }
+    }
+  }
+  return lastFailure
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   const requestId = createRequestId(req.headers.get('x-journi-request-id'))
@@ -707,22 +949,26 @@ serve(async (req) => {
     const supportedActions = ['generate_plan', 'regenerate_activity', 'adjust_plan']
     const action = supportedActions.includes(body?.action) ? body.action : 'generate_plan'
     const request = body?.planRequest || {}
+    const requiredPlannerVersion = Number(body?.requiredPlannerVersion || request?.requiredPlannerVersion || 0)
+    if (
+      action === 'generate_plan'
+      && requiredPlannerVersion > 0
+      && requiredPlannerVersion !== PLANNER_CONTRACT_VERSION
+    ) {
+      return jsonResponse({
+        success: false,
+        error: 'O aplicativo e o planejador de IA estão em versões incompatíveis.',
+        code: 'BACKEND_VERSION_MISMATCH',
+        requestId,
+        plannerVersion: PLANNER_CONTRACT_VERSION,
+      }, 409)
+    }
     const destinations = Array.isArray(request.destinations)
       ? request.destinations.slice(0, 12).map((item: any) => ({
         name: cleanText(typeof item === 'string' ? item : item?.name, 100),
         nameEn: cleanText(typeof item === 'string' ? '' : item?.nameEn, 100),
         code: cleanText(typeof item === 'string' ? '' : item?.code, 3).toUpperCase(),
       })).filter((item: { name: string }) => item.name)
-      : []
-    const destinationBudgets = Array.isArray(request.destinationBudgets)
-      ? request.destinationBudgets.slice(0, 12).map((item: any) => ({
-        countryCode: cleanText(item?.countryCode, 3).toUpperCase(),
-        countryName: cleanText(item?.countryName, 100),
-        currency: cleanText(item?.currency, 3).toUpperCase(),
-        amount: Math.max(0, Number(item?.localAmount) || Number(String(item?.amount || '').replace(/\D/g, '')) || 0),
-        amountInBRL: Math.max(0, Number(item?.amountInBRL) || 0),
-        rateDate: cleanText(item?.rateDate, 10),
-      })).filter((item: { countryName: string }) => item.countryName)
       : []
     const destination = cleanText(request.destination, 500)
       || destinations.map((item: { name: string }) => item.name).join(', ')
@@ -731,10 +977,12 @@ serve(async (req) => {
     const currency = cleanText(request.currency, 3).toUpperCase() || 'BRL'
     const travelers = Math.max(1, Math.min(30, Number(request.travelers) || 1))
     const duration = Math.max(1, Math.floor(Number(request.duration) || 3))
-    const budget = Math.max(0, Number(request.budget) || 0)
 
     if (!destination) {
       return jsonResponse({ success: false, error: 'Informe um destino válido', code: 'INVALID_DESTINATION', requestId }, 400)
+    }
+    if (action === 'generate_plan' && !origin) {
+      return jsonResponse({ success: false, error: 'Informe a origem para pesquisarmos passagens reais', code: 'INVALID_ORIGIN', requestId }, 400)
     }
     const today = new Date().toISOString().slice(0, 10)
     if (isIsoDate(request.startDate) && request.startDate < today) {
@@ -744,14 +992,14 @@ serve(async (req) => {
     const safeRequest = {
       destination,
       destinations,
-      destinationBudgets,
+      destinationBudgets: [],
       origin,
       startDate: cleanText(request.startDate, 10),
       endDate: cleanText(request.endDate, 10),
       duration,
       travelers,
       travelerType: cleanText(request.travelerType, 40),
-      budget,
+      budget: 0,
       currency,
       budgetLevel: cleanText(request.budgetLevel, 20) || 'balanced',
       budgetCurrency: cleanText(request.budgetCurrency, 3).toUpperCase() || currency,
@@ -771,7 +1019,14 @@ serve(async (req) => {
       level: cleanText(context.level, 40) || 'Iniciante',
     }
 
-    const liveContext = await getJourneyLiveContext(
+    const configuredModel = Deno.env.get('GEMINI_MODEL') || 'gemini-3.6-flash'
+    const models = [...new Set([
+      configuredModel,
+      'gemini-3.6-flash',
+      'gemini-3.5-flash-lite',
+    ])].slice(0, 2)
+    const deadlineAt = Date.now() + REQUEST_BUDGET_MS
+    const liveContextPromise = getJourneyLiveContext(
       destinations.map((item: { nameEn?: string; name: string }) => item.nameEn || item.name),
       primaryDestination,
       currency,
@@ -779,6 +1034,34 @@ serve(async (req) => {
       safeRequest.endDate,
       safeRequest.interests,
     )
+    const priceResearchPromise = action === 'generate_plan'
+      ? researchTravelPrices({ apiKey, models, safeRequest, requestId, deadlineAt })
+      : Promise.resolve(null)
+    const [liveContext, priceResearch] = await Promise.all([
+      liveContextPromise,
+      priceResearchPromise,
+    ])
+    if (priceResearch && !priceResearch.success) {
+      const retryAfterSeconds = priceResearch.status === 429
+        ? Math.max(5, Math.ceil((priceResearch.recommendedRetryDelayMs || 30000) / 1000))
+        : 0
+      const error = priceResearch.failureCode === 'AI_INCOMPLETE_BUDGET'
+        ? 'A IA não encontrou cotações válidas de passagens ou hospedagem. Tente novamente para pesquisarmos outros resultados.'
+        : priceResearch.status === 429
+          ? `A IA atingiu o limite temporário. Aguarde cerca de ${retryAfterSeconds} segundos e tente novamente.`
+          : 'A pesquisa de preços está temporariamente indisponível. Tente novamente em instantes.'
+      return jsonResponse({
+        success: false,
+        error,
+        code: priceResearch.failureCode,
+        requestId,
+        plannerVersion: PLANNER_CONTRACT_VERSION,
+        providerStatus: priceResearch.providerStatus,
+        providerReason: priceResearch.providerReason,
+        providerHttpStatus: priceResearch.status,
+        ...(retryAfterSeconds ? { retryAfterSeconds } : {}),
+      }, priceResearch.status === 429 ? 429 : 503)
+    }
     const aiContext = {
       place: liveContext.place,
       weather: liveContext.weather,
@@ -799,6 +1082,7 @@ serve(async (req) => {
         requestedDestination: item.requestedDestination,
       })),
       retrievedAt: liveContext.retrievedAt,
+      researchedBudget: priceResearch?.budget || null,
     }
     const existingPlan = JSON.stringify(body?.existingPlan || {}).slice(0, 30000)
     const operationInstruction = action === 'regenerate_activity'
@@ -807,14 +1091,8 @@ serve(async (req) => {
         ? `Atualize o roteiro atual conforme este pedido do usuário: "${cleanText(body?.adjustment, 600)}". Preserve tudo o que não precisar mudar. Roteiro atual: ${existingPlan}`
         : 'Crie um roteiro novo e coerente.'
 
-    const configuredModel = Deno.env.get('GEMINI_MODEL') || 'gemini-3.6-flash'
-    const models = [...new Set([
-      configuredModel,
-      'gemini-3.6-flash',
-      'gemini-3.5-flash-lite',
-    ])]
-    // Seis dias mantêm cada resposta detalhada, mas reduzem pela metade as chamadas
-    // acumuladas no mesmo worker. Roteiros acima de 12 dias são segmentados no app.
+    // Seis dias mantêm cada resposta detalhada. O servidor monta todos os blocos dentro
+    // de uma única chamada; o app não repete contexto nem pesquisa de preços.
     const strictDaySchemaLimit = 6
     const chunkSpecs = Array.from(
       { length: Math.ceil(duration / strictDaySchemaLimit) },
@@ -826,7 +1104,6 @@ serve(async (req) => {
     const usedActivityTitles = new Set<string>()
 
     const generateChunk = async (spec: { startDay: number; days: number }) => {
-      const ratio = spec.days / duration
       const chunkStartDate = isIsoDate(safeRequest.startDate)
         ? addDays(new Date(`${safeRequest.startDate}T00:00:00Z`), spec.startDay - 1)
         : ''
@@ -838,12 +1115,8 @@ serve(async (req) => {
         startDate: chunkStartDate || safeRequest.startDate,
         endDate: chunkEndDate || safeRequest.endDate,
         duration: spec.days,
-        budget: budget > 0 ? Math.round(budget * ratio * 100) / 100 : 0,
-        destinationBudgets: safeRequest.destinationBudgets.map((item: any) => ({
-          ...item,
-          amount: Math.round(item.amount * ratio * 100) / 100,
-          amountInBRL: Math.round(item.amountInBRL * ratio * 100) / 100,
-        })),
+        budget: 0,
+        destinationBudgets: [],
         dayDestinations: Array.from({ length: spec.days }, (_, offset) => {
           const absoluteDayIndex = spec.startDay + offset - 1
           const destinationIndex = Math.min(
@@ -897,17 +1170,16 @@ Regras:
 - Em economy, priorize hospedagem simples e bem avaliada, transporte público, refeições acessíveis e atividades gratuitas ou de baixo custo.
 - Em balanced, combine bom custo-benefício, localização prática, atrações pagas essenciais e refeições de faixa intermediária.
 - Em premium, priorize conforto, localização, deslocamentos convenientes, experiências especiais e restaurantes melhores, sem inventar luxo desnecessário.
-- Quando houver um teto numérico, nunca o ultrapasse. Se o teto conflitar com o perfil escolhido, preserve o teto e explique os ajustes no orçamento.
+- Não existe teto informado pelo usuário. Calcule o custo provável da viagem de acordo com o perfil escolhido e mostre o valor que ela realmente tende a custar.
 - Distribua manhã, tarde e noite sem deslocamentos impossíveis; agrupe locais próximos.
 - Cada atividade deve citar pelo nome um lugar real e identificável: atração, monumento, museu, parque, bairro, mercado ou restaurante. Não use títulos genéricos como "caminhada pelo centro", "experiência cultural", "tempo livre" ou "restaurante local".
 - Faça o viajante realmente conhecer o destino: priorize os pontos turísticos essenciais, alterne ícones conhecidos com experiências locais e explique em description o que será visto ou vivido ali.
 - Organize cada dia por uma região ou eixo geográfico. Quando houver mais de um destino, distribua os dias proporcionalmente e não misture países ou cidades distantes no mesmo dia.
 - Siga dayDestinations exatamente: cada dia deve acontecer somente no destino atribuído a ele. Use um dia de deslocamento coerente quando houver troca de país.
 - Use realPlaces do destino correto sempre que estiver disponível. Não repita a mesma atração em dias diferentes.
-- Todos os custos devem ser numéricos em ${currency}, para ${travelers} viajante(s), e o total deste bloco deve respeitar o orçamento proporcional quando ele for maior que zero.
-- budget.items deve detalhar Passagens, Hospedagem, Alimentação, Transporte local, Passeios e ingressos, Compras e Reserva. Os itens devem somar exatamente budget.total.
-- Quando destinationBudgets existir, respeite o teto proporcional de cada país e use amountInBRL como referência consolidada.
-- Não presuma passagens ou hospedagem: quando não houver dados suficientes, use valor 0 na categoria e explique em note que não está incluída. Não conte custos duas vezes.
+- Todos os custos devem ser numéricos em ${currency}, para ${travelers} viajante(s). O total deve refletir a soma realista das categorias, sem ser limitado por um orçamento informado pelo usuário.
+ - Quando houver researchedBudget nos dados externos, copie esse orçamento integralmente. A pesquisa de preços já foi feita separadamente e é a fonte oficial para Passagens, Hospedagem e demais categorias.
+ - budget.items deve detalhar Passagens, Hospedagem, Alimentação, Transporte local, Passeios e ingressos, Compras e Reserva. Os itens devem somar exatamente budget.total.
 - Inclua Compras somente quando couber no orçamento. shoppingIncluded só pode ser true quando a categoria Compras tiver valor maior que 0.
 - Atividades realmente gratuitas devem ter estimatedCost igual a 0.
 - mapQuery deve ser uma busca precisa no formato "local, cidade, país".
@@ -949,6 +1221,11 @@ Regras:
         const maxProviderAttempts = 2
         let useStructuredSchema = true
         for (let providerAttempt = 1; providerAttempt <= maxProviderAttempts; providerAttempt += 1) {
+          const remainingMs = deadlineAt - Date.now()
+          if (remainingMs < 5000) {
+            failureCode = 'AI_PROVIDER_TIMEOUT'
+            break
+          }
           const attemptStartedAt = Date.now()
           try {
             const geminiResponse = await fetch(
@@ -956,7 +1233,7 @@ Regras:
               {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-                signal: AbortSignal.timeout(28000),
+                signal: AbortSignal.timeout(Math.min(24000, Math.max(5000, remainingMs - 2000))),
                 body: JSON.stringify({
                   contents: [{ parts: [{ text: prompt }] }],
                   generationConfig: {
@@ -1046,6 +1323,12 @@ Regras:
             }
             try {
               const candidatePlan = parseProviderJson(responseText)
+              if (candidatePlan && includePlanDetails && priceResearch?.budget) {
+                candidatePlan.budget = priceResearch.budget
+                candidatePlan.budgetStatus = priceResearch.pricingMode === 'live'
+                  ? 'Cotação pesquisada; confirme antes da compra'
+                  : 'Estimativa de mercado; cotação ao vivo indisponível'
+              }
               const hasCompleteDays = Array.isArray(candidatePlan?.days)
                 && candidatePlan.days.length === spec.days
                 && candidatePlan.days.every((day: any) => (
@@ -1061,7 +1344,10 @@ Regras:
                 && Array.isArray(candidatePlan?.safetyTips)
                 && Array.isArray(candidatePlan?.practicalTips)
               )
-              if (hasCompleteDays && hasPlanDetails) {
+              const requiresBudgetValidation = includePlanDetails && action === 'generate_plan'
+              const hasFlightEstimate = !requiresBudgetValidation || getBudgetCategoryAmount(candidatePlan, /passag|voo/) > 0
+              const hasHotelEstimate = !requiresBudgetValidation || duration <= 1 || getBudgetCategoryAmount(candidatePlan, /hosped|hotel/) > 0
+              if (hasCompleteDays && hasPlanDetails && hasFlightEstimate && hasHotelEstimate) {
                 for (const day of candidatePlan.days) {
                   for (const activity of day?.activities || []) {
                     const title = cleanText(activity?.title, 120)
@@ -1080,9 +1366,11 @@ Regras:
                   finishReason,
                   durationMs: Date.now() - attemptStartedAt,
                 })
-                return { success: true, plan: candidatePlan, spec }
+                return { success: true, plan: candidatePlan, spec, groundingSources: getGroundingSources(geminiData) }
               }
-              failureCode = 'AI_INCOMPLETE_PLAN'
+              failureCode = hasCompleteDays && hasPlanDetails && (!hasFlightEstimate || !hasHotelEstimate)
+                ? 'AI_INCOMPLETE_BUDGET'
+                : 'AI_INCOMPLETE_PLAN'
               attempts.push({ model, providerAttempt, status: geminiResponse.status, providerStatus: 'OK', code: failureCode, finishReason })
               logProviderAttempt({
                 requestId,
@@ -1147,14 +1435,15 @@ Regras:
     }
 
     const chunkResults: any[] = []
-    const chunkConcurrency = 1
-    for (let index = 0; index < chunkSpecs.length; index += chunkConcurrency) {
+    const firstChunk = await generateChunk(chunkSpecs[0])
+    chunkResults.push(firstChunk)
+    const chunkConcurrency = 2
+    for (let index = 1; firstChunk.success && index < chunkSpecs.length; index += chunkConcurrency) {
       const batch = await Promise.all(
         chunkSpecs.slice(index, index + chunkConcurrency).map(generateChunk),
       )
       chunkResults.push(...batch)
       if (batch.some(result => !result.success)) break
-      if (index + chunkConcurrency < chunkSpecs.length) await sleep(400)
     }
     const failedChunk = chunkResults.find(result => !result.success)
     if (failedChunk) {
@@ -1163,6 +1452,8 @@ Regras:
         : 0
       const error = failedChunk.status === 429
         ? `A IA atingiu o limite temporário. Aguarde cerca de ${retryAfterSeconds} segundos e tente novamente.`
+        : failedChunk.failureCode === 'AI_INCOMPLETE_BUDGET'
+          ? 'A IA não encontrou cotações válidas de passagens ou hospedagem. Tente novamente para pesquisarmos outros resultados.'
         : failedChunk.failureCode === 'AI_INCOMPLETE_PLAN'
           ? 'A IA não concluiu todos os dias do roteiro. Tente novamente em instantes.'
           : 'O planejador está temporariamente indisponível. Tente novamente em instantes.'
@@ -1181,6 +1472,7 @@ Regras:
           error,
           code: failedChunk.failureCode,
           requestId,
+          plannerVersion: PLANNER_CONTRACT_VERSION,
           providerStatus: failedChunk.providerStatus,
           providerReason: failedChunk.providerReason,
           providerHttpStatus: failedChunk.status,
@@ -1203,37 +1495,28 @@ Regras:
           ? addDays(new Date(`${safeRequest.startDate}T00:00:00Z`), result.spec.startDay + index - 1)
           : day.date,
       })))
-      const budgetItems = new Map<string, { category: string; amount: number; note: string }>()
-      for (const chunkPlan of chunkPlans) {
-        for (const item of chunkPlan.budget?.items || []) {
-          const current = budgetItems.get(item.category) || { category: item.category, amount: 0, note: item.note || '' }
-          current.amount += Number(item.amount) || 0
-          if (!current.note && item.note) current.note = item.note
-          budgetItems.set(item.category, current)
-        }
-      }
-      const items = [...budgetItems.values()].map(item => ({ ...item, amount: Math.round(item.amount * 100) / 100 }))
-      const budgetScale = duration / chunkResults[0].spec.days
-      const scaledItems = items.map(item => ({
-        ...item,
-        amount: Math.round(item.amount * budgetScale * 100) / 100,
-      }))
+      // A pesquisa de preços é única para a viagem inteira. Os blocos da IA trazem somente
+      // os dias; portanto, recalcular ou multiplicar o orçamento duplicaria a estimativa.
       plan.budget = {
         ...plan.budget,
-        items: scaledItems,
-        total: Math.round(scaledItems.reduce((sum, item) => sum + item.amount, 0) * 100) / 100,
-        shoppingIncluded: scaledItems.some(item => item.category === 'Compras' && item.amount > 0),
-        scopeNote: `Estimativa consolidada dos ${chunkPlans.length} blocos que compõem os ${duration} dias da viagem.`,
+        scopeNote: `Estimativa da viagem completa de ${duration} dias, baseada na pesquisa de preços separada do roteiro.`,
       }
       plan.checklist = [...new Map(chunkPlans.flatMap(item => item.checklist || []).map((item: any) => [`${item.category}:${item.item}`, item])).values()]
       plan.safetyTips = [...new Set(chunkPlans.flatMap(item => item.safetyTips || []))]
       plan.practicalTips = [...new Set(chunkPlans.flatMap(item => item.practicalTips || []))]
     }
 
-    plan.sources = (liveContext.sources || []).map((source: { label: string; url: string }) => ({
+    const groundedSources = [
+      ...(priceResearch?.groundingSources || []),
+      ...chunkResults.flatMap(result => result.groundingSources || []),
+    ]
+    plan.sources = [...new Map([
+      ...(liveContext.sources || []),
+      ...groundedSources,
+    ].filter((source: any) => source?.url).map((source: any) => [source.url, {
       ...source,
       updatedAt: liveContext.retrievedAt,
-    }))
+    }])).values()]
 
     addExactMapLinks(plan, destination)
     // Um roteiro multi-país espalha pontos legitimamente por milhares de km, então o raio
@@ -1246,7 +1529,13 @@ Regras:
       console.warn('travel-assistant coordenadas aproximadas', geoSummary)
     }
 
-    return jsonResponse({ success: true, plan, liveContext, requestId })
+    return jsonResponse({
+      success: true,
+      plan,
+      liveContext,
+      requestId,
+      plannerVersion: PLANNER_CONTRACT_VERSION,
+    })
   } catch (error) {
     console.error({
       event: 'travel_assistant_unhandled_error',
@@ -1258,6 +1547,7 @@ Regras:
       error: 'Não foi possível processar o planejamento',
       code: 'ASSISTANT_INTERNAL_ERROR',
       requestId,
+      plannerVersion: PLANNER_CONTRACT_VERSION,
     }, 500)
   }
 })

@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 
 const BASE_ASSISTANT_TIMEOUT_MS = 150000;
-const MAX_DAYS_PER_ASSISTANT_REQUEST = 12;
+export const ASSISTANT_PLANNER_VERSION = 2;
 const activeAssistantRequests = new Map();
 
 export const createAssistantRequestId = () => (
@@ -84,6 +84,29 @@ const executeAssistantRequest = async (payload) => {
       };
     }
 
+    if (
+      payload?.action === 'generate_plan'
+      && Number(data?.plannerVersion) !== ASSISTANT_PLANNER_VERSION
+    ) {
+      return {
+        success: false,
+        error: 'O planejador local e o serviço de IA estão em versões diferentes. Atualize a função antes de testar novamente.',
+        code: 'BACKEND_VERSION_MISMATCH',
+        requestId: data?.requestId || requestId,
+      };
+    }
+
+    if (payload?.action === 'generate_plan') {
+      const budgetError = validateGeneratedBudget(data.plan, payload.planRequest);
+      if (budgetError) {
+        return {
+          success: false,
+          ...budgetError,
+          requestId: data.requestId || requestId,
+        };
+      }
+    }
+
     return {
       success: true,
       plan: data.plan,
@@ -110,164 +133,42 @@ const executeAssistantRequest = async (payload) => {
   }
 };
 
-const addIsoDays = (value, days) => {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) return '';
-  const date = new Date(`${value}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-};
+const normalizeBudgetCategory = value => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase();
 
-const mergeUnique = (items, keyForItem = (item) => String(item || '')) => (
-  [...new Map(items.filter(Boolean).map(item => [keyForItem(item), item])).values()]
+const getBudgetCategoryAmount = (plan, pattern) => (
+  (plan?.budget?.items || []).reduce((total, item) => (
+    pattern.test(normalizeBudgetCategory(item?.category))
+      ? total + (Number(item?.amount) || 0)
+      : total
+  ), 0)
 );
 
-const buildPlanSegments = (planRequest) => {
-  const duration = Math.max(1, Math.floor(Number(planRequest?.duration) || 1));
-  const destinations = Array.isArray(planRequest?.destinations)
-    ? planRequest.destinations.filter(item => item?.name)
-    : [];
-  const destinationCount = Math.max(1, destinations.length);
-  const destinationForDay = Array.from({ length: duration }, (_, dayIndex) => Math.min(
-    destinationCount - 1,
-    Math.floor(dayIndex * destinationCount / duration),
-  ));
-  const totalDaysByDestination = destinationForDay.reduce((counts, destinationIndex) => {
-    counts[destinationIndex] = (counts[destinationIndex] || 0) + 1;
-    return counts;
-  }, {});
-
-  return Array.from({ length: Math.ceil(duration / MAX_DAYS_PER_ASSISTANT_REQUEST) }, (_, index) => {
-    const dayOffset = index * MAX_DAYS_PER_ASSISTANT_REQUEST;
-    const segmentDuration = Math.min(MAX_DAYS_PER_ASSISTANT_REQUEST, duration - dayOffset);
-    const segmentDestinationIndices = destinationForDay.slice(dayOffset, dayOffset + segmentDuration);
-    const uniqueDestinationIndices = [...new Set(segmentDestinationIndices)];
-    const segmentDestinations = destinations.length
-      ? uniqueDestinationIndices.map(destinationIndex => destinations[destinationIndex]).filter(Boolean)
-      : [];
-    const segmentDaysByDestination = segmentDestinationIndices.reduce((counts, destinationIndex) => {
-      counts[destinationIndex] = (counts[destinationIndex] || 0) + 1;
-      return counts;
-    }, {});
-    const segmentBudgets = (planRequest.destinationBudgets || [])
-      .map((item) => {
-        const destinationIndex = destinations.findIndex(destination => (
-          (item.countryCode && destination.code === item.countryCode)
-          || destination.name === item.countryName
-        ));
-        if (!uniqueDestinationIndices.includes(destinationIndex)) return null;
-        const ratio = (segmentDaysByDestination[destinationIndex] || 0)
-          / Math.max(1, totalDaysByDestination[destinationIndex] || 0);
-        return {
-          ...item,
-          amount: (Number(item.amount) || 0) * ratio,
-          localAmount: (Number(item.localAmount) || 0) * ratio,
-          amountInBRL: (Number(item.amountInBRL) || 0) * ratio,
-        };
-      })
-      .filter(Boolean);
-    const startDate = addIsoDays(planRequest.startDate, dayOffset);
-
-    return {
-      dayOffset,
-      duration: segmentDuration,
-      request: {
-        ...planRequest,
-        origin: dayOffset === 0
-          ? planRequest.origin
-          : destinations[destinationForDay[dayOffset - 1]]?.name || planRequest.origin,
-        destination: segmentDestinations.map(item => item.name).join(', ') || planRequest.destination,
-        destinations: segmentDestinations,
-        preferredPlaces: segmentDestinations.map(item => item.name).join(', ') || planRequest.preferredPlaces,
-        duration: segmentDuration,
-        startDate,
-        endDate: startDate ? addIsoDays(startDate, segmentDuration - 1) : '',
-        budget: (Number(planRequest.budget) || 0) * (segmentDuration / duration),
-        destinationBudgets: segmentBudgets,
-        notes: [
-          planRequest.notes,
-          `Trecho ${index + 1} de ${Math.ceil(duration / MAX_DAYS_PER_ASSISTANT_REQUEST)} do roteiro completo.`,
-        ].filter(Boolean).join(' '),
-      },
-    };
-  });
-};
-
-const mergeSegmentResults = (results, planRequest) => {
-  const first = results[0];
-  const plan = { ...first.plan };
-  plan.title = `${planRequest.duration} dias em ${planRequest.destination}`;
-  plan.summary = `Roteiro completo de ${planRequest.duration} dias, organizado por regiões e deslocamentos entre os destinos.`;
-  plan.days = results.flatMap(({ plan: segmentPlan, dayOffset }) => (
-    (segmentPlan.days || []).map((day, index) => ({
-      ...day,
-      day: dayOffset + index + 1,
-      date: addIsoDays(planRequest.startDate, dayOffset + index) || day.date,
-    }))
-  ));
-
-  const budgetItems = new Map();
-  results.forEach(({ plan: segmentPlan }) => {
-    (segmentPlan.budget?.items || []).forEach((item) => {
-      const current = budgetItems.get(item.category) || { ...item, amount: 0 };
-      current.amount += Number(item.amount) || 0;
-      if (!current.note && item.note) current.note = item.note;
-      budgetItems.set(item.category, current);
-    });
-  });
-  const items = [...budgetItems.values()].map(item => ({
-    ...item,
-    amount: Math.round(item.amount * 100) / 100,
-  }));
-  plan.budget = {
-    ...plan.budget,
-    items,
-    total: Math.round(items.reduce((sum, item) => sum + item.amount, 0) * 100) / 100,
-    shoppingIncluded: items.some(item => item.category === 'Compras' && item.amount > 0),
-    scopeNote: `Estimativa consolidada para os ${planRequest.duration} dias da viagem.`,
-  };
-  plan.checklist = mergeUnique(
-    results.flatMap(result => result.plan.checklist || []),
-    item => `${item.category}:${item.item}`,
-  );
-  plan.safetyTips = mergeUnique(results.flatMap(result => result.plan.safetyTips || []));
-  plan.practicalTips = mergeUnique(results.flatMap(result => result.plan.practicalTips || []));
-  plan.sources = mergeUnique(
-    results.flatMap(result => result.plan.sources || []),
-    item => item.url || item.label,
-  );
-
-  const liveContexts = results.map(result => result.liveContext).filter(Boolean);
+const validateGeneratedBudget = (plan, planRequest) => {
+  const missing = [];
+  if (getBudgetCategoryAmount(plan, /passag|voo/) <= 0) missing.push('passagens');
+  if (Number(planRequest?.duration) > 1 && getBudgetCategoryAmount(plan, /hosped|hotel/) <= 0) {
+    missing.push('hospedagem');
+  }
+  if (!missing.length) return null;
   return {
-    success: true,
-    plan,
-    liveContext: liveContexts.length ? {
-      ...liveContexts[0],
-      destinations: mergeUnique(liveContexts.flatMap(item => item.destinations || []), item => item.requestedDestination),
-      realPlaces: mergeUnique(liveContexts.flatMap(item => item.realPlaces || []), item => item.placeId || `${item.name}:${item.latitude}:${item.longitude}`),
-      sources: mergeUnique(liveContexts.flatMap(item => item.sources || []), item => item.url || item.label),
-      retrievedAt: liveContexts[liveContexts.length - 1].retrievedAt,
-    } : null,
-    requestId: results.map(result => result.requestId).filter(Boolean).join(','),
+    code: 'AI_INCOMPLETE_BUDGET',
+    error: `A IA não encontrou uma estimativa válida para ${missing.join(' e ')}. Tente novamente para pesquisarmos novas cotações.`,
   };
 };
 
 export const generateTravelPlan = async ({ planRequest, userContext }) => {
-  const segments = buildPlanSegments(planRequest);
-  if (segments.length === 1) {
-    return invokeAssistant({ action: 'generate_plan', planRequest, userContext });
-  }
-
-  const results = [];
-  for (const segment of segments) {
-    const result = await invokeAssistant({
-      action: 'generate_plan',
-      planRequest: segment.request,
-      userContext,
-    });
-    if (!result.success) return result;
-    results.push({ ...result, dayOffset: segment.dayOffset });
-  }
-  return mergeSegmentResults(results, planRequest);
+  return invokeAssistant({
+    action: 'generate_plan',
+    requiredPlannerVersion: ASSISTANT_PLANNER_VERSION,
+    planRequest: {
+      ...planRequest,
+      requiredPlannerVersion: ASSISTANT_PLANNER_VERSION,
+    },
+    userContext,
+  });
 };
 
 // Duas telas podem pedir o mesmo roteiro ao mesmo tempo (retry do usuário, remount).
