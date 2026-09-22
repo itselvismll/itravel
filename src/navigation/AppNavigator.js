@@ -9,13 +9,15 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
+import * as ExpoLinking from 'expo-linking';
 import { COLORS } from '../utils/constants';
+import { routeForUrl } from '../utils/deepLinks';
 import { TAB_BAR_HEIGHT, TAB_BAR_BOTTOM } from '../utils/tabBarLayout';
 import { completeWebOAuthSession, getCurrentUser, supabase } from '../services/supabase';
 import { useUpload } from '../context/UploadContext';
 import { cancelAccountDeletion } from '../services/profileService';
 import { notify } from '../utils/dialogs';
-import { navigationRef } from './navigationRef';
+import { navigationRef, navigateFromOutside } from './navigationRef';
 import GlobalNotificationBanner from '../components/GlobalNotificationBanner';
 import ScreenErrorBoundary from '../components/ScreenErrorBoundary';
 import { OnboardingProvider, useOnboardingFlow } from '../context/OnboardingContext';
@@ -47,6 +49,7 @@ import BlockedUsersScreen from '../screens/profile/BlockedUsersScreen';
 import MessagesScreen from '../screens/messages/MessagesScreen';
 import ConversationScreen from '../screens/messages/ConversationScreen';
 import PassportDetailScreen from '../screens/profile/PassportDetailScreen';
+import TripInviteScreen from '../screens/trip/TripInviteScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -320,6 +323,59 @@ export default function AppNavigator() {
   const [detectedLocation, setDetectedLocation] = useState(null);
   const [locationLoading, setLocationLoading] = useState(false);
 
+  // ── Deep link do convite de viagem ────────────────────────────────────────
+  //
+  // O link chega por duas portas, e as duas precisam ser escutadas: se o app
+  // estava FECHADO, a URL vem em `getInitialURL()`, uma vez; se estava ABERTO,
+  // vem pelo evento 'url'. Escutar só uma delas produz o bug mais confuso deste
+  // fluxo — "o convite funciona quando o app está aberto e não funciona quando
+  // está fechado", ou o contrário.
+  //
+  // A URL vira um DESTINO GUARDADO, e não uma navegação imediata, por dois
+  // motivos que acontecem o tempo todo no mundo real:
+  //
+  //  1. quem recebe o convite frequentemente NÃO está logado — o link é a
+  //     primeira vez que a pessoa ouve falar do app. Navegar agora cairia na
+  //     tela de login e o convite se perderia no caminho; guardado, ele é
+  //     resgatado assim que a sessão existe;
+  //  2. o NavigationContainer pode ainda não estar montado quando a URL chega
+  //     no boot. `navigate` antes disso é silenciosamente descartado.
+  const [pendingRoute, setPendingRoute] = useState(null);
+  const [navReady, setNavReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const receber = (url) => {
+      const rota = routeForUrl(url);
+      // Só o que reconhecemos vira destino. O Expo entrega aqui TODA url que
+      // abre o app — o retorno do OAuth, o `exp://` do desenvolvimento —, e
+      // tratar o desconhecido como erro encheria o log de ruído.
+      if (rota) setPendingRoute(rota);
+    };
+
+    ExpoLinking.getInitialURL().then((url) => { if (!cancelled) receber(url); });
+    const inscricao = ExpoLinking.addEventListener('url', (evento) => receber(evento?.url));
+
+    return () => {
+      cancelled = true;
+      inscricao?.remove?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    // Só navega com a árvore montada E com sessão: a RPC `redeem_trip_invite`
+    // exige `authenticated`, e sem usuário a tela do convite abriria só para
+    // mostrar um erro de permissão.
+    if (!pendingRoute || !navReady || !user) return;
+
+    if (navigateFromOutside(pendingRoute.name, pendingRoute.params)) {
+      // Consome uma vez. Sem isto, voltar da tela do convite re-navegaria para
+      // ela a cada render, e não haveria como sair.
+      setPendingRoute(null);
+    }
+  }, [pendingRoute, navReady, user]);
+
   useEffect(() => {
     const checkUser = async () => {
       try {
@@ -511,7 +567,7 @@ export default function AppNavigator() {
       {/* O provider embrulha o NavigationContainer porque quem renderiza a etapa
           guiada é a GlobeScreen, lá dentro. */}
       <OnboardingProvider value={onboarding}>
-        <NavigationContainer ref={navigationRef}>
+        <NavigationContainer ref={navigationRef} onReady={() => setNavReady(true)}>
           {passwordRecovery ? (
             <Stack.Navigator id="PasswordRecoveryStack" screenOptions={{ headerShown: false }}>
               <Stack.Screen name="ResetPassword">
@@ -552,6 +608,15 @@ export default function AppNavigator() {
               <Stack.Screen
                 name="Connections"
                 component={ConnectionsScreen}
+                options={{ headerShown: false }}
+              />
+              {/* Convidar pessoas, e também a porta de entrada de um link de
+                  convite (`{ token }`). Esta rota estava listada em
+                  notificationRouting.js como destino registrado desde a Fase 2
+                  sem existir de fato — nada conseguia navegar para cá. */}
+              <Stack.Screen
+                name="TripInvite"
+                component={TripInviteScreen}
                 options={{ headerShown: false }}
               />
             </Stack.Navigator>

@@ -618,7 +618,11 @@ test('in-app notification banner is global, queued, and deep-linked', () => {
   const containerEnd = navigator.indexOf('</NavigationContainer>');
   const bannerUsage = navigator.indexOf('<GlobalNotificationBanner');
   assert.ok(containerEnd > 0 && bannerUsage > containerEnd);
-  assert.match(navigator, /<NavigationContainer ref=\{navigationRef\}>/);
+  // O que importa é o container CARREGAR a ref — é por ela que o banner (e, desde
+  // a Fase 2, o deep link do convite) navega de fora da árvore. Outras props no
+  // mesmo elemento são livres: o `onReady` entrou com o deep link, que precisa
+  // esperar a árvore montar antes de navegar.
+  assert.match(navigator, /<NavigationContainer\s+ref=\{navigationRef\}/);
   // Suprimir durante o upload: no nativo o Modal abre em janela própria e cobriria o banner.
   assert.match(navigator, /suppressed=\{visible\}/);
   assert.match(app, /<SafeAreaProvider>/);

@@ -11,10 +11,11 @@
     "check": "node scripts/verify-source.cjs",
     "deploy:web": "node scripts/deploy-web.cjs",
     "typecheck": "tsc --noEmit",
-    "backup:db": "node scripts/backup-tables.cjs",
-    "test": "node --test tests/legal-docs.test.cjs tests/country-code-writes.test.cjs tests/traveler-level-card.test.cjs tests/profile-schema.test.cjs tests/bio.test.cjs tests/travel-requirements.test.cjs tests/realtime-channel.test.cjs tests/source-invariants.test.cjs tests/badge-collision.test.cjs tests/globe-badges.test.cjs tests/globe-zoom-filter.test.cjs tests/country-fill.test.cjs tests/uk-nations.test.cjs tests/country-anchors.test.cjs tests/username.test.cjs tests/country-grid.test.cjs tests/plan-geography.test.cjs tests/plan-route.test.cjs tests/plan-routing.test.cjs tests/plan-isochrone.test.cjs tests/plan-clusters.test.cjs tests/plan-day-focus.test.cjs tests/plan-day-tabs-touch.test.cjs tests/plan-day-measure.test.cjs tests/trip-collaboration.test.cjs tests/trip-permissions.test.cjs tests/trip-itinerary-sync.test.cjs tests/active-plan-resume.test.cjs tests/trip-summary.test.cjs tests/nearby-places.test.cjs tests/globe-satellite-errors.test.cjs tests/instagram.test.cjs tests/instagram-plugin.test.cjs"
+    "test": "node --test tests/legal-docs.test.cjs tests/country-code-writes.test.cjs tests/traveler-level-card.test.cjs tests/profile-schema.test.cjs tests/bio.test.cjs tests/travel-requirements.test.cjs tests/realtime-channel.test.cjs tests/source-invariants.test.cjs tests/badge-collision.test.cjs tests/globe-badges.test.cjs tests/globe-zoom-filter.test.cjs tests/country-fill.test.cjs tests/uk-nations.test.cjs tests/country-anchors.test.cjs tests/username.test.cjs tests/country-grid.test.cjs tests/plan-geography.test.cjs tests/plan-route.test.cjs tests/plan-routing.test.cjs tests/plan-isochrone.test.cjs tests/plan-clusters.test.cjs tests/plan-day-focus.test.cjs tests/plan-day-tabs-touch.test.cjs tests/plan-day-measure.test.cjs tests/trip-collaboration.test.cjs tests/trip-permissions.test.cjs tests/trip-itinerary-sync.test.cjs tests/active-plan-resume.test.cjs tests/trip-summary.test.cjs tests/member-avatar.test.cjs tests/deep-links.test.cjs tests/nearby-places.test.cjs tests/globe-satellite-errors.test.cjs tests/instagram.test.cjs tests/instagram-plugin.test.cjs",
+    "backup:db": "node scripts/backup-tables.cjs"
   },
   "dependencies": {
+    "@expo-google-fonts/inter": "^0.4.2",
     "@expo-google-fonts/poppins": "^0.4.1",
     "@expo/metro-runtime": "~55.0.12",
     "@expo/vector-icons": "^15.0.2",

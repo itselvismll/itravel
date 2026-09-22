@@ -98,7 +98,15 @@ export const parseInviteLink = (url) => {
   // Sem `new URL`: o scheme customizado (`journi://trip-invite/abc`) é parseado de
   // formas diferentes em cada plataforma — no navegador o host some, no Node ele
   // vira o primeiro segmento. Procurar o segmento diretamente vale nas duas.
-  const match = new RegExp(`(?:^|[/?&#]|://)${INVITE_PATH}/([0-9a-fA-F]{32})`).exec(url.trim());
+  // O `(?![0-9a-fA-F])` no fim é o que impede um caminho com 34 caracteres hex
+  // de casar os 32 primeiros e virar um token DIFERENTE do que estava escrito.
+  // Sem ele, uma URL corrompida no meio do caminho não seria recusada: ela
+  // levaria a pessoa à tela do convite com um token inventado, e o erro sairia
+  // como "este convite não é mais válido" — culpando o convite em vez da URL.
+  // A barra do fim continua passando, porque `/` não é hex.
+  const match = new RegExp(
+    `(?:^|[/?&#]|://)${INVITE_PATH}/([0-9a-fA-F]{32})(?![0-9a-fA-F])`
+  ).exec(url.trim());
   if (!match) return null;
 
   return match[1].toLowerCase();

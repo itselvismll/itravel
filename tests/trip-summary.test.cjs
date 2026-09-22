@@ -111,16 +111,31 @@ test('a capa usa expo-image, não o Image do React Native', () => {
   assert.doesNotMatch(cover, /import \{[^}]*\bImage\b[^}]*\} from 'react-native'/);
 });
 
-test('a lista de viajantes já nasce plural, e sem botão de convite', () => {
+test('a lista de viajantes lê uma lista e mostra papel', () => {
   const list = fs.readFileSync(path.join(root, 'src/components/trip/TripTravelers.js'), 'utf8');
 
-  // Ela lê uma LISTA e mostra papel — é o que a Fase 2 vai preencher sem
-  // precisar mexer na tela de novo.
+  // O formato plural veio da Fase 1 e sobreviveu à Fase 2 sem reescrita — era
+  // exatamente esse o plano quando ele nasceu lendo uma lista em vez de um só.
   assert.match(list, /members\.map/);
   assert.match(list, /ROLE_LABEL/);
-  // E não oferece um convite que ainda não existe: nada de botão nem de
-  // callback de convite (o texto "convite pendente" de um membro é outra coisa).
-  assert.doesNotMatch(list, /onInvite|TouchableOpacity|>Convidar</);
+});
+
+test('o convite só aparece para quem pode convidar', () => {
+  // ESTE TESTE SUBSTITUI o da Fase 1, que exigia a AUSÊNCIA de botão de convite
+  // ("ele abriria um fluxo que ainda não existe"). O fluxo passou a existir, e a
+  // invariante que importa mudou de "não existe" para "não aparece para quem não
+  // pode" — que é o que a honestidade de interface pede.
+  const list = fs.readFileSync(path.join(root, 'src/components/trip/TripTravelers.js'), 'utf8');
+
+  // O botão existe, e está atrás da permissão. O `canInvite` vem de
+  // tripPermissions, onde só o dono o recebe.
+  assert.match(list, /abilities\.canInvite && onInvite/);
+
+  // As ações de gente passam pelas RPCs, nunca por update direto na tabela: a
+  // policy de UPDATE de trip_members é só do dono, e um membro que pudesse
+  // escrever a própria linha trocaria o próprio papel para 'owner'.
+  assert.match(list, /setTripMemberRole|removeTripMember/);
+  assert.doesNotMatch(list, /from\('trip_members'\)/);
 });
 
 // ── Viagem com mais de um destino ────────────────────────────────────────────
@@ -321,4 +336,30 @@ test('o código é higienizado antes de virar texto de tela', () => {
   assert.match(texto, /Código: AIPROVIDERSCRIPT-/);
   assert.doesNotMatch(texto, /<script>/);
   assert.doesNotMatch(texto, /\.\./);
+});
+
+test('convite pendente tem como ser aceito, e some o aviso que aponta para o lado errado', () => {
+  // O BECO SEM SAÍDA QUE ISTO TRAVA
+  //
+  // Quem é convidado pela busca entra como `pending`. A RLS deixa essa pessoa
+  // VER a viagem de propósito — é o que permite decidir olhando o roteiro. Sem
+  // um lugar para aceitar, ela ficava em somente-leitura para sempre, e a tela
+  // ainda mandava "peça a um organizador para liberar a edição", que é o
+  // conselho errado: quem precisa agir é ela mesma.
+  const tela = fs.readFileSync(path.join(root, 'src/screens/assistant/AssistantResultScreen.js'), 'utf8');
+
+  // O banner existe, e é o status do participante que o liga.
+  assert.match(tela, /abilities\.status === 'pending'/);
+  assert.match(tela, /Você foi convidado/);
+  // E ele chama a RPC, e não um update direto em trip_members.
+  assert.match(tela, /acceptTripInvite\(planId\)/);
+  assert.doesNotMatch(tela, /from\('trip_members'\)/);
+
+  // Aceitar recarrega a lista: `abilities` sai dela, e é a volta do banco que
+  // faz os controles de edição aparecerem. Uma tela otimista discordaria do
+  // servidor se a escrita falhasse por outro motivo.
+  assert.match(tela, /recarregarMembros\(\);/);
+
+  // Os dois avisos nunca aparecem juntos.
+  assert.match(tela, /readOnly && !pendingInvite/);
 });

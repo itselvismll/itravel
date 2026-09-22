@@ -18,7 +18,9 @@ import { toBrazilianDate } from '../../utils/dateUtils';
 import ShareToJourniModal from '../../components/ShareToJourniModal';
 import TripCoverHeader from '../../components/trip/TripCoverHeader';
 import TripTravelers from '../../components/trip/TripTravelers';
-import { getTripMembers } from '../../services/tripMemberService';
+import { getTripMembers, acceptTripInvite } from '../../services/tripMemberService';
+import { tripAbilities } from '../../utils/tripPermissions';
+import { supabase } from '../../services/supabase';
 import { getTourismImage } from '../../services/tourismImageService';
 import TripShortcutBar from '../../components/trip/TripShortcutBar';
 import PlanDayTabs from '../../components/map/PlanDayTabs';
@@ -278,6 +280,98 @@ export default function AssistantResultScreen({ route, navigation }) {
   }, []);
   const [members, setMembers] = useState([]);
   const [membersLoading, setMembersLoading] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(/** @type {string | null} */ (null));
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase.auth.getUser().then(({ data }) => {
+      if (!cancelled) setCurrentUserId(data?.user?.id || null);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // O QUE ESTA PESSOA PODE FAZER NESTA VIAGEM.
+  //
+  // Enquanto a lista de participantes não chegou, ou quando a viagem ainda não
+  // existe no banco (roteiro recém-gerado, `local-`), não há papel a consultar —
+  // e nesse caso quem está olhando é quem acabou de gerar o roteiro, que edita
+  // tudo. Tratar "ainda não sei" como "não pode" faria a tela abrir travada por
+  // um instante a cada carregamento, que é pior do que o contrário: a RLS recusa
+  // a escrita de um viewer de qualquer jeito.
+  const abilities = useMemo(() => {
+    if (!planId || !currentUserId || !members.length) {
+      return {
+        role: null,
+        status: null,
+        canEdit: true,
+        canEditChecklist: true,
+        canEditBudget: true,
+        canInvite: false,
+        canManageMembers: false,
+        canChangeRole: false,
+      };
+    }
+    return tripAbilities(members, currentUserId);
+  }, [members, currentUserId, planId]);
+
+  // Viewer não edita. A tela ESCONDE os controles em vez de desabilitá-los:
+  // botão apagado ainda convida a tocar e não explica nada, e a explicação de
+  // por que ele está apagado teria de caber num tooltip que o celular não tem.
+  // O aviso de "só visualiza" aparece uma vez, no topo, e diz a mesma coisa uma
+  // vez só.
+  const readOnly = !abilities.canEdit;
+
+  const recarregarMembros = useCallback(() => {
+    if (!planId) return;
+    getTripMembers(planId).then((resultado) => setMembers(resultado.data));
+  }, [planId]);
+
+  // ── Convite pendente ──────────────────────────────────────────────────────
+  //
+  // O BECO SEM SAÍDA QUE ISTO FECHA
+  //
+  // Quem é convidado pela busca (e não pelo link) entra como `pending`. A RLS
+  // deixa essa pessoa VER a viagem de propósito — é o que permite decidir se
+  // aceita olhando o roteiro, que é a informação de que a decisão depende. Mas
+  // sem um lugar para aceitar, ela ficava vendo a viagem em somente-leitura para
+  // sempre, sem nada na tela explicando por quê nem como sair disso.
+  //
+  // Quem entra pelo LINK não passa por aqui: `redeem_trip_invite` já cria a
+  // linha como 'accepted', porque abrir o link É a aceitação.
+  const [accepting, setAccepting] = useState(false);
+  const pendingInvite = abilities.status === 'pending';
+
+  const aceitarConvite = useCallback(async () => {
+    setAccepting(true);
+    const resultado = await acceptTripInvite(planId);
+    setAccepting(false);
+
+    if (!resultado.success) {
+      notify('Não foi possível aceitar', resultado.error || 'Tente de novo em instantes.');
+      return;
+    }
+    // Recarregar é o que faz os controles de edição aparecerem: `abilities` sai
+    // da lista de participantes, e o papel só muda de verdade quando ela volta
+    // do banco. Marcar o estado aqui na mão daria uma tela otimista que discorda
+    // do servidor se a escrita tiver falhado por outro motivo.
+    recarregarMembros();
+  }, [planId, recarregarMembros]);
+
+  // A aba "Ajustar" REESCREVE o roteiro inteiro com a IA — é a ferramenta de
+  // edição mais poderosa da tela, não um chat. Ela sai da barra para quem só
+  // visualiza, em vez de ficar lá e recusar o envio: uma aba que abre e não
+  // deixa fazer nada é pior do que uma aba que não existe.
+  const visibleTabs = useMemo(
+    () => (readOnly ? TABS.filter((tab) => tab.id !== 'chat') : TABS),
+    [readOnly]
+  );
+
+  // Quem estava na aba Ajustar quando o papel mudou (o organizador rebaixou
+  // alguém enquanto a tela estava aberta) não pode ficar preso numa aba que
+  // sumiu da barra.
+  useEffect(() => {
+    if (readOnly && activeTab === 'chat') setActiveTab('itinerary');
+  }, [readOnly, activeTab]);
 
   // O título da capa com TODOS os destinos. `plan.destinationCountry` é um país
   // só: uma viagem Itália + Croácia + Eslováquia se anunciava como "Itália".
@@ -532,20 +626,75 @@ export default function AssistantResultScreen({ route, navigation }) {
           // algumas linhas abaixo.
           onOpenMap={() => navigation.navigate('Main', { screen: 'Map' })}
           // "Editar" é a aba Ajustar, que é onde se pede mudança no roteiro.
-          onEdit={() => setActiveTab('chat')}
+          // Sem `onEdit`, o TripCoverHeader não desenha o botão — é assim que
+          // ele some para quem só visualiza.
+          onEdit={readOnly ? undefined : () => setActiveTab('chat')}
           // Hoje a única ação extra da tela é compartilhar; quando houver outras,
           // os três pontinhos viram menu.
           onMore={() => setShareVisible(true)}
         />
 
         <TripShortcutBar
-          items={TABS}
+          items={visibleTabs}
           activeId={activeTab}
           onSelect={setActiveTab}
           style={styles.shortcutBar}
         />
 
-        {activeTab === 'itinerary' && <TripTravelers members={members} loading={membersLoading} />}
+        {/* Fora de qualquer aba: é o estado da VIAGEM inteira, e a ação que a
+            pessoa precisa tomar não deixa de existir porque ela foi ver o
+            orçamento. Some sozinho assim que a lista volta do banco com o
+            status 'accepted'. */}
+        {pendingInvite && (
+          <View style={styles.inviteBanner}>
+            <View style={styles.inviteBannerIcon}>
+              <Ionicons name="airplane" size={18} color="#A78BFA" />
+            </View>
+            <View style={styles.inviteBannerText}>
+              <Text style={styles.inviteBannerTitle}>Você foi convidado</Text>
+              <Text style={styles.inviteBannerHint}>
+                Aceite para editar o roteiro junto com o resto do grupo.
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={aceitarConvite}
+              disabled={accepting}
+              style={[styles.acceptButton, accepting && styles.acceptButtonBusy]}
+              accessibilityRole="button"
+              accessibilityLabel="Aceitar convite da viagem"
+            >
+              {accepting
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={styles.acceptButtonText}>Aceitar</Text>}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {activeTab === 'itinerary' && (
+          <TripTravelers
+            members={members}
+            loading={membersLoading}
+            tripId={planId}
+            currentUserId={currentUserId}
+            abilities={abilities}
+            onInvite={() => navigation.navigate('TripInvite', { tripId: planId, tripTitle: destination })}
+            onChanged={recarregarMembros}
+          />
+        )}
+
+        {/* Dito uma vez, no topo, e não repetido em cada controle ausente.
+            Fica de fora quando há convite pendente: ali o certo a fazer é
+            aceitar, não "pedir a um organizador" — dois avisos, um deles
+            apontando para o caminho errado, é pior do que um. */}
+        {readOnly && !pendingInvite && activeTab === 'itinerary' ? (
+          <View style={styles.readOnlyNotice}>
+            <Ionicons name="eye-outline" size={16} color="#8B93AD" />
+            <Text style={styles.readOnlyText}>
+              Você está vendo esta viagem como convidado. Peça a um organizador para
+              liberar a edição.
+            </Text>
+          </View>
+        ) : null}
 
         {/* O resumo é da aba ROTEIRO: ele fala de dias, custo total e ritmo. Em
             Checklist ou Dicas ele era um cabeçalho fixo repetindo o que a aba
@@ -703,13 +852,20 @@ export default function AssistantResultScreen({ route, navigation }) {
                               {!!activity.officialUrl && (
                                 <SmallButton icon="ticket-outline" label="Site oficial" onPress={() => openOfficialUrl(activity)} />
                               )}
-                              <SmallButton icon="pencil-outline" label="Editar" onPress={() => startEditing(dayIndex, activityIndex, activity)} />
-                              <SmallButton
-                                icon="refresh-outline"
-                                label={regenerating === key ? 'Trocando...' : 'Trocar com IA'}
-                                loading={regenerating === key}
-                                onPress={() => regenerateActivity(dayIndex, activityIndex)}
-                              />
+                              {/* Editar e trocar com IA escrevem no roteiro: só
+                                  para quem pode editar. "Mapa" e "Site oficial"
+                                  continuam para todos — são leitura. */}
+                              {!readOnly && (
+                                <>
+                                  <SmallButton icon="pencil-outline" label="Editar" onPress={() => startEditing(dayIndex, activityIndex, activity)} />
+                                  <SmallButton
+                                    icon="refresh-outline"
+                                    label={regenerating === key ? 'Trocando...' : 'Trocar com IA'}
+                                    loading={regenerating === key}
+                                    onPress={() => regenerateActivity(dayIndex, activityIndex)}
+                                  />
+                                </>
+                              )}
                             </View>
                             <View style={styles.purchaseNoteBox}>
                               <Ionicons name={activity.officialUrl ? 'ticket-outline' : 'information-circle-outline'} size={14} color="#9DE8E1" />
@@ -763,7 +919,16 @@ export default function AssistantResultScreen({ route, navigation }) {
             <View style={styles.progressHeader}><Text style={styles.panelTitle}>Preparação da viagem</Text><Text style={styles.progressText}>{checklistProgress.done}/{checklistProgress.total}</Text></View>
             <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${checklistProgress.percent}%` }]} /></View>
             {(plan.checklist || []).map((item, index) => (
-              <TouchableOpacity key={`${item.category}-${item.item}`} onPress={() => toggleChecklist(index)} style={styles.checkRow}>
+              // Checklist é estado compartilhado da viagem: marcar um item
+              // escreve para todo mundo. `disabled` e não escondido, porque a
+              // lista PRECISA continuar visível — ela é metade da utilidade da
+              // aba para quem só acompanha.
+              <TouchableOpacity
+                key={`${item.category}-${item.item}`}
+                onPress={() => toggleChecklist(index)}
+                disabled={!abilities.canEditChecklist}
+                style={styles.checkRow}
+              >
                 <Ionicons name={item.done ? 'checkbox' : 'square-outline'} size={22} color={item.done ? '#00D1C1' : '#6F7798'} />
                 <View style={{ flex: 1 }}><Text style={styles.checkCategory}>{item.category}</Text><Text style={[styles.checkItem, item.done && styles.checkDone]}>{item.item}</Text></View>
               </TouchableOpacity>
@@ -848,15 +1013,21 @@ export default function AssistantResultScreen({ route, navigation }) {
           </View>
         )}
 
-        <View style={styles.bottomActions}>
-          <TouchableOpacity style={styles.secondaryButton} onPress={() => navigation.replace('TripPlanner', { initialRequest: request })}>
-            <Ionicons name="options-outline" size={18} color="#A78BFA" /><Text style={styles.secondaryText}>Alterar viagem</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={saving}>
-            {saving ? <ActivityIndicator color="#fff" /> : <Ionicons name="bookmark" size={18} color="#fff" />}
-            <Text style={styles.saveText}>{planId ? 'Atualizar roteiro' : 'Salvar roteiro'}</Text>
-          </TouchableOpacity>
-        </View>
+        {/* Salvar e "Alterar viagem" gravam na viagem dos outros: fora para
+            quem só visualiza. Sem isto, o convidado tocaria em "Atualizar
+            roteiro" e levaria o erro da RLS na cara — que é exatamente o que a
+            honestidade de interface existe para evitar. */}
+        {!readOnly && (
+          <View style={styles.bottomActions}>
+            <TouchableOpacity style={styles.secondaryButton} onPress={() => navigation.replace('TripPlanner', { initialRequest: request })}>
+              <Ionicons name="options-outline" size={18} color="#A78BFA" /><Text style={styles.secondaryText}>Alterar viagem</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={saving}>
+              {saving ? <ActivityIndicator color="#fff" /> : <Ionicons name="bookmark" size={18} color="#fff" />}
+              <Text style={styles.saveText}>{planId ? 'Atualizar roteiro' : 'Salvar roteiro'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         {!!planId && (
           <TouchableOpacity
             style={styles.savedTripsButton}
@@ -907,6 +1078,74 @@ const styles = StyleSheet.create({
   // (com os botões flutuantes) e as abas viraram a TripShortcutBar.
   iconButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#1B2240', alignItems: 'center', justifyContent: 'center' },
   shortcutBar: { marginTop: 20, marginHorizontal: 6 },
+  // Tingido com o roxo da marca, e não com o cinza do aviso de leitura: este é
+  // o único card da tela que PEDE uma ação de quem está olhando.
+  inviteBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 12,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    backgroundColor: 'rgba(108,43,217,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(108,43,217,0.42)',
+  },
+  inviteBannerIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    backgroundColor: 'rgba(108,43,217,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inviteBannerText: { flex: 1, minWidth: 0, gap: 2 },
+  inviteBannerTitle: {
+    color: '#F4F5FB',
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 14,
+  },
+  inviteBannerHint: {
+    color: '#8B93AD',
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  acceptButton: {
+    minWidth: 84,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 20,
+    backgroundColor: '#6C2BD9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  acceptButtonBusy: { opacity: 0.7 },
+  acceptButtonText: {
+    color: '#FFFFFF',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+  },
+  readOnlyNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    backgroundColor: '#1B2545',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  readOnlyText: {
+    flex: 1,
+    color: '#8B93AD',
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12.5,
+    lineHeight: 18,
+  },
   // A faixa de dias é `position: absolute` no mapa (ela flutua sobre o globo);
   // aqui ela é conteúdo da lista, então volta ao fluxo.
   dayIndex: { position: 'relative', paddingHorizontal: 0 },

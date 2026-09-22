@@ -8,6 +8,16 @@ import {
   Poppins_400Regular,
   Poppins_300Light,
 } from '@expo-google-fonts/poppins';
+// Inter entrou na Fase 2, com as telas de colaboração: Poppins nos nomes e
+// títulos, Inter no corpo. O motivo é legibilidade em tamanho pequeno — quase
+// tudo naquelas telas vive entre 12 e 13px (papel do participante, estado do
+// convite, o próprio link), que é exatamente onde a Poppins geométrica fica
+// larga e a Inter foi desenhada para funcionar. Ver theme/tripCollab.js.
+import {
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+} from '@expo-google-fonts/inter';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { UploadProvider } from './src/context/UploadContext';
 import { ActivePlanProvider } from './src/context/ActivePlanContext';
@@ -39,6 +49,9 @@ export default function App() {
     Poppins_500Medium,
     Poppins_400Regular,
     Poppins_300Light,
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
   });
 
   if (!fontsLoaded) {
