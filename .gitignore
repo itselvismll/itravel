@@ -51,3 +51,6 @@ supabase/.temp/
 
 # Worker do maplibre-gl copiado do node_modules pelo postinstall
 public/maplibre/
+
+# Backups de dados: linhas reais de usuarios (PII). Nunca versionar.
+backups/
