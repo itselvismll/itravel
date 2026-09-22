@@ -11,7 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import * as ExpoLinking from 'expo-linking';
 import { COLORS } from '../utils/constants';
-import { routeForUrl } from '../utils/deepLinks';
+import { clearPendingInvite, startupRoute } from '../utils/pendingInvite';
 import { TAB_BAR_HEIGHT, TAB_BAR_BOTTOM } from '../utils/tabBarLayout';
 import { completeWebOAuthSession, getCurrentUser, supabase } from '../services/supabase';
 import { useUpload } from '../context/UploadContext';
@@ -340,17 +340,30 @@ export default function AppNavigator() {
   //     resgatado assim que a sessão existe;
   //  2. o NavigationContainer pode ainda não estar montado quando a URL chega
   //     no boot. `navigate` antes disso é silenciosamente descartado.
+  //
+  // E guardar SÓ em memória não bastou na web, que foi o bug relatado em
+  // produção: lá todo caminho até a sessão sai da página (o Google volta em
+  // `origin`, sem o caminho do convite; a confirmação de e-mail abre outra
+  // aba), e o destino ia junto. Por isso o destino também é escrito no
+  // `localStorage` — ver `utils/pendingInvite`, que é quem decide entre a URL
+  // da vez e o convite guardado.
   const [pendingRoute, setPendingRoute] = useState(null);
   const [navReady, setNavReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
+    // No iOS e no Android não há (nem precisa de) localStorage: o retorno do
+    // OAuth acontece dentro do mesmo processo e o estado em memória sobrevive.
+    const storage = Platform.OS === 'web' && typeof window !== 'undefined'
+      ? window.localStorage
+      : null;
+
     const receber = (url) => {
-      const rota = routeForUrl(url);
       // Só o que reconhecemos vira destino. O Expo entrega aqui TODA url que
       // abre o app — o retorno do OAuth, o `exp://` do desenvolvimento —, e
       // tratar o desconhecido como erro encheria o log de ruído.
+      const rota = startupRoute(url, storage);
       if (rota) setPendingRoute(rota);
     };
 
@@ -371,8 +384,13 @@ export default function AppNavigator() {
 
     if (navigateFromOutside(pendingRoute.name, pendingRoute.params)) {
       // Consome uma vez. Sem isto, voltar da tela do convite re-navegaria para
-      // ela a cada render, e não haveria como sair.
+      // ela a cada render, e não haveria como sair. E o que foi guardado para
+      // atravessar o login sai junto: senão a tela do convite reabriria a cada
+      // abertura do app até o registro vencer, com a pessoa já na viagem.
       setPendingRoute(null);
+      clearPendingInvite(
+        Platform.OS === 'web' && typeof window !== 'undefined' ? window.localStorage : null
+      );
     }
   }, [pendingRoute, navReady, user]);
 
