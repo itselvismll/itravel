@@ -36,6 +36,13 @@ export default function NotificationsScreen({ navigation }) {
     const user = await getCurrentUser();
     if (!user) { setLoading(false); return; }
 
+    // `target_id` é o destino genérico, e o ÚNICO caminho até a viagem: os
+    // triggers de colaboração gravam o `trip_id` ali (`notifications` não tem
+    // coluna `trip_id`). Sem pedir essa coluna, `getNotificationDestination`
+    // devolve null para trip_invite/trip_joined/trip_edit e a notificação vira
+    // um item que aparece na lista e não responde ao toque — foi assim que
+    // chegou à produção. Nada de comentário DENTRO do select: o texto vai
+    // inteiro para o PostgREST. Ver tests/notification-routing.test.cjs.
     const { data, error: loadError } = await supabase
       .from('notifications')
       .select(`
@@ -48,6 +55,7 @@ export default function NotificationsScreen({ navigation }) {
         photo_id,
         conversation_id,
         passport_share_id,
+        target_id,
         preview,
         actor:actor_id(id, username, display_name, avatar_url)
       `)
