@@ -15,7 +15,7 @@ const TRIP_SELECT = `
     id, day_number, date, theme, updated_at, last_edited_by,
     trip_activities (
       id, position, period, title, description, location, duration,
-      updated_at, last_edited_by,
+      updated_at, last_edited_by, last_edited_at, created_by,
       estimated_cost, map_query, official_url, purchase_note, indoor,
       latitude, longitude, coordinate_source, approximate_coordinate, category,
       rating, review_count, opening_hours, verification_source, place_id, extra

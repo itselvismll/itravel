@@ -79,6 +79,11 @@ const activityFromRow = (row, index) => {
     id: row?.id ?? undefined,
     updatedAt: row?.updated_at ?? undefined,
     lastEditedBy: row?.last_edited_by ?? undefined,
+    // A autoria da tag "editado por X" (utils/activityAttribution). Só leitura:
+    // quem escreve as três colunas é o trigger do banco, e o sync ignora o que
+    // voltar delas no payload.
+    lastEditedAt: row?.last_edited_at ?? undefined,
+    createdBy: row?.created_by ?? undefined,
   };
 };
 

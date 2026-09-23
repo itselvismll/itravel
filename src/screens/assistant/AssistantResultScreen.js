@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Linking,
+  Platform,
   ScrollView,
   Share,
   StyleSheet,
@@ -11,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { adjustTravelPlan, regeneratePlanActivity } from '../../services/assistantService';
 import { getTripPlan, saveTripPlan } from '../../services/tripPlanService';
 import { notify } from '../../utils/dialogs';
@@ -23,9 +26,13 @@ import { tripAbilities } from '../../utils/tripPermissions';
 import { supabase } from '../../services/supabase';
 import { getTourismImage } from '../../services/tourismImageService';
 import TripShortcutBar from '../../components/trip/TripShortcutBar';
+import ActivityEditedTag from '../../components/trip/ActivityEditedTag';
+import { activityEditTag } from '../../utils/activityAttribution';
+import { trip, shadow } from '../../theme/tripCollab';
 import PlanDayTabs from '../../components/map/PlanDayTabs';
 import {
   activeDayFromScroll,
+  backToTopThreshold,
   buildDayInfo,
   planDayNumber,
   scrollTargetForDay,
@@ -263,12 +270,46 @@ export default function AssistantResultScreen({ route, navigation }) {
     scrollRef.current?.scrollTo?.({ y: target, animated: true });
   }, [measureDay, currentOffsets]);
 
+  // ── Voltar ao topo ────────────────────────────────────────────────────────
+  //
+  // Um roteiro de 20+ dias é uma rolagem longa, e a pílula de dias fica lá em
+  // cima, no fluxo da lista (não é sticky) — de onde o botão pode ficar no canto
+  // sem disputar espaço com ela.
+  //
+  // `showBackToTop` só muda quando a rolagem CRUZA o limiar, nunca a cada
+  // evento: `onScroll` dispara a cada quadro, e um setState por quadro
+  // re-renderizaria a tela inteira de 21 dias enquanto a pessoa rola.
+  const insets = useSafeAreaInsets();
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const backToTopShownRef = useRef(false);
+  const backToTopOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(backToTopOpacity, {
+      toValue: showBackToTop ? 1 : 0,
+      duration: 220,
+      // O driver nativo não existe no react-native-web; lá ele só avisaria.
+      useNativeDriver: Platform.OS !== 'web',
+    }).start();
+  }, [showBackToTop, backToTopOpacity]);
+
   const handleScroll = useCallback((event) => {
     scrollYRef.current = event.nativeEvent.contentOffset.y;
 
-    const day = activeDayFromScroll(currentOffsets(), scrollYRef.current);
+    const offsets = currentOffsets();
+    const day = activeDayFromScroll(offsets, scrollYRef.current);
     if (day !== null) dispatchFocus({ type: 'scrolled', day, now: Date.now() });
-  }, [currentOffsets]);
+
+    const passou = scrollYRef.current > backToTopThreshold(offsets, dayList);
+    if (passou !== backToTopShownRef.current) {
+      backToTopShownRef.current = passou;
+      setShowBackToTop(passou);
+    }
+  }, [currentOffsets, dayList]);
+
+  const scrollToTop = useCallback(() => {
+    scrollRef.current?.scrollTo?.({ y: 0, animated: true });
+  }, []);
 
   // O dedo na lista tem prioridade sobre a trava: quem rola a tela está lendo
   // outro dia, e o destaque precisa acompanhar na hora em vez de esperar o
@@ -512,16 +553,40 @@ export default function AssistantResultScreen({ route, navigation }) {
     });
   };
 
-  const handleSave = async () => {
+  /**
+   * @param {any} [planToSave] o roteiro a gravar. Vem explícito do "Aplicar" da
+   *   parada, porque ali o `plan` do estado ainda é o de antes da edição.
+   * @param {{ quiet?: boolean }} [options] `quiet`: sem o alerta de sucesso — no
+   *   "Aplicar", a parada atualizada (e a tag) já é a resposta. Erro e conflito
+   *   continuam sendo avisados.
+   * @returns {Promise<boolean>} se gravou
+   */
+  const handleSave = async (planToSave = plan, { quiet = false } = {}) => {
     setSaving(true);
-    const result = await saveTripPlan({ planId, request, plan });
+    const result = await saveTripPlan({ planId, request, plan: planToSave });
     setSaving(false);
     if (!result.success) {
       notify('Erro ao salvar', result.error || 'Tente novamente.');
-      return;
+      return false;
     }
     setPlanId(result.data.id);
-    notify('Roteiro salvo', result.warning || 'Você encontra esta viagem no seu perfil.');
+    if (!quiet || result.warning) {
+      notify('Roteiro salvo', result.warning || 'Você encontra esta viagem no seu perfil.');
+    }
+
+    // RELER DEPOIS DE SALVAR. A cópia que está na tela tem os `updatedAt` de
+    // ANTES do salvamento, e parada nova ainda não tem `id`. Sem reler, o
+    // segundo salvamento da mesma parada esbarrava na guarda de conflito contra
+    // a PRÓPRIA edição anterior ("alterada por outro participante"), e parada
+    // nova era apagada e reinserida a cada save. De quebra, é o que faz a tag
+    // "editado por" aparecer logo depois de salvar.
+    if (!String(result.data.id).startsWith('local-')) {
+      const atualizada = await getTripPlan(result.data.id);
+      if (atualizada.success && atualizada.data?.plan_data?.days) {
+        setPlan(atualizada.data.plan_data);
+      }
+    }
+    return true;
   };
 
   const toggleChecklist = (index) => {
@@ -582,11 +647,22 @@ export default function AssistantResultScreen({ route, navigation }) {
     setEditing({ dayIndex, activityIndex, draft: { ...activity } });
   };
 
-  const saveActivityEdit = () => {
+  // "APLICAR" GRAVA. Antes ele só mudava a tela, e gravar dependia de descer até
+  // o fim do roteiro e tocar em "Atualizar roteiro" — num roteiro de 21 dias,
+  // ninguém fazia isso: a edição sumia ao sair da tela, e sem gravação não havia
+  // tag "editado por" nem aviso para os outros. Foi o relato de 23/09.
+  //
+  // Sem checar aqui se algo mudou: quem decide isso é o banco
+  // (trip_activity_content_changed), e "Aplicar" sem mudança não vira edição,
+  // nem tag, nem aviso. Duas regras de "mudou?" discordariam um dia.
+  //
+  // Viagem ainda não salva (recém-gerada, ou `local-`) continua como antes: a
+  // edição fica na tela até o "Salvar roteiro", que é quem cria a viagem.
+  const saveActivityEdit = async () => {
     if (!editing) return;
-    setPlan(current => ({
-      ...current,
-      days: current.days.map((day, dayIndex) => (
+    const nextPlan = {
+      ...plan,
+      days: plan.days.map((day, dayIndex) => (
         dayIndex !== editing.dayIndex ? day : {
           ...day,
           activities: day.activities.map((activity, activityIndex) => (
@@ -594,8 +670,19 @@ export default function AssistantResultScreen({ route, navigation }) {
           )),
         }
       )),
-    }));
-    setEditing(null);
+    };
+
+    const persiste = Boolean(planId) && !String(planId).startsWith('local-');
+    if (!persiste) {
+      setPlan(nextPlan);
+      setEditing(null);
+      return;
+    }
+
+    // O editor fica aberto até gravar: se falhar, o texto digitado continua ali
+    // para tentar de novo, em vez de sumir junto com o erro.
+    const gravou = await handleSave(nextPlan, { quiet: true });
+    if (gravou) setEditing(null);
   };
 
   const handleAdjustPlan = async (suggestion) => {
@@ -877,7 +964,7 @@ export default function AssistantResultScreen({ route, navigation }) {
                             <TextInput value={editing.draft.description} onChangeText={description => setEditing(current => ({ ...current, draft: { ...current.draft, description } }))} style={[styles.editInput, styles.editMultiline]} multiline placeholderTextColor="#6F7798" />
                             <View style={styles.actionRow}>
                               <SmallButton icon="close" label="Cancelar" onPress={() => setEditing(null)} />
-                              <SmallButton icon="checkmark" label="Aplicar" primary onPress={saveActivityEdit} />
+                              <SmallButton icon="checkmark" label={saving ? 'Salvando...' : 'Aplicar'} primary loading={saving} onPress={saveActivityEdit} />
                             </View>
                           </View>
                         ) : (
@@ -885,6 +972,10 @@ export default function AssistantResultScreen({ route, navigation }) {
                             <Text style={styles.period}>{activity.period} · {activity.duration}</Text>
                             <Text style={styles.activityTitle}>{activity.title}</Text>
                             <Text style={styles.activityDescription}>{activity.description}</Text>
+                            {/* Parada editada depois de criada, em viagem
+                                compartilhada — a regra está em
+                                utils/activityAttribution. */}
+                            <ActivityEditedTag tag={activityEditTag(activity, members, currentUserId)} />
                             <View style={styles.metaRow}>
                               <View style={styles.locationRow}>
                                 <Ionicons name="location-outline" size={12} color="#7A7E8C" />
@@ -1086,7 +1177,7 @@ export default function AssistantResultScreen({ route, navigation }) {
             <TouchableOpacity style={styles.secondaryButton} onPress={() => navigation.replace('TripPlanner', { initialRequest: request })}>
               <Ionicons name="options-outline" size={18} color="#A78BFA" /><Text style={styles.secondaryText}>Alterar viagem</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={saving}>
+            <TouchableOpacity style={styles.saveButton} onPress={() => handleSave()} disabled={saving}>
               {saving ? <ActivityIndicator color="#fff" /> : <Ionicons name="bookmark" size={18} color="#fff" />}
               <Text style={styles.saveText}>{planId ? 'Atualizar roteiro' : 'Salvar roteiro'}</Text>
             </TouchableOpacity>
@@ -1104,6 +1195,33 @@ export default function AssistantResultScreen({ route, navigation }) {
         )}
         <Text style={styles.disclaimer}>Valores são estimativas. Confirme preços, horários, documentos e alertas em fontes oficiais.</Text>
       </ScrollView>
+      {/* Fora do ScrollView, para ficar parado no canto enquanto a lista rola.
+          Só na aba Roteiro: é a única longa o bastante para precisar dele. */}
+      {activeTab === 'itinerary' ? (
+        <Animated.View
+          style={[
+            styles.backToTop,
+            {
+              bottom: insets.bottom + 20,
+              right: insets.right + 18,
+              opacity: backToTopOpacity,
+              // Invisível não pode continuar pegando toque: com opacidade 0 ele
+              // ainda estaria ali, cobrindo o canto do último cartão. No estilo e
+              // não como prop: o react-native-web descontinuou a prop.
+              pointerEvents: showBackToTop ? 'auto' : 'none',
+            },
+          ]}
+        >
+          <TouchableOpacity
+            onPress={scrollToTop}
+            style={styles.backToTopButton}
+            accessibilityRole="button"
+            accessibilityLabel="Voltar ao topo do roteiro"
+          >
+            <Ionicons name="arrow-up" size={20} color={trip.ink} />
+          </TouchableOpacity>
+        </Animated.View>
+      ) : null}
       <ShareToJourniModal
         visible={shareVisible}
         onClose={() => setShareVisible(false)}
@@ -1324,4 +1442,21 @@ const styles = StyleSheet.create({
   savedTripsButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 13, padding: 13, backgroundColor: 'rgba(53,211,200,0.08)', borderWidth: 1, borderColor: 'rgba(53,211,200,0.25)' },
   savedTripsText: { color: '#9DE8E1', fontSize: 12, fontWeight: '800' },
   disclaimer: { color: '#636B89', fontSize: 9, lineHeight: 14, textAlign: 'center' },
+  backToTop: { position: 'absolute' },
+  backToTopButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: trip.card2,
+    borderWidth: 1,
+    borderColor: trip.line2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadow.card,
+    // A sombra do card (18px, 55%) é para um cartão grande; num círculo de 46px
+    // ela vira uma mancha. Mesma cor e direção, menos alcance.
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+  },
 });

@@ -276,3 +276,25 @@ export const scrollTargetForDay = (offsets, day, { margin = 12 } = {}) => {
   if (!Number.isFinite(top)) return null;
   return Math.max(0, Number(top) - margin);
 };
+
+/**
+ * A partir de que rolagem o botão "voltar ao topo" aparece no roteiro.
+ *
+ * "Dois dias rolados": o botão surge quando o TERCEIRO dia chega ao topo da tela.
+ * Antes disso o começo do roteiro ainda está a um gesto de distância, e um botão
+ * flutuante ali seria só mais uma coisa por cima do conteúdo. Com um ou dois dias,
+ * vale o último que existir; sem medida nenhuma (primeiro quadro, ou a medida
+ * nativa que não respondeu), uma altura fixa que equivale a mais ou menos isso.
+ *
+ * @param {Record<string|number, number>} offsets posição de cada dia no conteúdo
+ * @param {number[]} days os dias do roteiro, em ordem
+ * @param {{ daysScrolled?: number, fallback?: number }} [options]
+ * @returns {number} a rolagem (em px de conteúdo) a partir da qual o botão aparece
+ */
+export const backToTopThreshold = (offsets, days, { daysScrolled = 2, fallback = 1400 } = {}) => {
+  const map = offsets ?? {};
+  const lista = Array.isArray(days) ? days : [];
+  const alvo = lista[Math.min(daysScrolled, lista.length - 1)];
+  const top = alvo === undefined ? undefined : (map[alvo] ?? map[String(alvo)]);
+  return Number.isFinite(top) && Number(top) > 0 ? Number(top) : fallback;
+};
