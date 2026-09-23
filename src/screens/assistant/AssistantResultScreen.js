@@ -23,6 +23,7 @@ import TripCoverHeader from '../../components/trip/TripCoverHeader';
 import TripTravelers from '../../components/trip/TripTravelers';
 import { getTripMembers, acceptTripInvite } from '../../services/tripMemberService';
 import { tripAbilities } from '../../utils/tripPermissions';
+import { TRIP_SECTION } from '../../utils/notificationRouting';
 import { supabase } from '../../services/supabase';
 import { getTourismImage } from '../../services/tourismImageService';
 import TripShortcutBar from '../../components/trip/TripShortcutBar';
@@ -92,7 +93,11 @@ export default function AssistantResultScreen({ route, navigation }) {
   const [tripLoading, setTripLoading] = useState(false);
   const [tripError, setTripError] = useState(/** @type {string | null} */ (null));
   const userContext = route.params?.userContext || {};
-  const [activeTab, setActiveTab] = useState('itinerary');
+  // Quem chega por um aviso de tarefa já abre na aba certa, em vez de ver o
+  // roteiro por um quadro e a tela pular sozinha depois.
+  const [activeTab, setActiveTab] = useState(
+    route.params?.section === TRIP_SECTION.groupTasks ? 'checklist' : 'itinerary'
+  );
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState('');
   const [editing, setEditing] = useState(null);
@@ -427,6 +432,52 @@ export default function AssistantResultScreen({ route, navigation }) {
     setTasks((atual) => atual.map((t) => (t.id === taskId ? resultado.data : t)));
     return true;
   }, []);
+
+  // ── Chegar no bloco de tarefas vindo de uma notificação ───────────────────
+  //
+  // `route.params.section` diz a SEÇÃO, e é esta tela que decide que aba isso
+  // é (ver TRIP_SECTION em utils/notificationRouting).
+  //
+  // Por que não basta trocar a aba: a aba Checklist começa depois da capa e da
+  // barra de abas, e numa tela já rolada (a pessoa estava lendo o roteiro) o
+  // bloco pode nascer fora do campo de visão. Então a rolagem é um PEDIDO que
+  // fica pendente até o bloco dizer onde ficou — o `onLayout` só dispara depois
+  // de a aba Checklist ter sido desenhada, e antes disso não existe posição
+  // nenhuma para onde rolar.
+  const tasksTopRef = useRef(/** @type {number | null} */ (null));
+  const [scrollToTasks, setScrollToTasks] = useState(false);
+
+  const irParaTarefas = useCallback(() => {
+    setActiveTab('checklist');
+    // Zera a medida antiga: a posição do bloco na aba de agora não é a mesma
+    // que ele tinha da última vez, e rolar para uma medida velha erra feio.
+    tasksTopRef.current = null;
+    setScrollToTasks(true);
+  }, []);
+
+  const section = route.params?.section;
+  useEffect(() => {
+    if (section === TRIP_SECTION.groupTasks) irParaTarefas();
+  }, [section, irParaTarefas]);
+
+  /**
+   * O bloco terminou o layout e disse onde ficou. Se havia um pedido de
+   * rolagem, é agora.
+   *
+   * O `y` do `onLayout` é relativo ao contentContainer do ScrollView — que é a
+   * mesma régua do `scrollTo`, porque o bloco é filho direto dele.
+   */
+  const aoMedirTarefas = useCallback((event) => {
+    const y = event?.nativeEvent?.layout?.y;
+    if (!Number.isFinite(y)) return;
+    tasksTopRef.current = y;
+
+    if (!scrollToTasks) return;
+    setScrollToTasks(false);
+    // A mesma folga do roteiro (scrollTargetForDay): encostado no topo, o bloco
+    // fica colado na barra de abas e parece cortado.
+    scrollRef.current?.scrollTo?.({ y: Math.max(0, y - 12), animated: true });
+  }, [scrollToTasks]);
 
   const excluirTarefa = useCallback(async (taskId) => {
     const tarefa = tasks.find((t) => t.id === taskId);
@@ -1141,6 +1192,30 @@ export default function AssistantResultScreen({ route, navigation }) {
           </View>
         )}
 
+        {/* AS TAREFAS DO GRUPO VÊM PRIMEIRO. As duas listas respondem "o que
+            falta antes de viajar?", e a de cima é a que tem PRAZO e DONO: ela
+            pede uma ação de alguém em particular, enquanto a checklist da
+            viagem é a lembrança de sempre, igual para todo mundo. Quem abre
+            esta aba por causa de um aviso de tarefa também cai direto nela.
+
+            Painel próprio, e não dentro do de baixo, porque o bloco tem card
+            próprio — e some em viagem que ainda não existe no banco, onde não
+            há tarefa possível. */}
+        {activeTab === 'checklist' && planId && !String(planId).startsWith('local-') && (
+          <View onLayout={aoMedirTarefas}>
+            <TripTasksPanel
+              tasks={tasks}
+              members={members}
+              abilities={abilities}
+              currentUserId={currentUserId}
+              loading={tasksLoading}
+              onCreate={criarTarefa}
+              onToggle={alternarTarefa}
+              onDelete={excluirTarefa}
+            />
+          </View>
+        )}
+
         {activeTab === 'checklist' && (
           <View style={styles.panel}>
             <View style={styles.progressHeader}><Text style={styles.panelTitle}>Preparação da viagem</Text><Text style={styles.progressText}>{checklistProgress.done}/{checklistProgress.total}</Text></View>
@@ -1161,24 +1236,6 @@ export default function AssistantResultScreen({ route, navigation }) {
               </TouchableOpacity>
             ))}
           </View>
-        )}
-
-        {/* As tarefas do grupo ficam ABAIXO da checklist, no mesmo lugar e na
-            mesma aba: as duas respondem "o que falta antes de viajar?", e a
-            diferença é só que a de cima é da viagem e a de baixo tem dono.
-            Fora do painel acima porque o bloco tem card próprio — e some em
-            viagem que ainda não existe no banco, onde não há tarefa possível. */}
-        {activeTab === 'checklist' && planId && !String(planId).startsWith('local-') && (
-          <TripTasksPanel
-            tasks={tasks}
-            members={members}
-            abilities={abilities}
-            currentUserId={currentUserId}
-            loading={tasksLoading}
-            onCreate={criarTarefa}
-            onToggle={alternarTarefa}
-            onDelete={excluirTarefa}
-          />
         )}
 
         {activeTab === 'tips' && (

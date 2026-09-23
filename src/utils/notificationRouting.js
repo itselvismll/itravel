@@ -18,6 +18,23 @@ export const REGISTERED_ROUTES = Object.freeze([
 
 export const isRouteRegistered = routeName => REGISTERED_ROUTES.includes(routeName);
 
+/**
+ * As seções de dentro da tela da viagem que uma notificação sabe apontar.
+ *
+ * O nome é da SEÇÃO, não da aba. Quem manda o parâmetro sabe onde quer chegar
+ * ("o bloco das tarefas do grupo"); qual aba desenha aquilo é decisão da tela,
+ * em `AssistantResultScreen`. A diferença importa porque um aviso já enviado
+ * carrega este valor no banco para sempre: se o bloco mudar de aba amanhã, a
+ * tela passa a resolver diferente e os avisos antigos continuam certos.
+ *
+ * Constante, e não a string solta nos dois arquivos, porque um erro de digitação
+ * aqui não quebra nada visivelmente — a tela só abriria na aba de sempre, e
+ * ninguém ligaria as duas coisas.
+ */
+export const TRIP_SECTION = Object.freeze({
+  groupTasks: 'group-tasks',
+});
+
 const BADGE = {
   message: { icon: 'chatbubble', color: '#FF9A00' },
   follow: { icon: 'checkmark', color: '#00D1C1' },
@@ -108,13 +125,26 @@ export const getRoute = notification => {
     // viagem (RLS `is_trip_member` não exige 'accepted'), então a tela abre.
     case 'trip_invite':
     case 'trip_joined':
-    case 'trip_edit':
-    // As de tarefa levam à viagem também: a tarefa mora no bloco da aba
-    // Checklist, e não tem tela própria para onde apontar.
+    case 'trip_edit': {
+      const tripId = notification?.trip_id || notification?.target_id;
+      return tripId ? { name: 'AssistantResult', params: { planId: tripId } } : null;
+    }
+
+    // AS DE TAREFA ABREM A MESMA TELA, EM OUTRA ABA. A tarefa não tem tela
+    // própria: ela mora no bloco "Tarefas do grupo", dentro da aba Checklist.
+    // Sem `section`, tocar no aviso caía no roteiro e a pessoa tinha de achar
+    // sozinha do que o aviso estava falando — que é o mesmo que não levar a
+    // lugar nenhum.
+    //
+    // `section` e não `tab`: quem manda descreve ONDE quer chegar, e a tela
+    // decide que aba isso é. Se o bloco um dia mudar de aba, muda a tela, e
+    // nenhum aviso já enviado passa a apontar para o lugar errado.
     case 'trip_task_created':
     case 'trip_task_done': {
       const tripId = notification?.trip_id || notification?.target_id;
-      return tripId ? { name: 'AssistantResult', params: { planId: tripId } } : null;
+      return tripId
+        ? { name: 'AssistantResult', params: { planId: tripId, section: TRIP_SECTION.groupTasks } }
+        : null;
     }
 
     case 'follow':

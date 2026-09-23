@@ -253,11 +253,80 @@ test('o app sabe o título e o destino dos dois avisos', () => {
   assert.equal(getTitle({ type: 'trip_task_created' }, 'Elvis'), 'Elvis criou uma tarefa');
   assert.equal(getTitle({ type: 'trip_task_done' }, 'Vero'), 'Vero concluiu uma tarefa');
 
-  // `target_id` é o trip_id: tocar no aviso abre a viagem, que é onde a tarefa
-  // está — ela não tem tela própria.
-  const rota = getRoute({ type: 'trip_task_done', target_id: 'trip-1' });
-  assert.deepEqual(rota, { name: 'AssistantResult', params: { planId: 'trip-1' } });
   assert.notEqual(getBadge('trip_task_done').icon, getBadge('trip_task_created').icon);
+});
+
+test('o aviso de tarefa abre a viagem NO BLOCO DAS TAREFAS, não no roteiro', () => {
+  // O BUG QUE ISTO FECHA: as cinco notificações de viagem caíam na mesma rota,
+  // sem seção, e o aviso de tarefa abria o roteiro — a pessoa tinha de achar
+  // sozinha do que ele estava falando.
+  const { getRoute, TRIP_SECTION } = loadEsm('src/utils/notificationRouting.js');
+
+  for (const tipo of ['trip_task_created', 'trip_task_done']) {
+    assert.deepEqual(
+      getRoute({ type: tipo, target_id: 'trip-1' }),
+      { name: 'AssistantResult', params: { planId: 'trip-1', section: TRIP_SECTION.groupTasks } },
+      `${tipo} não aponta para o bloco das tarefas`
+    );
+  }
+});
+
+test('as de roteiro continuam indo para o roteiro, sem seção', () => {
+  const { getRoute } = loadEsm('src/utils/notificationRouting.js');
+
+  for (const tipo of ['trip_invite', 'trip_joined', 'trip_edit']) {
+    assert.deepEqual(
+      getRoute({ type: tipo, target_id: 'trip-1' }),
+      { name: 'AssistantResult', params: { planId: 'trip-1' } },
+      `${tipo} mudou de destino sem querer`
+    );
+  }
+});
+
+test('sem trip_id não há para onde ir, e o toque não leva a lugar nenhum', () => {
+  const { getRoute } = loadEsm('src/utils/notificationRouting.js');
+  assert.equal(getRoute({ type: 'trip_task_done' }), null);
+});
+
+test('a tela resolve a seção que o aviso manda', () => {
+  // As duas pontas precisam falar o mesmo nome, e um erro de digitação aqui não
+  // quebraria nada visivelmente: a tela só abriria na aba de sempre.
+  const tela = fs.readFileSync(path.join(root, 'src/screens/assistant/AssistantResultScreen.js'), 'utf8');
+  assert.match(tela, /import \{ TRIP_SECTION \} from '\.\.\/\.\.\/utils\/notificationRouting'/);
+  assert.match(
+    tela,
+    /section === TRIP_SECTION\.groupTasks \? 'checklist' : 'itinerary'/,
+    'a tela não abre direto na aba certa'
+  );
+  assert.match(
+    tela,
+    /if \(section === TRIP_SECTION\.groupTasks\) irParaTarefas\(\)/,
+    'a tela não reage ao parâmetro quando ela já estava aberta'
+  );
+  // A string solta não pode aparecer: é a constante que amarra as duas pontas.
+  assert.ok(!/'group-tasks'/.test(tela), 'a tela repete a string em vez de usar TRIP_SECTION');
+});
+
+// ---------------------------------------------------------------------------
+// A ORDEM DOS BLOCOS NA ABA
+// ---------------------------------------------------------------------------
+
+test('as tarefas do grupo vêm ANTES da checklist da viagem', () => {
+  // Decisão de produto, e do tipo que se desfaz sozinha: os dois blocos são
+  // irmãos no mesmo JSX, e mexer num deles troca a ordem sem que nada quebre.
+  const tela = fs.readFileSync(path.join(root, 'src/screens/assistant/AssistantResultScreen.js'), 'utf8');
+  const tarefas = tela.indexOf('<TripTasksPanel');
+  const checklist = tela.indexOf('Preparação da viagem');
+
+  assert.ok(tarefas > 0 && checklist > 0, 'um dos dois blocos sumiu da tela');
+  assert.ok(tarefas < checklist, 'a checklist voltou para cima das tarefas do grupo');
+});
+
+test('o bloco reporta onde ficou, senão não há para onde rolar', () => {
+  // A rolagem do aviso depende deste `onLayout`: é ele que diz a posição do
+  // bloco depois de a aba Checklist ser desenhada.
+  const tela = fs.readFileSync(path.join(root, 'src/screens/assistant/AssistantResultScreen.js'), 'utf8');
+  assert.match(tela, /<View onLayout=\{aoMedirTarefas\}>\s*<TripTasksPanel/);
 });
 
 // ---------------------------------------------------------------------------

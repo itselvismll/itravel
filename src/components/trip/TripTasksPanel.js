@@ -266,7 +266,9 @@ export default function TripTasksPanel({
 
 const styles = StyleSheet.create({
   panel: {
-    marginTop: 16,
+    // Sem `marginTop`: o espaçamento entre os painéis da tela é o `gap` do
+    // contentContainer do ScrollView. Uma margem aqui se somava a ele, e o
+    // bloco ficava mais afastado do vizinho do que qualquer outro painel.
     padding: 16,
     borderRadius: 18,
     backgroundColor: trip.card,
