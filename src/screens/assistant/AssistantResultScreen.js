@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { adjustTravelPlan, regeneratePlanActivity } from '../../services/assistantService';
-import { saveTripPlan } from '../../services/tripPlanService';
+import { getTripPlan, saveTripPlan } from '../../services/tripPlanService';
 import { notify } from '../../utils/dialogs';
 import { toBrazilianDate } from '../../utils/dateUtils';
 import ShareToJourniModal from '../../components/ShareToJourniModal';
@@ -69,9 +69,14 @@ const formatMoney = (value, currency = 'BRL') => {
 };
 
 export default function AssistantResultScreen({ route, navigation }) {
-  const request = route.params?.request || route.params?.request_data || {};
+  // `request` e `plan` começam com o que a LISTA passou — e a lista passa tudo.
+  // Quem chega pelo convite ou pela notificação traz só o id, e para esses dois
+  // a viagem é BUSCADA (ver o efeito "viagem aberta só pelo id" mais abaixo).
+  const [request, setRequest] = useState(route.params?.request || route.params?.request_data || {});
   const [plan, setPlan] = useState(route.params?.plan || route.params?.plan_data || {});
   const [planId, setPlanId] = useState(route.params?.planId || route.params?.id || null);
+  const [tripLoading, setTripLoading] = useState(false);
+  const [tripError, setTripError] = useState(/** @type {string | null} */ (null));
   const userContext = route.params?.userContext || {};
   const [activeTab, setActiveTab] = useState('itinerary');
   const [saving, setSaving] = useState(false);
@@ -407,6 +412,40 @@ export default function AssistantResultScreen({ route, navigation }) {
     return () => { cancelled = true; };
   }, [coverTerm]);
 
+  // ── Viagem aberta só pelo id ──────────────────────────────────────────────
+  //
+  // O convite (`TripInviteScreen` faz `replace('AssistantResult', { planId })`)
+  // e a notificação abrem esta tela sem roteiro nenhum nos params. Antes disto,
+  // a tela mostrava o que tinha: nada — sem capa, sem nome, "0 dias" —, o que
+  // parecia falta de permissão e não era. Quem entrou pelo convite é membro
+  // `accepted`, e a RLS já lhe dava leitura; ninguém tinha buscado os dados.
+  //
+  // Roda só quando falta roteiro: vindo da lista, `plan.days` já está aqui e
+  // uma busca a mais só faria a viagem piscar.
+  const temRoteiro = Boolean(plan?.days?.length);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!planId || temRoteiro) return undefined;
+
+    setTripLoading(true);
+    setTripError(null);
+    getTripPlan(planId).then((resultado) => {
+      if (cancelled) return;
+      setTripLoading(false);
+
+      if (!resultado.success || !resultado.data) {
+        setTripError(resultado.error || 'Não foi possível abrir esta viagem.');
+        return;
+      }
+
+      setPlan(resultado.data.plan_data || {});
+      setRequest(resultado.data.request_data || {});
+    });
+
+    return () => { cancelled = true; };
+  }, [planId, temRoteiro]);
+
   useEffect(() => {
     let cancelled = false;
     if (!planId) {
@@ -590,6 +629,31 @@ export default function AssistantResultScreen({ route, navigation }) {
       { role: 'assistant', text: 'Pronto! Ajustei o roteiro mantendo os demais detalhes da viagem.' },
     ].slice(-8));
   };
+
+  // A viagem que ainda está vindo, e a que não veio, precisam DIZER isso. Uma
+  // tela montada com o roteiro vazio é indistinguível de "esta viagem não tem
+  // nada" — foi assim que a viagem compartilhada pareceu vazia para quem entrou
+  // pelo convite.
+  if (planId && !temRoteiro && (tripLoading || tripError)) {
+    return (
+      <View style={[styles.container, styles.tripStatus]}>
+        {tripLoading ? (
+          <>
+            <ActivityIndicator size="large" color="#6C2BD9" />
+            <Text style={styles.tripStatusText}>Abrindo a viagem…</Text>
+          </>
+        ) : (
+          <>
+            <Ionicons name="alert-circle-outline" size={44} color="#9AA0B4" />
+            <Text style={styles.tripStatusText}>{tripError}</Text>
+            <TouchableOpacity style={styles.tripStatusButton} onPress={() => navigation.goBack()}>
+              <Text style={styles.tripStatusButtonText}>Voltar</Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -1073,6 +1137,14 @@ function TipPanel({ title, icon, color, items = [] }) {
 }
 
 const styles = StyleSheet.create({
+  // A viagem chegando, e a viagem que não abriu.
+  tripStatus: { alignItems: 'center', justifyContent: 'center', padding: 32, gap: 14 },
+  tripStatusText: { fontSize: 15, color: '#5A6072', textAlign: 'center', lineHeight: 21 },
+  tripStatusButton: {
+    marginTop: 6, paddingHorizontal: 22, paddingVertical: 11,
+    borderRadius: 12, backgroundColor: '#6C2BD9',
+  },
+  tripStatusButtonText: { color: '#fff', fontWeight: '700' },
   container: { flex: 1, backgroundColor: '#0D1326' },
   // O cabeçalho compacto e as abas em pill saíram: a capa virou o cabeçalho
   // (com os botões flutuantes) e as abas viraram a TripShortcutBar.

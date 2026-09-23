@@ -285,6 +285,91 @@ export const getSavedTripPlans = async () => {
   };
 };
 
+/**
+ * UMA viagem, pelo id — o caminho de quem chega sem trazer o roteiro na mão.
+ *
+ * POR QUE ISTO PRECISOU EXISTIR
+ *
+ * A tela da viagem sempre foi aberta pela LISTA, que já carrega tudo e passa o
+ * roteiro inteiro em `route.params`. Os caminhos da Fase 2 não passam por lá: o
+ * link de convite resgata o token e manda `navigate('AssistantResult', {
+ * planId })`, e a notificação faz o mesmo. Sem params, a tela abria com
+ * `plan = {}` — sem capa, sem nome, "0 dias" — e parecia falta de permissão.
+ * Não era: quem entra pelo convite é membro `accepted` e a RLS ("Members read
+ * trips", "Members read trip days") já deixava ler. Faltava a leitura.
+ *
+ * Devolve o registro no MESMO formato da lista (`flattenTripRecord`), para a
+ * tela não precisar saber por qual porta entrou.
+ *
+ * @param {string} planId
+ * @returns {Promise<{ success: boolean, data?: any, error?: string, warning?: string }>}
+ */
+export const getTripPlan = async (planId) => {
+  if (!planId) return { success: false, error: 'Viagem não informada.' };
+
+  // Roteiro que nunca chegou ao banco (salvo offline) mora só aqui.
+  const local = readLocalPlans().find((item) => item.id === planId);
+  if (local) return { success: true, data: await normalizeStoredPlan(local) };
+
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) {
+    return { success: false, error: 'Entre na sua conta para abrir esta viagem.' };
+  }
+
+  // Sem `.eq('user_id')`: quem pode ler é quem a policy deixa — o dono E quem
+  // participa. Filtrar por dono aqui é justamente o bug que esta função existe
+  // para não repetir. O filtro em `trip_members.user_id` não restringe o acesso;
+  // ele escolhe QUAL linha de participante vem junto (a minha), que é de onde
+  // saem o meu papel e a marcação do globo.
+  const { data, error } = await supabase
+    .from('travel_plans')
+    .select(TRIP_SELECT)
+    .eq('id', planId)
+    .eq('trip_members.user_id', user.id)
+    .maybeSingle();
+
+  if (!error && data) {
+    return { success: true, data: await normalizeStoredPlan(flattenTripRecord(data)) };
+  }
+
+  // A mesma rede de segurança da lista, pela mesma razão: um embed que falha
+  // (PGRST201 e parentes) não pode virar uma viagem vazia na tela, que lê como
+  // "não há nada aqui". Sem embed, a viagem ainda vem, com o roteiro saindo do
+  // `plan_data` — perde-se o papel do participante, não a viagem.
+  const [simples, minhaLinha] = await Promise.all([
+    supabase.from('travel_plans').select('*').eq('id', planId).maybeSingle(),
+    supabase.from('trip_members')
+      .select('role, status, is_active_on_map')
+      .eq('trip_id', planId)
+      .eq('user_id', user.id)
+      .maybeSingle(),
+  ]);
+
+  if (simples.error || !simples.data) {
+    // Nem a consulta pobre trouxe: ou a viagem não existe, ou a RLS recusou.
+    // As duas leem igual de fora, e é assim que fica — dizer "existe, mas você
+    // não pode ver" conta a quem não participa que a viagem existe.
+    return {
+      success: false,
+      error: simples.error?.message
+        || 'Não foi possível abrir esta viagem. Talvez você não faça mais parte dela.',
+    };
+  }
+
+  return {
+    success: true,
+    data: await normalizeStoredPlan({
+      ...simples.data,
+      is_active_on_map: Boolean(minhaLinha.data?.is_active_on_map),
+      member_role: minhaLinha.data?.role || null,
+      member_status: minhaLinha.data?.status || null,
+    }),
+    warning: error?.message
+      ? `Algumas informações da viagem não carregaram (${error.message}).`
+      : undefined,
+  };
+};
+
 export const deleteTripPlan = async (planId) => {
   writeLocalPlans(readLocalPlans().filter(plan => plan.id !== planId));
   if (planId?.startsWith('local-')) return { success: true };
