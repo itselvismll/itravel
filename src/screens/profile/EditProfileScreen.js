@@ -22,6 +22,11 @@ import {
 import { getCurrentUser, signOut } from '../../services/supabase';
 import { confirm, notify } from '../../utils/dialogs';
 import { USERNAME_MAX_LENGTH, normalizeUsername, validateUsername } from '../../utils/username';
+import {
+  DISPLAY_NAME_MAX_LENGTH,
+  acceptDisplayNameInput,
+  displayNameLengthState,
+} from '../../utils/displayName';
 import useTabBarContentPadding from '../../hooks/useTabBarContentPadding';
 import {
   BIO_MAX_LENGTH,
@@ -93,6 +98,8 @@ export default function EditProfileScreen({ navigation, route }) {
   // para o banco. Contar o texto cru faria o contador acusar 170/160 em vermelho
   // numa bio que salva sem problema, porque as quebras excedentes são
   // compactadas antes de medir.
+  const nameState = displayNameLengthState(displayName);
+
   const bioNormalized = normalizeBio(bio);
   const bioCount = bioLength(bioNormalized);
   const bioOverLength = bioCount > BIO_MAX_LENGTH;
@@ -141,8 +148,8 @@ export default function EditProfileScreen({ navigation, route }) {
     }
     const normalizedUsername = usernameCheck.value;
 
-    if (displayName.length > 12) {
-      setErrorMessage('O nome deve ter no máximo 12 caracteres.');
+    if (displayName.length > DISPLAY_NAME_MAX_LENGTH) {
+      setErrorMessage(`O nome deve ter no máximo ${DISPLAY_NAME_MAX_LENGTH} caracteres.`);
       return;
     }
     if (contemPalavraProibida(displayName) || contemPalavraProibida(username)) {
@@ -317,10 +324,16 @@ export default function EditProfileScreen({ navigation, route }) {
         <View style={styles.card}>
           <Text style={styles.label}>Nome</Text>
           <TextInput
-            style={[styles.input, displayName.length >= 12 && { borderBottomColor: '#6C2BD9' }]}
+            style={[
+              styles.input,
+              nameState === 'full' && { borderBottomColor: '#6C2BD9' },
+              nameState === 'over' && { borderBottomColor: '#ef4444' },
+            ]}
             value={displayName}
             onChangeText={(text) => {
-              if (text.length <= 12) {
+              // Barra só o que CRESCE além do limite; apagar passa sempre — ver
+              // utils/displayName.js, é lá que o campo travava.
+              if (acceptDisplayNameInput(displayName, text)) {
                 setDisplayName(text);
                 setErrorMessage('');
               }
@@ -329,12 +342,20 @@ export default function EditProfileScreen({ navigation, route }) {
             placeholderTextColor="#bbb"
           />
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
-            {displayName.length >= 12
-              ? <Text style={{ fontSize: 10, color: '#6C2BD9' }}>Limite máximo atingido</Text>
-              : <Text style={{ fontSize: 10, color: '#bbb' }}>Máximo 12 caracteres</Text>
-            }
-            <Text style={{ fontSize: 10, color: displayName.length >= 10 ? '#6C2BD9' : '#bbb' }}>
-              {displayName.length}/12
+            {nameState === 'over' && (
+              <Text style={{ fontSize: 10, color: '#ef4444' }}>
+                {`Apague ${displayName.length - DISPLAY_NAME_MAX_LENGTH} caractere${displayName.length - DISPLAY_NAME_MAX_LENGTH === 1 ? '' : 's'} para salvar`}
+              </Text>
+            )}
+            {nameState === 'full' && <Text style={{ fontSize: 10, color: '#6C2BD9' }}>Limite máximo atingido</Text>}
+            {nameState === 'ok' && <Text style={{ fontSize: 10, color: '#bbb' }}>{`Máximo ${DISPLAY_NAME_MAX_LENGTH} caracteres`}</Text>}
+            <Text
+              style={{
+                fontSize: 10,
+                color: nameState === 'over' ? '#ef4444' : displayName.length >= DISPLAY_NAME_MAX_LENGTH - 2 ? '#6C2BD9' : '#bbb',
+              }}
+            >
+              {displayName.length}/{DISPLAY_NAME_MAX_LENGTH}
             </Text>
           </View>
 
