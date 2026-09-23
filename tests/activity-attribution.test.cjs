@@ -15,7 +15,9 @@ const path = require('path');
 const { loadEsm } = require('./helpers/load-esm.cjs');
 
 const root = path.resolve(__dirname, '..');
-const { activityEditTag } = loadEsm('src/utils/activityAttribution.js');
+const { activityEditTag } = loadEsm('src/utils/activityAttribution.js', {
+  './personName': loadEsm('src/utils/personName.js'),
+});
 const planDayStrip = loadEsm('src/components/map/planDayStrip.js');
 const { backToTopThreshold } = planDayStrip;
 const { itineraryFromRows } = loadEsm('src/utils/tripItinerary.js', {

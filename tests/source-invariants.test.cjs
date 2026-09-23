@@ -754,7 +754,17 @@ test('map, currencies, and social notifications do not depend on partial provide
   // As sociais continuam sendo exatamente estas três; a Fase 2 acrescentou uma
   // família SEPARADA (trip_*) em vez de diluir esta.
   assert.match(socialTypes, /SOCIAL_NOTIFICATION_TYPES = Object\.freeze\(\['follow', 'comment', 'like'\]\)/);
-  assert.match(socialTypes, /TRIP_NOTIFICATION_TYPES = Object\.freeze\(\['trip_invite', 'trip_joined', 'trip_edit'\]\)/);
+  // A família de viagem CRESCE (as tarefas do grupo entraram em 20260923140000),
+  // então o que este teste trava não é a lista inteira: é que cada tipo esteja
+  // lá dentro. A regex antiga fixava a linha, e qualquer tipo novo a quebrava
+  // sem haver nada de errado.
+  for (const tipo of ['trip_invite', 'trip_joined', 'trip_edit', 'trip_task_created', 'trip_task_done']) {
+    assert.match(
+      socialTypes,
+      new RegExp(`TRIP_NOTIFICATION_TYPES = Object\\.freeze\\(\\[[\\s\\S]*?'${tipo}'[\\s\\S]*?\\]\\)`),
+      `${tipo} fora de TRIP_NOTIFICATION_TYPES`
+    );
+  }
 
   // O BUG QUE ISTO PEGA: tipo que não entra na lista COMBINADA não aparece na
   // tela e nunca é marcado como lido — o sino fica preso num número que o usuário

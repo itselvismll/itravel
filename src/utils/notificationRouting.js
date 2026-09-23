@@ -29,6 +29,10 @@ const BADGE = {
   trip_invite: { icon: 'airplane', color: '#6C2BD9' },
   trip_joined: { icon: 'person-add', color: '#00D1C1' },
   trip_edit: { icon: 'create', color: '#FF9A00' },
+  // Tarefa: o mesmo desenho do checkbox da lista, para o aviso e o lugar onde
+  // ele cai serem reconheciveis como a mesma coisa.
+  trip_task_created: { icon: 'checkbox-outline', color: '#6C2BD9' },
+  trip_task_done: { icon: 'checkbox', color: '#00D1C1' },
 };
 
 const DEFAULT_BADGE = { icon: 'notifications', color: '#6C2BD9' };
@@ -47,6 +51,10 @@ export const getTitle = (notification, actorName) => {
     case 'trip_invite': return `${actorName} te convidou para uma viagem`;
     case 'trip_joined': return `${actorName} entrou na sua viagem`;
     case 'trip_edit': return `${actorName} editou a viagem`;
+    // O `preview` destas duas carrega o TÍTULO DA TAREFA, e não o nome da
+    // viagem: "Elvis criou uma tarefa" / "Levar o adaptador de tomada".
+    case 'trip_task_created': return `${actorName} criou uma tarefa`;
+    case 'trip_task_done': return `${actorName} concluiu uma tarefa`;
     default:
       return notification?.message
         ? `${actorName} ${notification.message}`
@@ -100,7 +108,11 @@ export const getRoute = notification => {
     // viagem (RLS `is_trip_member` não exige 'accepted'), então a tela abre.
     case 'trip_invite':
     case 'trip_joined':
-    case 'trip_edit': {
+    case 'trip_edit':
+    // As de tarefa levam à viagem também: a tarefa mora no bloco da aba
+    // Checklist, e não tem tela própria para onde apontar.
+    case 'trip_task_created':
+    case 'trip_task_done': {
       const tripId = notification?.trip_id || notification?.target_id;
       return tripId ? { name: 'AssistantResult', params: { planId: tripId } } : null;
     }

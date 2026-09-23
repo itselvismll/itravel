@@ -12,19 +12,7 @@
 // parada mudou: salvar sem mexer, ou a parada só subir uma posição porque a de
 // cima foi apagada, não carimba ninguém.
 
-/**
- * O nome curto de quem editou: o primeiro nome, senão o username.
- *
- * Primeiro nome e não o nome inteiro porque a tag divide a linha com o resto do
- * cartão; "editado por Verônica Albuquerque Mendes" empurra tudo.
- *
- * @param {{ display_name?: string | null, username?: string | null } | null | undefined} profile
- * @returns {string}
- */
-const shortName = (profile) => {
-  const primeiro = String(profile?.display_name ?? '').trim().split(/\s+/)[0];
-  return primeiro || String(profile?.username ?? '').trim();
-};
+import { shortPersonName } from './personName';
 
 /**
  * A tag de autoria da parada, ou `null` quando ela não deve aparecer.
@@ -67,7 +55,7 @@ export const activityEditTag = (activity, members, currentUserId = null) => {
   const member = lista.find((item) => item?.id === editor);
   if (!member) return null;
 
-  const nome = editor === currentUserId ? 'você' : shortName(member.profile);
+  const nome = editor === currentUserId ? 'você' : shortPersonName(member.profile);
   if (!nome) return null;
 
   return {

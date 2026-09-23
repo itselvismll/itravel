@@ -28,8 +28,20 @@ export const SOCIAL_NOTIFICATION_TYPES = Object.freeze(['follow', 'comment', 'li
  * `trip_edit` é AGRUPADA no banco (no máximo uma por viagem/autor/destinatário a
  * cada 30 minutos), senão salvar um roteiro de 21 dias geraria dezenas de linhas
  * por participante. Ver `log_trip_edit` na migração 20260917130000.
+ *
+ * As DUAS DE TAREFA não são agrupadas, e é de propósito: ali o evento é a ação
+ * em si (criar, concluir), não "mexeu em algo". Três tarefas criadas na mesma
+ * sessão são três coisas diferentes para fazer, e a janela de 30 minutos comeria
+ * duas. Cada uma sai de uma transição de linha no banco — INSERT, e `is_done`
+ * de false para true —, nunca de um botão da tela. Ver a migração 20260923140000.
  */
-export const TRIP_NOTIFICATION_TYPES = Object.freeze(['trip_invite', 'trip_joined', 'trip_edit']);
+export const TRIP_NOTIFICATION_TYPES = Object.freeze([
+  'trip_invite',
+  'trip_joined',
+  'trip_edit',
+  'trip_task_created',
+  'trip_task_done',
+]);
 
 /**
  * Tudo que a tela de notificações busca, mostra e marca como lido.

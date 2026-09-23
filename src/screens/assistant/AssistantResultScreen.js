@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { adjustTravelPlan, regeneratePlanActivity } from '../../services/assistantService';
 import { getTripPlan, saveTripPlan } from '../../services/tripPlanService';
-import { notify } from '../../utils/dialogs';
+import { confirm, notify } from '../../utils/dialogs';
 import { toBrazilianDate } from '../../utils/dateUtils';
 import ShareToJourniModal from '../../components/ShareToJourniModal';
 import TripCoverHeader from '../../components/trip/TripCoverHeader';
@@ -27,7 +27,14 @@ import { supabase } from '../../services/supabase';
 import { getTourismImage } from '../../services/tourismImageService';
 import TripShortcutBar from '../../components/trip/TripShortcutBar';
 import ActivityEditedTag from '../../components/trip/ActivityEditedTag';
+import TripTasksPanel from '../../components/trip/TripTasksPanel';
 import { activityEditTag } from '../../utils/activityAttribution';
+import {
+  createTripTask,
+  deleteTripTask,
+  getTripTasks,
+  setTripTaskDone,
+} from '../../services/tripTaskService';
 import { trip, shadow } from '../../theme/tripCollab';
 import PlanDayTabs from '../../components/map/PlanDayTabs';
 import {
@@ -371,6 +378,71 @@ export default function AssistantResultScreen({ route, navigation }) {
     if (!planId) return;
     getTripMembers(planId).then((resultado) => setMembers(resultado.data));
   }, [planId]);
+
+  // ── Tarefas do grupo ──────────────────────────────────────────────────────
+  //
+  // A lista vem do banco e volta do banco a cada escrita, em vez de ser mexida
+  // aqui na mão: quem escreve `completed_by`, `completed_at` e `created_by` é o
+  // trigger, e uma cópia otimista não teria esses valores — a linha apareceria
+  // sem o "Concluído por X" que acabou de ser o motivo do toque.
+  //
+  // NENHUMA NOTIFICAÇÃO SAI DAQUI. Os dois avisos são triggers presos à
+  // transição da linha (INSERT, e is_done false -> true), e não a estes botões.
+  // É o que impede o caso que já aconteceu duas vezes no roteiro: avisar porque
+  // alguém abriu uma tela ou tocou num botão, e não porque algo mudou.
+  const [tasks, setTasks] = useState(/** @type {Array<any>} */ ([]));
+  const [tasksLoading, setTasksLoading] = useState(false);
+
+  const recarregarTarefas = useCallback(() => {
+    if (!planId || String(planId).startsWith('local-')) {
+      setTasks([]);
+      return;
+    }
+    setTasksLoading(true);
+    getTripTasks(planId).then((resultado) => {
+      setTasks(resultado.data);
+      setTasksLoading(false);
+    });
+  }, [planId]);
+
+  useEffect(() => { recarregarTarefas(); }, [recarregarTarefas]);
+
+  const criarTarefa = useCallback(async ({ title, assignedTo }) => {
+    const resultado = await createTripTask({ tripId: planId, title, assignedTo });
+    if (!resultado.success) {
+      notify('Não foi possível criar', resultado.error || 'Tente de novo em instantes.');
+      return false;
+    }
+    setTasks((atual) => [...atual, resultado.data]);
+    return true;
+  }, [planId]);
+
+  const alternarTarefa = useCallback(async ({ taskId, done }) => {
+    const resultado = await setTripTaskDone({ taskId, done });
+    if (!resultado.success) {
+      notify('Não foi possível atualizar', resultado.error || 'Tente de novo em instantes.');
+      return false;
+    }
+    // A linha que volta do banco é a que vale: ela traz quem concluiu e quando.
+    setTasks((atual) => atual.map((t) => (t.id === taskId ? resultado.data : t)));
+    return true;
+  }, []);
+
+  const excluirTarefa = useCallback(async (taskId) => {
+    const tarefa = tasks.find((t) => t.id === taskId);
+    const ok = await confirm(
+      'Excluir tarefa',
+      `"${tarefa?.title || 'Esta tarefa'}" sai da lista para todos os participantes.`
+    );
+    if (!ok) return;
+
+    const resultado = await deleteTripTask(taskId);
+    if (!resultado.success) {
+      notify('Não foi possível excluir', resultado.error || 'Tente de novo em instantes.');
+      return;
+    }
+    setTasks((atual) => atual.filter((t) => t.id !== taskId));
+  }, [tasks]);
 
   // ── Convite pendente ──────────────────────────────────────────────────────
   //
@@ -1089,6 +1161,24 @@ export default function AssistantResultScreen({ route, navigation }) {
               </TouchableOpacity>
             ))}
           </View>
+        )}
+
+        {/* As tarefas do grupo ficam ABAIXO da checklist, no mesmo lugar e na
+            mesma aba: as duas respondem "o que falta antes de viajar?", e a
+            diferença é só que a de cima é da viagem e a de baixo tem dono.
+            Fora do painel acima porque o bloco tem card próprio — e some em
+            viagem que ainda não existe no banco, onde não há tarefa possível. */}
+        {activeTab === 'checklist' && planId && !String(planId).startsWith('local-') && (
+          <TripTasksPanel
+            tasks={tasks}
+            members={members}
+            abilities={abilities}
+            currentUserId={currentUserId}
+            loading={tasksLoading}
+            onCreate={criarTarefa}
+            onToggle={alternarTarefa}
+            onDelete={excluirTarefa}
+          />
         )}
 
         {activeTab === 'tips' && (
