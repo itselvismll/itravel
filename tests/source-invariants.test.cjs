@@ -67,7 +67,31 @@ test('travel planner is personalized, structured, cancellable, and editable', ()
   assert.match(result, /openMap/);
   assert.match(result, /startEditing/);
   assert.match(result, /Ajuste este roteiro com IA/);
+  assert.match(result, /finally\s*\{\s*setRegenerating\(''\)/);
+  assert.match(assistant, /awaitWithDeadline/);
+  assert.match(assistant, /ACTIVITY_REGENERATION_TIMEOUT_MS/);
   assert.match(map, /navigation\.navigate\('TripPlanner'\)/);
+});
+
+test('activity regeneration changes only the selected activity', () => {
+  const edgeFunction = read('supabase/functions/travel-assistant/index.ts');
+  assert.match(edgeFunction, /action === 'regenerate_activity'[\s\S]*days: 1/);
+  assert.match(edgeFunction, /plan\.days\[regenerationDayIndex\]\.activities\[regenerationActivityIndex\] = replacementActivity/);
+  assert.match(edgeFunction, /INVALID_ACTIVITY_BLOCK/);
+});
+
+test('unfinished travel planning can be resumed and saved from the header', () => {
+  const planner = read('src/screens/assistant/TripPlannerScreen.js');
+  const result = read('src/screens/assistant/AssistantResultScreen.js');
+  const drafts = read('src/services/tripPlannerDraftService.js');
+  assert.match(planner, /Retornar de onde parou/);
+  assert.match(planner, /getTripPlannerDraft/);
+  assert.match(planner, /saveTripPlannerFormDraft/);
+  assert.match(result, /headerSaveButton/);
+  assert.match(result, /saveTripPlannerResultDraft/);
+  assert.match(result, /clearTripPlannerDraft/);
+  assert.match(drafts, /type: 'form'/);
+  assert.match(drafts, /type: 'result'/);
 });
 
 test('AI planner enriches plans with dated weather, verified places, currency, and sources', () => {
@@ -100,6 +124,8 @@ test('travel planner uses a calendar, blocks past dates, and sends ISO dates', (
   assert.match(planner, /A data de ida não pode estar no passado/);
   assert.match(planner, /startDate: form\.useDates \? toIsoDate\(form\.startDate\)/);
   assert.match(calendar, /disabled = startOfDay\(date\) < minimum/);
+  assert.match(calendar, /setMonth\(selected \|\| minimum\);[\s\S]*?setVisible\(true\)/);
+  assert.match(calendar, /onPress=\{openCalendar\}/);
   assert.match(dateUtils, /parseBrazilianDate/);
   assert.match(result, /toBrazilianDate\(request\.startDate\)/);
 });
@@ -148,13 +174,22 @@ test('email/password auth sends an hCaptcha token to Supabase', () => {
 
   // Um widget por plataforma: inline na web, WebView em modal no nativo.
   assert.match(read('src/components/auth/HCaptchaWidget.web.js'), /@hcaptcha\/react-hcaptcha/);
-  assert.match(read('src/components/auth/HCaptchaWidget.js'), /@hcaptcha\/react-native-hcaptcha/);
+  const nativeCaptcha = read('src/components/auth/HCaptchaWidget.js');
+  assert.match(nativeCaptcha, /@hcaptcha\/react-native-hcaptcha/);
+  assert.match(nativeCaptcha, /Hcaptcha/);
+  assert.match(nativeCaptcha, /size="normal"/);
+  assert.match(nativeCaptcha, /useWindowDimensions/);
+  assert.match(nativeCaptcha, /challengeOpen \? challengeHeight : 118/);
+  assert.match(nativeCaptcha, /data === 'open'/);
   assert.match(read('src/utils/constants.js'), /EXPO_PUBLIC_HCAPTCHA_SITE_KEY/);
+  assert.match(read('src/components/auth/hcaptchaConfig.js'), /HCAPTCHA_BASE_URL = API_CONFIG\.WEB_APP_URL/);
+  assert.match(nativeCaptcha, /url=\{HCAPTCHA_BASE_URL\}/);
 
-  // Token e de uso unico: submit bloqueado sem ele e widget resetado no erro.
+  // Token e de uso unico: sem token o submit abre o desafio, e erro reseta.
   for (const screen of ['src/screens/auth/LoginScreen.js', 'src/screens/auth/RegisterScreen.js']) {
     const source = read(screen);
-    assert.match(source, /const submitDisabled = loading \|\| \(HCAPTCHA_ENABLED && !captchaToken\);/);
+    assert.match(source, /if \(HCAPTCHA_ENABLED && !captchaToken\) \{[\s\S]*?captchaRef\.current\?\.open\(\);[\s\S]*?return;/);
+    assert.match(source, /const submitDisabled = loading;/);
     assert.match(source, /captchaRef\.current\?\.reset\(\);/);
     assert.match(source, /disabled=\{submitDisabled\}/);
   }
@@ -564,9 +599,14 @@ test('trip budget uses a travel style, a free currency converter, and grounded p
   assert.match(currencyPicker, /getAvailableCurrencies/);
   assert.match(currencyPicker, /inline/);
   assert.match(currencyPicker, /Ex: dólar, euro ou USD/);
+  assert.match(currencyPicker, /style=\{styles\.dismissBackdrop\}/);
+  assert.match(currencyPicker, /dismissBackdrop: \{ \.\.\.StyleSheet\.absoluteFillObject \}/);
+  assert.doesNotMatch(currencyPicker, /<TouchableOpacity style=\{styles\.overlay\}[^>]*onPress=/);
   assert.match(currency, /world-countries@latest\/dist\/countries\.json/);
   assert.match(currency, /currencyCatalogMemoryCache/);
   assert.match(currency, /'Argentine peso': 'ARS'/);
+  assert.match(currency, /\{ code: 'EUR', name: 'Euro', country: 'EU', symbol: '€' \}/);
+  assert.match(currency, /EUR: 'EU'/);
   assert.match(currency, /open\.er-api\.com\/v6\/latest/);
   assert.match(assistant, /googleSearch/);
   assert.match(assistant, /const researchTravelPrices/);
@@ -1171,4 +1211,35 @@ test('toda tela sob a tab bar reserva folga no fim do conteúdo', () => {
   const feed = read('src/screens/feed/FeedScreen.js');
   assert.match(feed, /contentContainerStyle=\{\[styles\.body, \{ paddingBottom: tabBarPadding \}\]\}/);
   assert.doesNotMatch(stripComments(feed), /<View style=\{\{ height: 96 \}\} \/>/);
+});
+
+test('excluir uma viagem permite a cascata do último proprietário', () => {
+  const migration = read(
+    'supabase/migrations/20260930120000_allow_trip_delete_with_last_owner.sql'
+  );
+
+  // A exceção só deve ser contornada quando o pai já foi removido pela mesma
+  // exclusão. A remoção direta do último owner de uma viagem viva segue abaixo
+  // e continua chegando à validação de `remaining = 0`.
+  const cascadeGuard = migration.indexOf("if tg_op = 'DELETE' and not exists (");
+  const parentLookup = migration.indexOf('from public.travel_plans', cascadeGuard);
+  const lastOwnerGuard = migration.indexOf('if remaining = 0 then', parentLookup);
+
+  assert.ok(cascadeGuard >= 0, 'a migração precisa reconhecer a cascata de DELETE');
+  assert.ok(parentLookup > cascadeGuard, 'a cascata deve confirmar que a viagem pai não existe');
+  assert.ok(lastOwnerGuard > parentLookup, 'a proteção do último owner deve continuar ativa');
+});
+
+test('excluir uma viagem não grava auditoria para itens removidos em cascata', () => {
+  const migration = read(
+    'supabase/migrations/20260930123000_skip_edit_log_during_trip_delete.sql'
+  );
+
+  const parentLookup = migration.indexOf('from public.travel_plans');
+  const missingParentGuard = migration.indexOf('if not found then return; end if;', parentLookup);
+  const logInsert = migration.indexOf('insert into public.trip_edit_log', missingParentGuard);
+
+  assert.ok(parentLookup >= 0, 'a auditoria precisa consultar a viagem pai');
+  assert.ok(missingParentGuard > parentLookup, 'a cascata precisa parar quando a viagem já não existe');
+  assert.ok(logInsert > missingParentGuard, 'a FK só pode ser escrita depois de confirmar a viagem pai');
 });

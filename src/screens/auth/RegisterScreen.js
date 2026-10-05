@@ -29,7 +29,7 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [captchaToken, setCaptchaToken] = useState(/** @type {string | null} */ (null));
-  const captchaRef = useRef(/** @type {{ reset: () => void, markUsed: () => void } | null} */ (null));
+  const captchaRef = useRef(/** @type {{ reset: () => void, markUsed: () => void, open: () => void } | null} */ (null));
   const [errors, setErrors] = useState(
     /** @type {Record<string, string | null>} */ ({})
   );
@@ -116,6 +116,11 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
       return;
     }
 
+    if (HCAPTCHA_ENABLED && !captchaToken) {
+      captchaRef.current?.open();
+      return;
+    }
+
     setLoading(true);
     const result = await signUp(email, password, username, fullName, captchaToken ?? undefined);
     setLoading(false);
@@ -148,7 +153,7 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
 
   // Sem site key configurada o desafio não aparece, então não travamos o
   // formulário — o Supabase continua recusando pelo lado do servidor.
-  const submitDisabled = loading || (HCAPTCHA_ENABLED && !captchaToken);
+  const submitDisabled = loading;
 
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">

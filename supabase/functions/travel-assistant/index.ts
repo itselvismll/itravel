@@ -1084,7 +1084,33 @@ serve(async (req) => {
       retrievedAt: liveContext.retrievedAt,
       researchedBudget: priceResearch?.budget || null,
     }
-    const existingPlan = JSON.stringify(body?.existingPlan || {}).slice(0, 30000)
+    const existingPlanObject = body?.existingPlan && typeof body.existingPlan === 'object'
+      ? body.existingPlan
+      : {}
+    const regenerationDayIndex = Math.floor(Number(body?.block?.dayIndex))
+    const regenerationActivityIndex = Math.floor(Number(body?.block?.activityIndex))
+    const regenerationDay = existingPlanObject?.days?.[regenerationDayIndex]
+    const regenerationActivity = regenerationDay?.activities?.[regenerationActivityIndex]
+    if (action === 'regenerate_activity' && (!regenerationDay || !regenerationActivity)) {
+      return jsonResponse({
+        success: false,
+        error: 'A atividade selecionada não foi encontrada no roteiro.',
+        code: 'INVALID_ACTIVITY_BLOCK',
+        requestId,
+        plannerVersion: PLANNER_CONTRACT_VERSION,
+      }, 400)
+    }
+    const operationPlanContext = action === 'regenerate_activity'
+      ? {
+        title: existingPlanObject?.title,
+        destinationCountry: existingPlanObject?.destinationCountry,
+        day: regenerationDay,
+        activityTitles: (existingPlanObject?.days || []).flatMap((day: any) => (
+          (day?.activities || []).map((activity: any) => cleanText(activity?.title, 120))
+        )).filter(Boolean),
+      }
+      : existingPlanObject
+    const existingPlan = JSON.stringify(operationPlanContext).slice(0, 30000)
     const operationInstruction = action === 'regenerate_activity'
       ? `Ajuste somente a atividade indicada e preserve todo o restante. Bloco: ${JSON.stringify(body?.block || {}).slice(0, 500)}. Roteiro atual: ${existingPlan}`
       : action === 'adjust_plan'
@@ -1094,13 +1120,18 @@ serve(async (req) => {
     // Seis dias mantêm cada resposta detalhada. O servidor monta todos os blocos dentro
     // de uma única chamada; o app não repete contexto nem pesquisa de preços.
     const strictDaySchemaLimit = 6
-    const chunkSpecs = Array.from(
-      { length: Math.ceil(duration / strictDaySchemaLimit) },
-      (_, index) => ({
-        startDay: index * strictDaySchemaLimit + 1,
-        days: Math.min(strictDaySchemaLimit, duration - index * strictDaySchemaLimit),
-      }),
-    )
+    const chunkSpecs = action === 'regenerate_activity'
+      ? [{
+        startDay: Number(regenerationDay?.day) || regenerationDayIndex + 1,
+        days: 1,
+      }]
+      : Array.from(
+        { length: Math.ceil(duration / strictDaySchemaLimit) },
+        (_, index) => ({
+          startDay: index * strictDaySchemaLimit + 1,
+          days: Math.min(strictDaySchemaLimit, duration - index * strictDaySchemaLimit),
+        }),
+      )
     const usedActivityTitles = new Set<string>()
 
     const generateChunk = async (spec: { startDay: number; days: number }) => {
@@ -1131,7 +1162,7 @@ serve(async (req) => {
         }),
       }
       const chunkEndDay = spec.startDay + spec.days - 1
-      const includePlanDetails = spec.startDay === 1
+      const includePlanDetails = action !== 'regenerate_activity' && spec.startDay === 1
       const chunkDestinationNames = new Set(
         chunkRequest.dayDestinations.map(item => item.destination.toLocaleLowerCase()),
       )
@@ -1484,8 +1515,22 @@ Regras:
     }
 
     const chunkPlans = chunkResults.map(result => result.plan)
-    const plan = chunkPlans[0]
-    if (chunkPlans.length > 1) {
+    const plan = action === 'regenerate_activity'
+      ? JSON.parse(JSON.stringify(existingPlanObject))
+      : chunkPlans[0]
+    if (action === 'regenerate_activity') {
+      const replacementActivity = chunkPlans[0]?.days?.[0]?.activities?.[regenerationActivityIndex]
+      if (!replacementActivity) {
+        return jsonResponse({
+          success: false,
+          error: 'A IA não retornou uma nova atividade válida. Tente novamente.',
+          code: 'AI_INCOMPLETE_PLAN',
+          requestId,
+          plannerVersion: PLANNER_CONTRACT_VERSION,
+        }, 503)
+      }
+      plan.days[regenerationDayIndex].activities[regenerationActivityIndex] = replacementActivity
+    } else if (chunkPlans.length > 1) {
       plan.title = `${duration} dias em ${destination}`
       plan.summary = `Roteiro completo de ${duration} dias, organizado em etapas para manter cada atividade detalhada e coerente.`
       plan.days = chunkResults.flatMap(result => result.plan.days.map((day: any, index: number) => ({
@@ -1511,6 +1556,7 @@ Regras:
       ...chunkResults.flatMap(result => result.groundingSources || []),
     ]
     plan.sources = [...new Map([
+      ...(plan.sources || []),
       ...(liveContext.sources || []),
       ...groundedSources,
     ].filter((source: any) => source?.url).map((source: any) => [source.url, {

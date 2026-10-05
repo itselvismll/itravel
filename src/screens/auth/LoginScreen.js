@@ -48,7 +48,7 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [captchaToken, setCaptchaToken] = useState(/** @type {string | null} */ (null));
-  const captchaRef = useRef(/** @type {{ reset: () => void, markUsed: () => void } | null} */ (null));
+  const captchaRef = useRef(/** @type {{ reset: () => void, markUsed: () => void, open: () => void } | null} */ (null));
   const [errors, setErrors] = useState(
     /** @type {Record<string, string | null>} */ ({})
   );
@@ -74,6 +74,11 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
+      return;
+    }
+
+    if (HCAPTCHA_ENABLED && !captchaToken) {
+      captchaRef.current?.open();
       return;
     }
 
@@ -129,7 +134,7 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
 
   // Sem site key configurada o desafio não aparece, então não travamos o
   // formulário — o Supabase continua recusando pelo lado do servidor.
-  const submitDisabled = loading || (HCAPTCHA_ENABLED && !captchaToken);
+  const submitDisabled = loading;
 
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">

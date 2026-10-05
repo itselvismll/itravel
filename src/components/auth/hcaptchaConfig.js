@@ -3,6 +3,7 @@ import { API_CONFIG } from '../../utils/constants';
 // Metade pública do par de chaves do hCaptcha. A secret vive apenas no painel
 // do Supabase (Authentication -> Attack Protection), que é quem valida o token.
 export const HCAPTCHA_SITE_KEY = API_CONFIG.HCAPTCHA_SITE_KEY;
+export const HCAPTCHA_BASE_URL = API_CONFIG.WEB_APP_URL.replace(/\/+$/, '');
 
 // Sem site key configurada não dá para desenhar o desafio; nesse caso as telas
 // deixam o submit liberado e o Supabase segue recusando pelo lado do servidor.

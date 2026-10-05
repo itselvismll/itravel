@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import CalendarField from '../../components/CalendarField';
 import DestinationBudgetPlanner from '../../components/DestinationBudgetPlanner';
 import LocationAutocomplete from '../../components/LocationAutocomplete';
@@ -29,6 +30,10 @@ import {
   toBrazilianDate,
   toIsoDate,
 } from '../../utils/dateUtils';
+import {
+  getTripPlannerDraft,
+  saveTripPlannerFormDraft,
+} from '../../services/tripPlannerDraftService';
 
 const TRAVELER_TYPES = ['Solo', 'Casal', 'Família', 'Amigos', 'Trabalho'];
 const formatAssistantError = ({ error, code, requestId }) => {
@@ -86,7 +91,9 @@ export default function TripPlannerScreen({ navigation, route }) {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [resumableDraft, setResumableDraft] = useState(null);
   const scrollRef = useRef(null);
+  const formTouched = useRef(false);
 
   const duration = useMemo(() => {
     if (!form.useDates) return Math.max(1, Number(form.duration) || 0) || null;
@@ -102,7 +109,39 @@ export default function TripPlannerScreen({ navigation, route }) {
     }
   }, [form.travelerType]);
 
+  useFocusEffect(React.useCallback(() => {
+    setResumableDraft(getTripPlannerDraft());
+  }, []));
+
+  useEffect(() => {
+    if (!formTouched.current) return;
+    saveTripPlannerFormDraft(form);
+    setResumableDraft(null);
+  }, [form]);
+
+  const resumeDraft = () => {
+    const draft = getTripPlannerDraft();
+    if (!draft) return;
+    if (draft.type === 'result') {
+      navigation.replace('AssistantResult', {
+        request: draft.request,
+        plan: draft.plan,
+        userContext: draft.userContext,
+        initialTab: draft.activeTab,
+      });
+      return;
+    }
+    if (draft.type === 'form' && draft.form) {
+      formTouched.current = true;
+      setForm({ ...initialForm, ...draft.form });
+      setResumableDraft(null);
+      setError('');
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    }
+  };
+
   const update = (field, value) => {
+    formTouched.current = true;
     setForm(current => ({ ...current, [field]: value }));
     setError('');
   };
@@ -235,26 +274,49 @@ export default function TripPlannerScreen({ navigation, route }) {
           </Text>
         </View>
 
+        {!!resumableDraft && (
+          <TouchableOpacity style={styles.resumeCard} onPress={resumeDraft} activeOpacity={0.86}>
+            <View style={styles.resumeIcon}>
+              <Ionicons name="return-up-forward" size={21} color="#C4B5FD" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.resumeTitle}>Retornar de onde parou</Text>
+              <Text style={styles.resumeText} numberOfLines={2}>
+                {resumableDraft.type === 'result'
+                  ? `Seu roteiro para ${resumableDraft.request?.destination || 'a próxima viagem'} continua disponível.`
+                  : 'Continue preenchendo seu planejamento sem perder as informações.'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={19} color="#A78BFA" />
+          </TouchableOpacity>
+        )}
+
         <FormSection icon="location-outline" title="Trajeto">
           <LocationAutocomplete
             label="Saindo de"
             value={form.origin}
-            onChange={(name, location) => setForm(current => ({
-              ...current,
-              origin: name,
-              originDetails: location,
-            }))}
+            onChange={(name, location) => {
+              formTouched.current = true;
+              setForm(current => ({
+                ...current,
+                origin: name,
+                originDetails: location,
+              }));
+            }}
             placeholder="Cidade, país ou aeroporto (ex: GRU)"
           />
           <MultiDestinationSelector
             label="Destinos e paradas"
             selected={form.destinations}
-            onChange={destinations => setForm(current => ({
-              ...current,
-              destinations,
-              destination: destinations.map(item => item.name).join(', '),
-              destinationCode: destinations[0]?.code || '',
-            }))}
+            onChange={destinations => {
+              formTouched.current = true;
+              setForm(current => ({
+                ...current,
+                destinations,
+                destination: destinations.map(item => item.name).join(', '),
+                destinationCode: destinations[0]?.code || '',
+              }));
+            }}
           />
         </FormSection>
 
@@ -409,6 +471,10 @@ const styles = StyleSheet.create({
   heroEyebrow: { color: '#A78BFA', fontSize: 11, fontWeight: '800', letterSpacing: 1.4 },
   heroTitle: { color: '#fff', fontSize: 23, lineHeight: 30, fontWeight: '800', marginTop: 8 },
   heroText: { color: '#9DA4C3', fontSize: 13, lineHeight: 20, marginTop: 8 },
+  resumeCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(139,92,246,0.12)', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: 'rgba(167,139,250,0.38)' },
+  resumeIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(139,92,246,0.22)' },
+  resumeTitle: { color: '#F7F7F2', fontSize: 14, fontWeight: '800' },
+  resumeText: { color: '#9DA4C3', fontSize: 11, lineHeight: 17, marginTop: 3 },
   section: { backgroundColor: '#151B33', borderRadius: 18, padding: 16, gap: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   sectionIcon: { width: 30, height: 30, borderRadius: 10, backgroundColor: 'rgba(139,92,246,0.14)', alignItems: 'center', justifyContent: 'center' },

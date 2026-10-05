@@ -1,8 +1,37 @@
 import { supabase } from './supabase';
 
 const BASE_ASSISTANT_TIMEOUT_MS = 150000;
+const ACTIVITY_REGENERATION_TIMEOUT_MS = 60000;
 export const ASSISTANT_PLANNER_VERSION = 2;
 const activeAssistantRequests = new Map();
+
+const awaitWithDeadline = (promise, deadlineAt, controller) => new Promise((resolve, reject) => {
+  let settled = false;
+  const remainingMs = Math.max(0, deadlineAt - Date.now());
+  const timeoutId = setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    controller.abort();
+    const timeoutError = new Error('Assistant request timed out');
+    timeoutError.name = 'AbortError';
+    reject(timeoutError);
+  }, remainingMs);
+
+  Promise.resolve(promise).then(
+    value => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve(value);
+    },
+    error => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      reject(error);
+    },
+  );
+});
 
 export const createAssistantRequestId = () => (
   `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`.slice(-12)
@@ -23,14 +52,25 @@ const executeAssistantRequest = async (payload) => {
   const controller = new AbortController();
   const requestId = createAssistantRequestId();
   const requestedDuration = Number(payload?.planRequest?.duration) || 3;
-  const timeoutMs = Math.min(300000, Math.max(BASE_ASSISTANT_TIMEOUT_MS, requestedDuration * 10000));
+  const timeoutMs = payload?.action === 'regenerate_activity'
+    ? ACTIVITY_REGENERATION_TIMEOUT_MS
+    : Math.min(300000, Math.max(BASE_ASSISTANT_TIMEOUT_MS, requestedDuration * 10000));
+  const deadlineAt = Date.now() + timeoutMs;
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    let { data: { session } } = await supabase.auth.getSession();
+    let { data: { session } } = await awaitWithDeadline(
+      supabase.auth.getSession(),
+      deadlineAt,
+      controller,
+    );
 
     if (!session?.access_token) {
-      const refreshResult = await supabase.auth.refreshSession();
+      const refreshResult = await awaitWithDeadline(
+        supabase.auth.refreshSession(),
+        deadlineAt,
+        controller,
+      );
       session = refreshResult.data.session;
     }
 
@@ -43,14 +83,18 @@ const executeAssistantRequest = async (payload) => {
       };
     }
 
-    const { data, error } = await supabase.functions.invoke('travel-assistant', {
-      body: payload,
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        'x-journi-request-id': requestId,
-      },
-      signal: controller.signal,
-    });
+    const { data, error } = await awaitWithDeadline(
+      supabase.functions.invoke('travel-assistant', {
+        body: payload,
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'x-journi-request-id': requestId,
+        },
+        signal: controller.signal,
+      }),
+      deadlineAt,
+      controller,
+    );
 
     if (error) {
       let functionError;

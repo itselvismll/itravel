@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View,
+  ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import CountryFlag from './CountryFlag';
@@ -58,7 +58,13 @@ export default function CurrencyPicker({ label = '', value, onChange, supporting
       </TouchableOpacity>
       {!!supportingText && <Text style={styles.supportingText}>{supportingText}</Text>}
       <Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)}>
-        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setVisible(false)}>
+        <View style={styles.overlay}>
+          <Pressable
+            style={styles.dismissBackdrop}
+            onPress={() => setVisible(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Fechar seletor de moeda"
+          />
           <View style={styles.modal}>
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
@@ -91,6 +97,7 @@ export default function CurrencyPicker({ label = '', value, onChange, supporting
               data={filteredCurrencies}
               keyExtractor={item => item.code}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
               ListEmptyComponent={<Text style={styles.emptyText}>Nenhuma moeda encontrada.</Text>}
               renderItem={({ item }) => (
               <TouchableOpacity
@@ -108,7 +115,7 @@ export default function CurrencyPicker({ label = '', value, onChange, supporting
               </TouchableOpacity>
             )} />
           </View>
-        </TouchableOpacity>
+        </View>
       </Modal>
     </View>
   );
@@ -126,6 +133,7 @@ const styles = StyleSheet.create({
   name: { color: '#858DAD', fontSize: 9, marginTop: 1 },
   supportingText: { color: '#35D3C8', fontSize: 10, fontWeight: '700', marginTop: 1 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 18 },
+  dismissBackdrop: { ...StyleSheet.absoluteFillObject },
   modal: { width: '100%', maxWidth: 440, maxHeight: '78%', backgroundColor: '#171D36', borderRadius: 20, padding: 16, borderWidth: 1, borderColor: '#30395D' },
   modalHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
   title: { color: '#fff', fontSize: 17, fontWeight: '900' },

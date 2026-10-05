@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -16,6 +16,10 @@ import { saveTripPlan } from '../../services/tripPlanService';
 import { notify } from '../../utils/dialogs';
 import { toBrazilianDate } from '../../utils/dateUtils';
 import ShareToJourniModal from '../../components/ShareToJourniModal';
+import {
+  clearTripPlannerDraft,
+  saveTripPlannerResultDraft,
+} from '../../services/tripPlannerDraftService';
 
 const TABS = [
   { id: 'itinerary', label: 'Roteiro', icon: 'map-outline' },
@@ -46,7 +50,7 @@ export default function AssistantResultScreen({ route, navigation }) {
   const [plan, setPlan] = useState(route.params?.plan || route.params?.plan_data || {});
   const [planId, setPlanId] = useState(route.params?.planId || route.params?.id || null);
   const userContext = route.params?.userContext || {};
-  const [activeTab, setActiveTab] = useState('itinerary');
+  const [activeTab, setActiveTab] = useState(route.params?.initialTab || 'itinerary');
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState('');
   const [editing, setEditing] = useState(null);
@@ -54,6 +58,11 @@ export default function AssistantResultScreen({ route, navigation }) {
   const [adjusting, setAdjusting] = useState(false);
   const [adjustments, setAdjustments] = useState([]);
   const [shareVisible, setShareVisible] = useState(false);
+
+  useEffect(() => {
+    if (planId) return;
+    saveTripPlannerResultDraft({ request, plan, userContext, activeTab });
+  }, [activeTab, plan, planId, request, userContext]);
 
   const checklistProgress = useMemo(() => {
     const items = plan.checklist || [];
@@ -98,6 +107,7 @@ export default function AssistantResultScreen({ route, navigation }) {
       return;
     }
     setPlanId(result.data.id);
+    clearTripPlannerDraft();
     notify('Roteiro salvo', result.warning || 'Você encontra esta viagem no seu perfil.');
   };
 
@@ -139,20 +149,26 @@ export default function AssistantResultScreen({ route, navigation }) {
   };
 
   const regenerateActivity = async (dayIndex, activityIndex) => {
+    if (regenerating) return;
     const key = `${dayIndex}-${activityIndex}`;
     setRegenerating(key);
-    const result = await regeneratePlanActivity({
-      planRequest: request,
-      userContext,
-      plan,
-      block: { dayIndex, activityIndex },
-    });
-    setRegenerating('');
-    if (!result.success) {
-      notify('Não foi possível trocar a atividade', result.error);
-      return;
+    try {
+      const result = await regeneratePlanActivity({
+        planRequest: request,
+        userContext,
+        plan,
+        block: { dayIndex, activityIndex },
+      });
+      if (!result?.success) {
+        notify('Não foi possível trocar a atividade', result?.error || 'Tente novamente.');
+        return;
+      }
+      setPlan(result.plan);
+    } catch {
+      notify('Não foi possível trocar a atividade', 'Verifique sua conexão e tente novamente.');
+    } finally {
+      setRegenerating('');
     }
-    setPlan(result.plan);
   };
 
   const startEditing = (dayIndex, activityIndex, activity) => {
@@ -180,25 +196,30 @@ export default function AssistantResultScreen({ route, navigation }) {
     if (!message || adjusting) return;
 
     setAdjusting(true);
-    const result = await adjustTravelPlan({
-      planRequest: request,
-      userContext,
-      plan,
-      message,
-    });
-    setAdjusting(false);
-    if (!result.success) {
-      notify('Não foi possível ajustar o roteiro', result.error || 'Tente novamente.');
-      return;
-    }
+    try {
+      const result = await adjustTravelPlan({
+        planRequest: request,
+        userContext,
+        plan,
+        message,
+      });
+      if (!result?.success) {
+        notify('Não foi possível ajustar o roteiro', result?.error || 'Tente novamente.');
+        return;
+      }
 
-    setPlan(result.plan);
-    setChatText('');
-    setAdjustments(current => [
-      ...current,
-      { role: 'user', text: message },
-      { role: 'assistant', text: 'Pronto! Ajustei o roteiro mantendo os demais detalhes da viagem.' },
-    ].slice(-8));
+      setPlan(result.plan);
+      setChatText('');
+      setAdjustments(current => [
+        ...current,
+        { role: 'user', text: message },
+        { role: 'assistant', text: 'Pronto! Ajustei o roteiro mantendo os demais detalhes da viagem.' },
+      ].slice(-8));
+    } catch {
+      notify('Não foi possível ajustar o roteiro', 'Verifique sua conexão e tente novamente.');
+    } finally {
+      setAdjusting(false);
+    }
   };
 
   return (
@@ -214,6 +235,16 @@ export default function AssistantResultScreen({ route, navigation }) {
             {request.travelers} viajante(s)
           </Text>
         </View>
+        <TouchableOpacity
+          onPress={handleSave}
+          disabled={saving}
+          style={[styles.headerSaveButton, saving && styles.headerSaveButtonDisabled]}
+        >
+          {saving
+            ? <ActivityIndicator size="small" color="#fff" />
+            : <Ionicons name="bookmark-outline" size={16} color="#fff" />}
+          <Text style={styles.headerSaveText}>{planId ? 'Atualizar' : 'Salvar'}</Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={() => setShareVisible(true)} style={styles.iconButton}>
           <Ionicons name="share-outline" size={21} color="#AAB1CC" />
         </TouchableOpacity>
@@ -525,6 +556,9 @@ const styles = StyleSheet.create({
   iconButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#1B2240', alignItems: 'center', justifyContent: 'center' },
   headerTitle: { color: '#F7F7F2', fontSize: 16, fontWeight: '800' },
   headerSub: { color: '#858DAD', fontSize: 10, marginTop: 2 },
+  headerSaveButton: { minWidth: 72, height: 38, paddingHorizontal: 10, borderRadius: 19, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, backgroundColor: '#6C2BD9' },
+  headerSaveButtonDisabled: { opacity: 0.65 },
+  headerSaveText: { color: '#fff', fontSize: 11, fontWeight: '800' },
   tabs: { gap: 8, paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
   tab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 13, paddingVertical: 9, borderRadius: 99, backgroundColor: '#171D36' },
   tabActive: { backgroundColor: '#6C2BD9' },

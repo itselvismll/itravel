@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, Image, TextInput,
   StyleSheet, ActivityIndicator, Modal, FlatList, Alert, Platform
 } from 'react-native';
-import { Image as CachedImage } from 'expo-image';
+import CachedImage from '../../components/CompatibleImage';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../services/supabase';
 import { getCurrentUser } from '../../services/supabase';

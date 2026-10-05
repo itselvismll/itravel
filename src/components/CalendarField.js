@@ -22,11 +22,17 @@ export default function CalendarField({ label, value, onChange, minDate = new Da
   }, [month]);
 
   const moveMonth = delta => setMonth(current => new Date(current.getFullYear(), current.getMonth() + delta, 1));
+  const openCalendar = () => {
+    // Ao reabrir, volta para a data já escolhida. No campo de retorno ainda
+    // vazio, abre no mês da ida recebida como minDate, não no mês atual.
+    setMonth(selected || minimum);
+    setVisible(true);
+  };
 
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
-      <TouchableOpacity style={styles.input} onPress={() => setVisible(true)}>
+      <TouchableOpacity style={styles.input} onPress={openCalendar}>
         <Text style={value ? styles.value : styles.placeholder}>{value || 'Selecionar data'}</Text>
         <Ionicons name="calendar-outline" size={19} color="#A78BFA" />
       </TouchableOpacity>
