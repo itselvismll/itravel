@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -8,6 +8,7 @@ import {
   PanResponder,
   Platform,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -15,8 +16,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Clipboard from 'expo-clipboard';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import LegalSheet from './LegalSheet';
+import { useLocale } from '../i18n/LocaleProvider';
+import { localeDescriptor } from '../i18n';
+import { buildAppInviteShare } from '../utils/appInvite';
+import { getBlockedUsers } from '../services/moderationService';
 
 const APP_VERSION = '1.0.0';
 const MEDAL_SIZE = 20;
@@ -52,6 +58,16 @@ function LevelMedalMini() {
   );
 }
 
+// O rótulo do grupo: CONTA, COMUNIDADE, SUPORTE.
+//
+// Ele é o que transforma uma pilha de linhas soltas numa tela de configurações —
+// sem os rótulos, "Usuários bloqueados" e "Falar com o time" liam com o mesmo
+// peso e o mesmo assunto, e a lista só crescia.
+/** @param {{ children: string }} props */
+function SectionLabel({ children }) {
+  return <Text style={styles.sectionLabel}>{children}</Text>;
+}
+
 // O ícone perdeu a cápsula roxa e ficou só o traço. A cápsula empurrava o peso
 // visual de cada linha para o lado do ícone, o que numa lista de CONFIGURAÇÕES
 // (onde o que importa é o texto da ação) lia como app infantil.
@@ -59,27 +75,52 @@ function LevelMedalMini() {
 // `labelStyle` existe para o "Sair" cair meio passo de peso em vez de acompanhar
 // os outros: continua sendo o item de destaque da lista, sem gritar.
 //
-// O typedef existe porque `labelStyle` não tem valor padrão, e sem ele o
-// TypeScript infere a prop como obrigatória a partir da desestruturação — os
-// quatro itens que não passam estilo nenhum viravam erro.
+// `value` é o "valor atual" à direita, antes do chevron — o número de
+// bloqueados hoje, o idioma ou a moeda quando essas telas existirem. A prop já
+// nasce aqui para a linha não precisar ser remodelada a cada tela nova. Valor
+// vazio (`0`, `null`, `''`) não desenha nada: "0 bloqueados" é informação que
+// ninguém pediu.
+//
+// O typedef existe porque as props opcionais sem valor padrão seriam inferidas
+// como obrigatórias a partir da desestruturação — os itens que não passam
+// subtítulo nem valor viravam erro.
 /**
  * @param {{
  *   icon: React.ComponentProps<typeof Ionicons>['name'],
  *   label: string,
+ *   subtitle?: string,
+ *   value?: string | number | null,
  *   color?: string,
  *   iconColor?: string,
+ *   chevron?: boolean,
  *   labelStyle?: import('react-native').StyleProp<import('react-native').TextStyle>,
  *   onPress: () => void,
  * }} props
  */
-function DrawerItem({ icon, label, color = '#F7F7F2', iconColor = '#A78BFA', labelStyle, onPress }) {
+function DrawerItem({
+  icon,
+  label,
+  subtitle,
+  value,
+  color = '#F7F7F2',
+  iconColor = '#A78BFA',
+  chevron = true,
+  labelStyle,
+  onPress,
+}) {
+  const shownValue = value ? String(value) : null;
+
   return (
     <TouchableOpacity style={styles.item} onPress={onPress} accessibilityRole="button" accessibilityLabel={label}>
       <View style={styles.itemIcon}>
         <Ionicons name={icon} size={20} color={iconColor} />
       </View>
-      <Text style={[styles.itemLabel, labelStyle, { color }]}>{label}</Text>
-      <Ionicons name="chevron-forward" size={16} color="#4A5273" />
+      <View style={styles.itemText}>
+        <Text style={[styles.itemLabel, labelStyle, { color }]}>{label}</Text>
+        {!!subtitle && <Text style={styles.itemSubtitle}>{subtitle}</Text>}
+      </View>
+      {!!shownValue && <Text style={styles.itemValue}>{shownValue}</Text>}
+      {chevron && <Ionicons name="chevron-forward" size={16} color="#4A5273" />}
     </TouchableOpacity>
   );
 }
@@ -94,14 +135,42 @@ export default function SettingsDrawer({
   onSavedTrips,
   onSupport,
   onBlockedUsers,
+  onNotificationPreferences,
+  onLanguage,
   onLogout,
 }) {
+  // `locale` entra junto porque a linha de Idioma mostra o idioma ATUAL como
+  // `value` — ela é a primeira a usar aquela prop, que nasceu reservada.
+  const { locale, t } = useLocale();
   // A folha legal e' irma do drawer, nao filha: um Modal dentro de outro Modal
   // nao empilha de forma confiavel no iOS.
   const [legalVisible, setLegalVisible] = useState(false);
 
+  // A contagem de bloqueados é buscada aqui, e não recebida por prop, porque o
+  // drawer é o único caminho para a tela: ninguém mais precisa do número, e
+  // pendurá-lo no ProfileScreen faria a tela de perfil carregar dado que ela não
+  // usa. Busca a cada abertura para o número não mentir depois de desbloquear
+  // alguém — a tela de bloqueados fica logo atrás desta linha.
+  const [blockedCount, setBlockedCount] = useState(0);
+
+  // O aviso de "Link copiado" vive dentro do painel, e não num Alert: o convite é
+  // uma ação de um toque, e uma caixa de diálogo com botão de OK para dizer que
+  // deu certo custa mais do que a própria ação.
+  const [toast, setToast] = useState('');
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+
   const translateX = useRef(new Animated.Value(DRAWER_WIDTH)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!visible) return;
+
+    let ativo = true;
+    getBlockedUsers().then((resultado) => {
+      if (ativo) setBlockedCount(resultado.data?.length || 0);
+    });
+    return () => { ativo = false; };
+  }, [visible]);
 
   useEffect(() => {
     Animated.parallel([
@@ -143,6 +212,45 @@ export default function SettingsDrawer({
     })
   ).current;
 
+  const mostrarToast = useCallback((texto) => {
+    setToast(texto);
+    Animated.sequence([
+      Animated.timing(toastOpacity, { toValue: 1, duration: 160, useNativeDriver: true }),
+      Animated.delay(1800),
+      Animated.timing(toastOpacity, { toValue: 0, duration: 240, useNativeDriver: true }),
+    ]).start(({ finished }) => { if (finished) setToast(''); });
+  }, [toastOpacity]);
+
+  // Convidar amigos é a única linha do menu que não abre uma tela: ela resolve
+  // aqui mesmo. Três caminhos, do melhor para o que sempre funciona —
+  //
+  //   nativo:            Share do React Native, a folha do sistema;
+  //   web com suporte:   Web Share API, a mesma folha do sistema no navegador;
+  //   web sem suporte:   copia para a área de transferência e avisa.
+  //
+  // O último não é consolo: em navegador de desktop o `navigator.share` não
+  // existe na maioria, e um botão que não faz nada é pior do que um link no
+  // Ctrl+V. O `catch` engole o AbortError de quem abre a folha e fecha sem
+  // escolher — cancelar não é erro.
+  const convidarAmigos = useCallback(async () => {
+    const convite = buildAppInviteShare({ username: profile?.username });
+
+    try {
+      if (Platform.OS === 'web') {
+        if (globalThis.navigator?.share) {
+          await globalThis.navigator.share({ title: 'Journi', text: convite.message, url: convite.url });
+          return;
+        }
+        await Clipboard.setStringAsync(convite.message);
+        mostrarToast(t('common.toast.linkCopied'));
+        return;
+      }
+      await Share.share({ message: convite.message, url: convite.url });
+    } catch {
+      // Cancelar a folha de compartilhamento cai aqui. Nada a dizer.
+    }
+  }, [profile?.username, mostrarToast, t]);
+
   const initials = profile?.display_name?.[0]?.toUpperCase() || profile?.username?.[0]?.toUpperCase() || '?';
   const photo = profile?.avatar_url || avatarUrl;
   const level = levelInfo?.current;
@@ -155,7 +263,7 @@ export default function SettingsDrawer({
             style={StyleSheet.absoluteFill}
             activeOpacity={1}
             onPress={onClose}
-            accessibilityLabel="Fechar configurações"
+            accessibilityLabel={t('drawer.closeLabel')}
           />
         </Animated.View>
 
@@ -195,14 +303,69 @@ export default function SettingsDrawer({
             <View style={styles.divider} />
 
             <View style={styles.section}>
-              <DrawerItem icon="person-outline" label="Editar perfil" onPress={onEditProfile} />
+              <SectionLabel>{t('drawer.sections.account')}</SectionLabel>
+              <DrawerItem icon="person-outline" label={t('drawer.items.editProfile')} onPress={onEditProfile} />
               {/* Atalho para a mesma tela que o perfil abre. Ele existe aqui
                   porque o menu é o caminho que não depende de rolar o perfil
                   até encontrar o cartão. */}
-              <DrawerItem icon="map-outline" label="Minhas viagens" onPress={onSavedTrips} />
+              <DrawerItem icon="map-outline" label={t('drawer.items.myTrips')} onPress={onSavedTrips} />
+              {/* Fica em CONTA, e não em SUPORTE ao lado de "Termos e
+                  privacidade": bloquear é um ajuste da minha conta, e o item de
+                  SUPORTE é um documento para ler, não um controle. Continua
+                  sendo o ÚNICO caminho de volta — quem foi bloqueado some de
+                  toda busca e do próprio perfil, então não há outro lugar onde
+                  desfazer. O número à direita é o que avisa que há alguém lá
+                  dentro sem a pessoa precisar entrar para descobrir. */}
               <DrawerItem
-                icon="help-circle-outline"
-                label="Ajuda e suporte"
+                icon="ban-outline"
+                label={t('drawer.items.blockedUsers')}
+                value={blockedCount}
+                onPress={onBlockedUsers}
+              />
+            </View>
+
+            <View style={styles.section}>
+              <SectionLabel>{t('drawer.sections.community')}</SectionLabel>
+              <DrawerItem
+                icon="person-add-outline"
+                label={t('drawer.items.inviteFriends')}
+                subtitle={t('drawer.items.inviteFriendsSubtitle')}
+                onPress={convidarAmigos}
+              />
+            </View>
+
+            <View style={styles.section}>
+              <SectionLabel>{t('drawer.sections.preferences')}</SectionLabel>
+              {/* Notificações NÃO usa `value`: ali o estado é "ligado/desligado
+                  por categoria", e resumir isso num texto à direita mentiria —
+                  quem pausou tudo e quem desligou uma categoria não estão no
+                  mesmo estado. */}
+              <DrawerItem
+                icon="notifications-outline"
+                label={t('drawer.items.notifications')}
+                onPress={onNotificationPreferences}
+              />
+              {/* A PRIMEIRA linha a usar `value`, que nasceu reservada
+                  exatamente para isto. O valor é o rótulo do idioma na própria
+                  língua ("English", não "Inglês"), igual ao que a tela de Idioma
+                  mostra — ver SUPPORTED_LOCALES.
+                  Mostra o idioma EFETIVO, e não "Automático": quem deixou no
+                  automático quer saber em que língua está, e "Automático" ali não
+                  responde isso. Qual opção está marcada é assunto da tela.
+                  Falta ainda "Unidades e moeda", que entra com a tela dela. */}
+              <DrawerItem
+                icon="language-outline"
+                label={t('drawer.items.language')}
+                value={localeDescriptor(locale).label}
+                onPress={onLanguage}
+              />
+            </View>
+
+            <View style={styles.section}>
+              <SectionLabel>{t('drawer.sections.support')}</SectionLabel>
+              <DrawerItem
+                icon="chatbubble-ellipses-outline"
+                label={t('drawer.items.talkToTeam')}
                 onPress={onSupport}
               />
               {/* Abre a LegalSheet, e não uma URL direto: são DOIS documentos com
@@ -211,38 +374,38 @@ export default function SettingsDrawer({
                   Editar perfil, junto do resto do que é da conta. */}
               <DrawerItem
                 icon="shield-checkmark-outline"
-                label="Política e Privacidade"
+                label={t('drawer.items.termsAndPrivacy')}
                 onPress={() => setLegalVisible(true)}
               />
-              {/* Fica ao lado de "Política e Privacidade" porque é do mesmo
-                  assunto — o que eu controlo sobre quem me alcança — e porque é
-                  o ÚNICO caminho de volta: quem foi bloqueado some de toda busca
-                  e do próprio perfil, então não há outro lugar onde desfazer. */}
-              <DrawerItem
-                icon="ban-outline"
-                label="Usuários bloqueados"
-                onPress={onBlockedUsers}
-              />
-              {/* Espaço reservado para novos itens (notificações, idioma...) */}
             </View>
 
-            <View style={styles.divider} />
-
-            <View style={styles.section}>
-              <DrawerItem
-                icon="log-out-outline"
-                label="Sair"
-                color="#FF4D6D"
-                iconColor="#FF4D6D"
-                labelStyle={styles.itemLabelSair}
-                onPress={onLogout}
-              />
-            </View>
-
+            {/* O rodapé é empurrado para o fim do painel pelo `marginTop: 'auto'`,
+                que só funciona porque o `panelContent` tem `flexGrow: 1`. Sair
+                longe da lista de ajustes é intencional: é a única ação daqui que
+                tira a pessoa do app. */}
             <View style={styles.footer}>
-              <Text style={styles.footerText}>Journi v{APP_VERSION}</Text>
+              <View style={styles.divider} />
+              <View style={styles.section}>
+                <DrawerItem
+                  icon="log-out-outline"
+                  label={t('drawer.items.logout')}
+                  color="#FF4D6D"
+                  iconColor="#FF4D6D"
+                  chevron={false}
+                  labelStyle={styles.itemLabelSair}
+                  onPress={onLogout}
+                />
+              </View>
+              <Text style={styles.footerText}>{t('drawer.version', { version: APP_VERSION })}</Text>
             </View>
           </ScrollView>
+
+          {!!toast && (
+            <Animated.View style={[styles.toast, { opacity: toastOpacity }]} pointerEvents="none">
+              <Ionicons name="checkmark-circle" size={15} color="#6EE7B7" />
+              <Text style={styles.toastText}>{toast}</Text>
+            </Animated.View>
+          )}
         </Animated.View>
       </View>
 
@@ -331,7 +494,19 @@ const styles = StyleSheet.create({
   },
   medalIcon: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginHorizontal: 16 },
-  section: { paddingVertical: 8, paddingHorizontal: 10 },
+  section: { paddingTop: 14, paddingBottom: 6, paddingHorizontal: 10 },
+  // Maiúsculas pequenas e apagadas, com letter-spacing largo: o rótulo precisa
+  // ser lido como etiqueta do grupo e não como um item da lista. O recuo de 8
+  // alinha o texto com o ícone das linhas de baixo, não com a borda do painel.
+  sectionLabel: {
+    marginLeft: 8,
+    marginBottom: 4,
+    fontSize: 10.5,
+    fontWeight: '600',
+    fontFamily: 'Inter_600SemiBold',
+    letterSpacing: 1.1,
+    color: '#6B7395',
+  },
   item: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -346,16 +521,52 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Peso 500 com um fio de letter-spacing: bold na lista inteira lia como quatro
-  // botões grandes empilhados, e isto é uma lista de opções.
+  // O `flex: 1` que era do rótulo passou para este invólucro: com subtítulo, o
+  // que precisa ocupar a sobra da linha é a coluna de texto inteira, senão o
+  // valor e o chevron seriam empurrados para fora do painel.
+  itemText: { flex: 1 },
+  // Peso 500 com um fio de letter-spacing: bold na lista inteira lia como uma
+  // pilha de botões grandes, e isto é uma lista de opções. Inter e não Poppins —
+  // Poppins é a fonte dos títulos do app; numa lista de ajustes ela engorda a
+  // linha, e Inter é a fonte de texto corrido daqui.
   itemLabel: {
-    flex: 1,
     fontSize: 14.5,
     fontWeight: '500',
-    fontFamily: 'Poppins_500Medium',
+    fontFamily: 'Inter_500Medium',
     letterSpacing: 0.2,
   },
-  itemLabelSair: { fontWeight: '600', fontFamily: 'Poppins_600SemiBold' },
-  footer: { marginTop: 'auto', alignItems: 'center', paddingTop: 24 },
-  footerText: { fontSize: 11, color: '#5A6180' },
+  itemSubtitle: {
+    marginTop: 2,
+    fontSize: 11.5,
+    fontFamily: 'Inter_400Regular',
+    color: '#7A82A3',
+  },
+  // O valor atual à direita: apagado de propósito, porque ele informa o estado e
+  // não é onde se toca. Alinhado com o chevron por um respiro de 8.
+  itemValue: {
+    marginRight: 8,
+    fontSize: 13.5,
+    fontFamily: 'Inter_400Regular',
+    color: '#8A92B2',
+  },
+  itemLabelSair: { fontWeight: '600', fontFamily: 'Inter_600SemiBold' },
+  footer: { marginTop: 'auto', paddingTop: 24 },
+  footerText: { fontSize: 11, color: '#5A6180', textAlign: 'center', paddingTop: 4 },
+  toast: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: '#1B2646',
+    borderWidth: 1,
+    borderColor: '#2C3760',
+  },
+  toastText: { fontSize: 12.5, fontFamily: 'Inter_500Medium', color: '#EDEFF7' },
 });

@@ -24,6 +24,15 @@ export default function GlobalNotificationBanner({ userId, suppressed = false })
   const [current, setCurrent] = useState(null);
   const cooldownRef = useRef(null);
 
+  // Que notificação está na tela AGORA, para o `enqueue` saber sem depender de
+  // `current`. Ele vive dentro do efeito de inscrição, que roda só quando o
+  // usuário muda: ler `current` de lá pegaria o valor de quando o canal foi
+  // aberto, que é null para sempre. O updater de `setCurrent` resolve o caso de
+  // trocar o conteúdo, mas o de `setQueue` precisa saber se a linha já está na
+  // tela para não devolvê-la à fila.
+  const jaVisivelRef = useRef(null);
+  jaVisivelRef.current = current?.id ?? null;
+
   // --- Realtime -------------------------------------------------------------
   useEffect(() => {
     if (!userId) {
@@ -34,8 +43,14 @@ export default function GlobalNotificationBanner({ userId, suppressed = false })
 
     let cancelled = false;
 
-    const enqueue = async (row) => {
+    const enqueue = async (row, { isUpdate = false } = {}) => {
       if (!row || !isKnownNotification(row)) return;
+
+      // UPDATE em notificação JÁ LIDA não é aviso novo: é o próprio app marcando
+      // como lida. Abrir a tela de notificações marca TODAS de uma vez, e sem esta
+      // guarda aquele update viraria uma rajada de banners de coisas que a pessoa
+      // acabou de ler.
+      if (isUpdate && row.read) return;
 
       // O payload de postgres_changes traz só a linha crua, sem join. O perfil do autor é
       // buscado à parte para o banner ter avatar e nome.
@@ -50,9 +65,32 @@ export default function GlobalNotificationBanner({ userId, suppressed = false })
       }
 
       if (cancelled) return;
-      setQueue(prev => (
-        prev.some(item => item.id === row.id) ? prev : [...prev, { ...row, actor }]
-      ));
+
+      const enriquecida = { ...row, actor, bumpedAt: Date.now() };
+
+      // A MESMA NOTIFICAÇÃO JÁ ESTÁ NA TELA: troca o conteúdo em vez de empilhar
+      // um segundo banner. É o caso da segunda mensagem da mesma conversa, que o
+      // trigger resolve atualizando a linha — o `id` chega igual. Empilhar aqui
+      // mostraria dois banners seguidos dizendo a mesma coisa, com o resumo novo
+      // só no segundo.
+      //
+      // `bumpedAt` muda a cada chegada e é o que faz o NotificationBanner rearmar
+      // a contagem de saída sem repetir a animação de entrada.
+      setCurrent(atual => (atual && atual.id === row.id ? enriquecida : atual));
+
+      setQueue(prev => {
+        const indice = prev.findIndex(item => item.id === row.id);
+        // Na fila, o conteúdo mais novo substitui o antigo na MESMA posição: a
+        // notificação não deve furar a ordem de chegada só porque foi atualizada.
+        if (indice >= 0) {
+          const copia = [...prev];
+          copia[indice] = enriquecida;
+          return copia;
+        }
+        // Já está na tela: não volta para a fila.
+        if (jaVisivelRef.current === row.id) return prev;
+        return [...prev, enriquecida];
+      });
     };
 
     // Pelo helper, e não por supabase.channel() direto: trocar de conta (ou
@@ -74,6 +112,24 @@ export default function GlobalNotificationBanner({ userId, suppressed = false })
             filter: `user_id=eq.${userId}`,
           },
           handler: (payload) => { enqueue(payload.new); },
+        },
+        // UPDATE TAMBÉM, e não só INSERT. O trigger de mensagem direta agrupa por
+        // conversa atualizando a linha existente (migração 20260930120000), então
+        // da segunda mensagem em diante não há INSERT nenhum. Sem este ouvinte, o
+        // banner só apareceria para a primeira mensagem de cada conversa — e o
+        // banner é o ÚNICO alerta em tempo real do app, porque não existe push
+        // nativo. Mensagem que não aparece aqui passa invisível.
+        //
+        // O custo é ouvir todo update desta tabela para este usuário, inclusive o
+        // "marcar como lida". O `isUpdate` existe para descartá-los.
+        {
+          filter: {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${userId}`,
+          },
+          handler: (payload) => { enqueue(payload.new, { isUpdate: true }); },
         },
       ],
     });

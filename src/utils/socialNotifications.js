@@ -19,8 +19,27 @@
 // aba própria, um silenciar por viagem — sem ter de descobrir quais tipos eram
 // quais.
 
-/** Interação entre pessoas. */
-export const SOCIAL_NOTIFICATION_TYPES = Object.freeze(['follow', 'comment', 'like']);
+/**
+ * Interação entre pessoas.
+ *
+ * `message` VOLTOU na migração 20260930120000, e entrar aqui é o que o
+ * cabeçalho deste arquivo avisa que não se pode esquecer: sem esta linha o aviso
+ * de mensagem chegaria ao banco, não apareceria na tela e nunca seria marcado
+ * como lido — o sino preso num número que ninguém consegue zerar. Foi assim que
+ * os tipos de viagem quase chegaram à produção.
+ *
+ * Ele é um aviso POR CONVERSA não lida, não por mensagem: o trigger atualiza a
+ * linha existente em vez de inserir outra. Era a duplicidade por mensagem que
+ * tinha levado a 20260812130000 a remover o tipo.
+ *
+ * `passport` voltou na MESMA migração e pela mesma razão — a 20260812130000 tirou
+ * os dois juntos. Ele não é agrupado: cada passaporte é um aviso próprio, porque
+ * é uma coisa específica para abrir, e não "você tem mensagem desta pessoa".
+ * Compartilha o interruptor de mensagens diretas, já que chega pelo chat.
+ */
+export const SOCIAL_NOTIFICATION_TYPES = Object.freeze([
+  'follow', 'comment', 'like', 'message', 'passport',
+]);
 
 /**
  * Colaboração numa viagem.
