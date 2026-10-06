@@ -18,6 +18,7 @@ import { useUpload } from '../context/UploadContext';
 import { cancelAccountDeletion } from '../services/profileService';
 import { notify } from '../utils/dialogs';
 import { navigationRef, navigateFromOutside } from './navigationRef';
+import { useLocale } from '../i18n/LocaleProvider';
 import GlobalNotificationBanner from '../components/GlobalNotificationBanner';
 import ScreenErrorBoundary from '../components/ScreenErrorBoundary';
 import { OnboardingProvider, useOnboardingFlow } from '../context/OnboardingContext';
@@ -46,6 +47,8 @@ import ConnectionsScreen from '../screens/profile/ConnectionsScreen';
 import PhotoDetailScreen from '../screens/PhotoDetailScreen';
 import SupportScreen from '../screens/support/SupportScreen';
 import BlockedUsersScreen from '../screens/profile/BlockedUsersScreen';
+import NotificationPreferencesScreen from '../screens/NotificationPreferencesScreen';
+import LanguageScreen from '../screens/LanguageScreen';
 import MessagesScreen from '../screens/messages/MessagesScreen';
 import ConversationScreen from '../screens/messages/ConversationScreen';
 import PassportDetailScreen from '../screens/profile/PassportDetailScreen';
@@ -88,6 +91,8 @@ function ProfileStack() {
       <Stack.Screen name="SavedTrips" component={SavedTripsScreen} />
       <Stack.Screen name="Support" component={SupportScreen} />
       <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
+      <Stack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} />
+      <Stack.Screen name="Language" component={LanguageScreen} />
     </Stack.Navigator>
   );
 }
@@ -145,6 +150,7 @@ function TabBarButton({ style = undefined, clip = true, ...props }) {
 
 function TabNavigator() {
   const { openUploader } = useUpload();
+  const { t } = useLocale();
   const { width } = useWindowDimensions();
   const tabBarWidth = Math.min(Math.max(width - 24, 300), 680);
   return (
@@ -209,7 +215,7 @@ function TabNavigator() {
         name="Feed"
         component={FeedScreenSafe}
         options={{
-          tabBarLabel: 'Início',
+          tabBarLabel: t('nav.home'),
           tabBarIcon: ({ size, color, focused }) => (
             <Ionicons name={focused ? 'home' : 'home-outline'} size={size} color={color} />
           ),
@@ -220,7 +226,7 @@ function TabNavigator() {
         name="Map"
         component={GlobeScreenSafe}
         options={{
-          tabBarLabel: 'Mapa',
+          tabBarLabel: t('nav.map'),
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'map' : 'map-outline'} size={size} color={color} />
           ),
@@ -277,7 +283,7 @@ function TabNavigator() {
         name="Explore"
         component={ExploreScreenSafe}
         options={{
-          tabBarLabel: 'Explorar',
+          tabBarLabel: t('nav.explore'),
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'compass' : 'compass-outline'} size={size} color={color} />
           ),
@@ -288,7 +294,7 @@ function TabNavigator() {
         name="Profile"
         component={ProfileStackSafe}
         options={{
-          tabBarLabel: 'Perfil',
+          tabBarLabel: t('nav.profile'),
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'person' : 'person-outline'} size={size} color={color} />
           ),
