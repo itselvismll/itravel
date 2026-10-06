@@ -15,23 +15,27 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadEsm } = require('./helpers/load-esm.cjs');
+const { countryUtilsDeps } = require('./helpers/countryUtilsDeps.cjs');
 
-const countryUtils = loadEsm('src/utils/countryUtils.js');
+const countryUtils = loadEsm('src/utils/countryUtils.js', countryUtilsDeps());
 const countriesStaticData = loadEsm('src/data/countriesStaticData.js');
+
+const constants = loadEsm('src/utils/constants.js');
 
 const continents = loadEsm('src/utils/countryContinents.js', {
   '../data/countriesStaticData': countriesStaticData,
   './countryUtils': countryUtils,
+  './constants': constants,
 });
 const gridData = loadEsm('src/components/profile/countryGridData.js');
 
 const {
   CONTINENT_ORDER,
-  CONTINENT_PT,
   UNKNOWN_CONTINENT,
+  continentLabelKey,
   countryLabel,
   filterCountries,
-  getContinentPt,
+  getContinentCode,
   groupByContinent,
   normalizeSearch,
 } = continents;
@@ -43,39 +47,38 @@ const visited = (code, name = '') => ({ country_code: code, country_name: name }
 
 // ── 1. Continentes ───────────────────────────────────────────────────────────
 
-test('os cinco region do dataset viram os cinco continentes em português', () => {
-  assert.deepEqual(CONTINENT_PT, {
-    Africa: 'África',
-    Americas: 'Américas',
-    Asia: 'Ásia',
-    Europe: 'Europa',
-    Oceania: 'Oceania',
-  });
+test('os cinco region do dataset viram cinco códigos de continente estáveis', () => {
+  // Rótulo de tela é chave de tradução, não texto cravado — ver AGENTS.md.
+  for (const continent of ['americas', 'europe', 'africa', 'asia', 'oceania']) {
+    assert.match(continentLabelKey(continent), /^countryList\.continents\./);
+  }
+  assert.equal(continentLabelKey('other'), 'countryList.continents.other');
+  assert.equal(continentLabelKey('inventado'), 'countryList.continents.other');
 });
 
 const POR_CONTINENTE = [
-  ['BRA', 'Américas'],
-  ['USA', 'Américas'],
-  ['PRT', 'Europa'],
-  ['DEU', 'Europa'],
-  ['JPN', 'Ásia'],
-  ['ZAF', 'África'],
-  ['EGY', 'África'],
-  ['AUS', 'Oceania'],
+  ['BRA', 'americas'],
+  ['USA', 'americas'],
+  ['PRT', 'europe'],
+  ['DEU', 'europe'],
+  ['JPN', 'asia'],
+  ['ZAF', 'africa'],
+  ['EGY', 'africa'],
+  ['AUS', 'oceania'],
 ];
 
 for (const [code, expected] of POR_CONTINENTE) {
   test(`${code} é ${expected}`, () => {
-    assert.equal(getContinentPt(code), expected);
+    assert.equal(getContinentCode(code), expected);
   });
 }
 
 test('alpha-2 e alpha-3 dão o mesmo continente', () => {
   // As duas listas do perfil guardam o código em formatos que variam com a
   // origem do registro; ler só um deles jogaria metade dos países em "Outros".
-  assert.equal(getContinentPt('BR'), getContinentPt('BRA'));
-  assert.equal(getContinentPt('br'), 'Américas');
-  assert.equal(getContinentPt('pt'), 'Europa');
+  assert.equal(getContinentCode('BR'), getContinentCode('BRA'));
+  assert.equal(getContinentCode('br'), 'americas');
+  assert.equal(getContinentCode('pt'), 'europe');
 });
 
 const SEM_CONTINENTE = [undefined, null, '', 'ZZ', 'XYZ', 'não é código'];
@@ -84,7 +87,7 @@ for (const code of SEM_CONTINENTE) {
   test(`código sem continente cai em Outros: ${JSON.stringify(code)}`, () => {
     // O país NÃO some da lista: um registro que a tela mostra mas o agrupamento
     // descarta seria um país que o usuário marcou e não consegue mais encontrar.
-    assert.equal(getContinentPt(code), UNKNOWN_CONTINENT);
+    assert.equal(getContinentCode(code), UNKNOWN_CONTINENT);
   });
 }
 
@@ -92,7 +95,7 @@ test('todo país do dataset tem continente conhecido', () => {
   // Trava o contrato com o dataset: um `region` novo (ou renomeado) numa
   // atualização do COUNTRIES_STATIC jogaria países silenciosamente em "Outros".
   const semContinente = Object.keys(countriesStaticData.COUNTRIES_STATIC)
-    .filter((code) => getContinentPt(code) === UNKNOWN_CONTINENT);
+    .filter((code) => getContinentCode(code) === UNKNOWN_CONTINENT);
   assert.deepEqual(semContinente, []);
 });
 
@@ -159,7 +162,7 @@ test('um alpha-2 desconhecido vira o rótulo do CLDR, não o country_name', () =
   const item = { country_code: 'ZZ', country_name: 'Terra do Nunca' };
   assert.equal(countryLabel(item), 'Região desconhecida');
   // O país não some da lista: ele aparece, agrupado em "Outros".
-  assert.equal(getContinentPt('ZZ'), UNKNOWN_CONTINENT);
+  assert.equal(getContinentCode('ZZ'), UNKNOWN_CONTINENT);
 });
 
 // ── 3. Agrupamento ───────────────────────────────────────────────────────────
@@ -170,13 +173,16 @@ test('o agrupamento sai na ordem fixa dos continentes, não alfabética', () => 
   const sections = groupByContinent([
     visited('AUS'), visited('JPN'), visited('ZAF'), visited('PRT'), visited('BRA'),
   ]);
-  assert.deepEqual(sections.map((s) => s.title), ['Américas', 'Europa', 'África', 'Ásia', 'Oceania']);
+  assert.deepEqual(
+    sections.map((s) => s.titleKey),
+    ['americas', 'europe', 'africa', 'asia', 'oceania'].map(continentLabelKey)
+  );
 });
 
 test('continente sem país não vira seção vazia', () => {
   const sections = groupByContinent([visited('BRA'), visited('ARG')]);
   assert.equal(sections.length, 1);
-  assert.equal(sections[0].title, 'Américas');
+  assert.equal(sections[0].titleKey, continentLabelKey('americas'));
   assert.equal(sections[0].data.length, 2);
 });
 
@@ -185,19 +191,22 @@ test('dentro da seção, os países saem em ordem alfabética do nome em PT', ()
   // sorte. Com AUT no meio a ordem por código quebraria de forma visível.
   const sections = groupByContinent([visited('PRT'), visited('DEU'), visited('ESP'), visited('AUT')]);
   assert.deepEqual(
-    sections[0].data.map(countryLabel),
+    sections[0].data.map((c) => countryLabel(c)),
     ['Alemanha', 'Áustria', 'Espanha', 'Portugal']
   );
 });
 
 test('a ordem alfabética ignora acento: Áustria vem depois de Alemanha', () => {
   const sections = groupByContinent([visited('AUT'), visited('DEU')]);
-  assert.deepEqual(sections[0].data.map(countryLabel), ['Alemanha', 'Áustria']);
+  assert.deepEqual(sections[0].data.map((c) => countryLabel(c)), ['Alemanha', 'Áustria']);
 });
 
 test('Outros fecha a lista, depois de todos os continentes reais', () => {
   const sections = groupByContinent([visited('ZZ', 'Ilha Perdida'), visited('BRA'), visited('JPN')]);
-  assert.deepEqual(sections.map((s) => s.title), ['Américas', 'Ásia', UNKNOWN_CONTINENT]);
+  assert.deepEqual(
+    sections.map((s) => s.titleKey),
+    ['americas', 'asia', UNKNOWN_CONTINENT].map(continentLabelKey)
+  );
   assert.equal(CONTINENT_ORDER[CONTINENT_ORDER.length - 1], UNKNOWN_CONTINENT);
 });
 

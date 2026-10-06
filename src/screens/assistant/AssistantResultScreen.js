@@ -17,6 +17,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { adjustTravelPlan, regeneratePlanActivity } from '../../services/assistantService';
 import { getTripPlan, saveTripPlan } from '../../services/tripPlanService';
 import { confirm, notify } from '../../utils/dialogs';
+import { useLocale } from '../../i18n/LocaleProvider';
+import { formatCurrency } from '../../utils/formatNumber';
+import {
+  periodIcon,
+  periodLabelKey,
+  budgetCategoryLabelKey,
+  isShoppingBudgetCategory,
+  checklistCategoryLabelKey,
+} from '../../utils/assistantPlanCategories';
 import { toBrazilianDate } from '../../utils/dateUtils';
 import ShareToJourniModal from '../../components/ShareToJourniModal';
 import TripCoverHeader from '../../components/trip/TripCoverHeader';
@@ -60,30 +69,24 @@ import {
 } from '../../utils/tripSummary';
 
 const TABS = [
-  { id: 'itinerary', label: 'Roteiro', icon: 'map-outline' },
-  { id: 'budget', label: 'Orçamento', icon: 'wallet-outline' },
-  { id: 'checklist', label: 'Checklist', icon: 'checkbox-outline' },
-  { id: 'tips', label: 'Dicas', icon: 'bulb-outline' },
+  { id: 'itinerary', labelKey: 'assistantResult.tabs.itinerary', icon: 'map-outline' },
+  { id: 'budget', labelKey: 'assistantResult.tabs.budget', icon: 'wallet-outline' },
+  { id: 'checklist', labelKey: 'assistantResult.tabs.checklist', icon: 'checkbox-outline' },
+  { id: 'tips', labelKey: 'assistantResult.tabs.tips', icon: 'bulb-outline' },
   { id: 'chat', label: 'Ajustar', icon: 'chatbubble-ellipses-outline' },
 ];
 
-const periodIcon = (period = '') => {
-  const normalized = period.toLowerCase();
-  if (normalized.includes('manhã')) return 'sunny-outline';
-  if (normalized.includes('noite')) return 'moon-outline';
-  return 'partly-sunny-outline';
-};
-
-const formatMoney = (value, currency = 'BRL') => {
+const formatMoney = (value, currency = 'BRL', tag) => {
   if (Number(value) === 0) return '0';
   try {
-    return `≈ ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(Number(value) || 0)}`;
+    return `≈ ${formatCurrency(Number(value) || 0, currency, tag)}`;
   } catch {
     return `≈ ${currency} ${Number(value || 0).toFixed(2)}`;
   }
 };
 
 export default function AssistantResultScreen({ route, navigation }) {
+  const { t, tag } = useLocale();
   // `request` e `plan` começam com o que a LISTA passou — e a lista passa tudo.
   // Quem chega pelo convite ou pela notificação traz só o id, e para esses dois
   // a viagem é BUSCADA (ver o efeito "viagem aberta só pelo id" mais abaixo).
@@ -415,7 +418,7 @@ export default function AssistantResultScreen({ route, navigation }) {
   const criarTarefa = useCallback(async ({ title, assignedTo }) => {
     const resultado = await createTripTask({ tripId: planId, title, assignedTo });
     if (!resultado.success) {
-      notify('Não foi possível criar', resultado.error || 'Tente de novo em instantes.');
+      notify(t('assistantResult.tasks.createFailedTitle'), resultado.error || t('common.actions.tryAgainSoon'));
       return false;
     }
     setTasks((atual) => [...atual, resultado.data]);
@@ -425,7 +428,7 @@ export default function AssistantResultScreen({ route, navigation }) {
   const alternarTarefa = useCallback(async ({ taskId, done }) => {
     const resultado = await setTripTaskDone({ taskId, done });
     if (!resultado.success) {
-      notify('Não foi possível atualizar', resultado.error || 'Tente de novo em instantes.');
+      notify(t('assistantResult.tasks.updateFailedTitle'), resultado.error || t('common.actions.tryAgainSoon'));
       return false;
     }
     // A linha que volta do banco é a que vale: ela traz quem concluiu e quando.
@@ -482,14 +485,17 @@ export default function AssistantResultScreen({ route, navigation }) {
   const excluirTarefa = useCallback(async (taskId) => {
     const tarefa = tasks.find((t) => t.id === taskId);
     const ok = await confirm(
-      'Excluir tarefa',
-      `"${tarefa?.title || 'Esta tarefa'}" sai da lista para todos os participantes.`
+      t('assistantResult.tasks.deleteConfirmTitle'),
+      // O título da tarefa é conteúdo do usuário: entra por interpolação.
+      t('assistantResult.tasks.deleteConfirmMessage', {
+        title: tarefa?.title || t('assistantResult.tasks.untitled'),
+      })
     );
     if (!ok) return;
 
     const resultado = await deleteTripTask(taskId);
     if (!resultado.success) {
-      notify('Não foi possível excluir', resultado.error || 'Tente de novo em instantes.');
+      notify(t('assistantResult.tasks.deleteFailedTitle'), resultado.error || t('common.actions.tryAgainSoon'));
       return;
     }
     setTasks((atual) => atual.filter((t) => t.id !== taskId));
@@ -516,7 +522,7 @@ export default function AssistantResultScreen({ route, navigation }) {
     setAccepting(false);
 
     if (!resultado.success) {
-      notify('Não foi possível aceitar', resultado.error || 'Tente de novo em instantes.');
+      notify(t('assistantResult.invite.acceptFailedTitle'), resultado.error || t('common.actions.tryAgainSoon'));
       return;
     }
     // Recarregar é o que faz os controles de edição aparecerem: `abilities` sai
@@ -530,9 +536,15 @@ export default function AssistantResultScreen({ route, navigation }) {
   // edição mais poderosa da tela, não um chat. Ela sai da barra para quem só
   // visualiza, em vez de ficar lá e recusar o envio: uma aba que abre e não
   // deixa fazer nada é pior do que uma aba que não existe.
+  // A CHAVE É RESOLVIDA AQUI, e não dentro da TripShortcutBar: aquela barra é
+  // genérica e recebe `label` pronto, e trocá-la para receber `labelKey`
+  // obrigaria todo chamador futuro a usar tradução — o que é certo para abas e
+  // errado para uma barra que também pode mostrar nome de dia ou de parada, que
+  // são conteúdo. O `t` entra nas dependências porque muda ao trocar o idioma.
   const visibleTabs = useMemo(
-    () => (readOnly ? TABS.filter((tab) => tab.id !== 'chat') : TABS),
-    [readOnly]
+    () => (readOnly ? TABS.filter((tab) => tab.id !== 'chat') : TABS)
+      .map((tab) => ({ ...tab, label: t(tab.labelKey) })),
+    [readOnly, t]
   );
 
   // Quem estava na aba Ajustar quando o papel mudou (o organizador rebaixou
@@ -650,25 +662,27 @@ export default function AssistantResultScreen({ route, navigation }) {
 
   const budgetExplanation = useMemo(() => {
     const items = plan.budget?.items || [];
-    const shoppingItem = items.find(item => /compras/i.test(item.category || ''));
+    const shoppingItem = items.find(item => isShoppingBudgetCategory(item.category));
     const shoppingIncluded = typeof plan.budget?.shoppingIncluded === 'boolean'
       ? plan.budget.shoppingIncluded
       : Number(shoppingItem?.amount) > 0;
     const categories = items
       .filter(item => Number(item.amount) > 0)
-      .map(item => item.category)
+      .map(item => t(budgetCategoryLabelKey(item.category)))
       .join(', ');
 
     return {
       shoppingIncluded,
       scope: plan.budget?.scopeNote
-        || (categories ? `O total considera: ${categories}.` : 'Abra a aba Orçamento para conferir as categorias consideradas.'),
+        || (categories
+          ? t('assistantResult.budget.scopeFromCategories', { categories })
+          : t('assistantResult.budget.scopeFallback')),
     };
   }, [plan.budget]);
 
   const handleShare = async () => {
     const daySummary = (plan.days || []).map(day => (
-      `Dia ${day.day} — ${day.theme}\n${(day.activities || []).map(item => `• ${item.period}: ${item.title}`).join('\n')}`
+      `Dia ${day.day} — ${day.theme}\n${(day.activities || []).map(item => `• ${t(periodLabelKey(item.period))}: ${item.title}`).join('\n')}`
     )).join('\n\n');
     await Share.share({
       title: plan.title || 'Meu roteiro Journi',
@@ -689,12 +703,12 @@ export default function AssistantResultScreen({ route, navigation }) {
     const result = await saveTripPlan({ planId, request, plan: planToSave });
     setSaving(false);
     if (!result.success) {
-      notify('Erro ao salvar', result.error || 'Tente novamente.');
+      notify(t('assistantResult.save.failedTitle'), result.error || t('common.actions.tryAgain'));
       return false;
     }
     setPlanId(result.data.id);
     if (!quiet || result.warning) {
-      notify('Roteiro salvo', result.warning || 'Você encontra esta viagem no seu perfil.');
+      notify(t('assistantResult.save.doneTitle'), result.warning || t('assistantResult.save.doneMessage'));
     }
 
     // RELER DEPOIS DE SALVAR. A cópia que está na tela tem os `updatedAt` de
@@ -760,7 +774,7 @@ export default function AssistantResultScreen({ route, navigation }) {
     });
     setRegenerating('');
     if (!result.success) {
-      notify('Não foi possível trocar a atividade', formatAssistantError(result));
+      notify(t('assistantResult.adjust.swapFailedTitle'), formatAssistantError(result));
       return;
     }
     setPlan(result.plan);
@@ -825,8 +839,8 @@ export default function AssistantResultScreen({ route, navigation }) {
       // requisição no log da Edge Function, onde estão `providerStatus` e
       // `providerReason` — quem de fato recusou, e por quê.
       notify(
-        'Não foi possível ajustar o roteiro',
-        formatAssistantError(result, 'Tente novamente em instantes.')
+        t('assistantResult.adjust.failedTitle'),
+        formatAssistantError(result, t('common.actions.tryAgainSoon'))
       );
       return;
     }
@@ -850,14 +864,14 @@ export default function AssistantResultScreen({ route, navigation }) {
         {tripLoading ? (
           <>
             <ActivityIndicator size="large" color="#6C2BD9" />
-            <Text style={styles.tripStatusText}>Abrindo a viagem…</Text>
+            <Text style={styles.tripStatusText}>{t('assistantResult.opening')}</Text>
           </>
         ) : (
           <>
             <Ionicons name="alert-circle-outline" size={44} color="#9AA0B4" />
             <Text style={styles.tripStatusText}>{tripError}</Text>
             <TouchableOpacity style={styles.tripStatusButton} onPress={() => navigation.goBack()}>
-              <Text style={styles.tripStatusButtonText}>Voltar</Text>
+              <Text style={styles.tripStatusButtonText}>{t('assistantResult.backToTripStatus')}</Text>
             </TouchableOpacity>
           </>
         )}
@@ -925,7 +939,7 @@ export default function AssistantResultScreen({ route, navigation }) {
               <Ionicons name="airplane" size={18} color="#A78BFA" />
             </View>
             <View style={styles.inviteBannerText}>
-              <Text style={styles.inviteBannerTitle}>Você foi convidado</Text>
+              <Text style={styles.inviteBannerTitle}>{t('assistantResult.invited')}</Text>
               <Text style={styles.inviteBannerHint}>
                 Aceite para editar o roteiro junto com o resto do grupo.
               </Text>
@@ -935,11 +949,11 @@ export default function AssistantResultScreen({ route, navigation }) {
               disabled={accepting}
               style={[styles.acceptButton, accepting && styles.acceptButtonBusy]}
               accessibilityRole="button"
-              accessibilityLabel="Aceitar convite da viagem"
+              accessibilityLabel={t('assistantResult.acceptInviteLabel')}
             >
               {accepting
                 ? <ActivityIndicator size="small" color="#fff" />
-                : <Text style={styles.acceptButtonText}>Aceitar</Text>}
+                : <Text style={styles.acceptButtonText}>{t('common.actions.accept')}</Text>}
             </TouchableOpacity>
           </View>
         )}
@@ -976,19 +990,19 @@ export default function AssistantResultScreen({ route, navigation }) {
         {activeTab === 'itinerary' ? (
         <View style={styles.summaryCard}>
           <View style={styles.summaryTop}>
-            <View style={styles.aiBadge}><Ionicons name="sparkles" size={13} color="#C4B5FD" /><Text style={styles.aiBadgeText}>ROTEIRO PERSONALIZADO</Text></View>
+            <View style={styles.aiBadge}><Ionicons name="sparkles" size={13} color="#C4B5FD" /><Text style={styles.aiBadgeText}>{t('assistantResult.personalizedBadge')}</Text></View>
             <Text style={styles.countryText}>{plan.destinationCountry}</Text>
           </View>
           <Text style={styles.summaryText}>{plan.summary}</Text>
           <View style={styles.quickFacts}>
-            <Fact icon="time-outline" text={`${(plan.days || []).length} dias`} />
-            <Fact icon="cash-outline" text={formatMoney(plan.budget?.total, plan.budget?.currency || request.currency)} />
-            <Fact icon="walk-outline" text={request.pace === 'calm' ? 'Tranquilo' : request.pace === 'intense' ? 'Intenso' : 'Equilibrado'} />
+            <Fact icon="time-outline" text={t('common.plural.day', { count: (plan.days || []).length })} />
+            <Fact icon="cash-outline" text={formatMoney(plan.budget?.total, plan.budget?.currency || request.currency, tag)} />
+            <Fact icon="walk-outline" text={t(request.pace === 'calm' ? 'tripPlanner.paces.calm' : request.pace === 'intense' ? 'tripPlanner.paces.intense' : 'tripPlanner.paces.balanced')} />
           </View>
           <View style={styles.budgetScopeBox}>
             <View style={styles.budgetScopeHeader}>
               <Ionicons name="receipt-outline" size={16} color="#C4B5FD" />
-              <Text style={styles.budgetScopeTitle}>O que esse valor inclui?</Text>
+              <Text style={styles.budgetScopeTitle}>{t('assistantResult.budget.whatIsIncluded')}</Text>
             </View>
             <Text style={styles.budgetScopeText}>{budgetExplanation.scope}</Text>
             <Text style={styles.shoppingStatus}>
@@ -1000,11 +1014,11 @@ export default function AssistantResultScreen({ route, navigation }) {
               {(plan.budget?.items || []).map(item => (
                 <View key={item.category} style={styles.summaryBudgetRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.summaryBudgetCategory}>{item.category}</Text>
+                    <Text style={styles.summaryBudgetCategory}>{t(budgetCategoryLabelKey(item.category))}</Text>
                     {!!item.note && <Text style={styles.summaryBudgetNote}>{item.note}</Text>}
                   </View>
                   <Text style={styles.summaryBudgetAmount}>
-                    {formatMoney(item.amount, plan.budget?.currency || request.currency)}
+                    {formatMoney(item.amount, plan.budget?.currency || request.currency, tag)}
                   </Text>
                 </View>
               ))}
@@ -1086,13 +1100,13 @@ export default function AssistantResultScreen({ route, navigation }) {
                             <TextInput value={editing.draft.title} onChangeText={title => setEditing(current => ({ ...current, draft: { ...current.draft, title } }))} style={styles.editInput} placeholderTextColor="#6F7798" />
                             <TextInput value={editing.draft.description} onChangeText={description => setEditing(current => ({ ...current, draft: { ...current.draft, description } }))} style={[styles.editInput, styles.editMultiline]} multiline placeholderTextColor="#6F7798" />
                             <View style={styles.actionRow}>
-                              <SmallButton icon="close" label="Cancelar" onPress={() => setEditing(null)} />
-                              <SmallButton icon="checkmark" label={saving ? 'Salvando...' : 'Aplicar'} primary loading={saving} onPress={saveActivityEdit} />
+                              <SmallButton icon="close" label={t('common.actions.cancel')} onPress={() => setEditing(null)} />
+                              <SmallButton icon="checkmark" label={saving ? t('assistantResult.saving') : t('assistantResult.applyEdit')} primary loading={saving} onPress={saveActivityEdit} />
                             </View>
                           </View>
                         ) : (
                           <>
-                            <Text style={styles.period}>{activity.period} · {activity.duration}</Text>
+                            <Text style={styles.period}>{t(periodLabelKey(activity.period))} · {activity.duration}</Text>
                             <Text style={styles.activityTitle}>{activity.title}</Text>
                             <Text style={styles.activityDescription}>{activity.description}</Text>
                             {/* Parada editada depois de criada, em viagem
@@ -1104,7 +1118,7 @@ export default function AssistantResultScreen({ route, navigation }) {
                                 <Ionicons name="location-outline" size={12} color="#7A7E8C" />
                                 <Text style={styles.location} numberOfLines={1}>{activity.location}</Text>
                               </View>
-                              <Text style={styles.cost}>{formatMoney(activity.estimatedCost, plan.budget?.currency || request.currency)}</Text>
+                              <Text style={styles.cost}>{formatMoney(activity.estimatedCost, plan.budget?.currency || request.currency, tag)}</Text>
                             </View>
                             {(activity.rating || activity.openingHours?.length || activity.verificationSource) && (
                               <View style={styles.verifiedRow}>
@@ -1126,19 +1140,19 @@ export default function AssistantResultScreen({ route, navigation }) {
                               </View>
                             )}
                             <View style={styles.actionRow}>
-                              <SmallButton icon="map-outline" label="Mapa" onPress={() => openMap(activity)} />
+                              <SmallButton icon="map-outline" label={t('assistantResult.openMap')} onPress={() => openMap(activity)} />
                               {!!activity.officialUrl && (
-                                <SmallButton icon="ticket-outline" label="Site oficial" onPress={() => openOfficialUrl(activity)} />
+                                <SmallButton icon="ticket-outline" label={t('assistantResult.openOfficialSite')} onPress={() => openOfficialUrl(activity)} />
                               )}
                               {/* Editar e trocar com IA escrevem no roteiro: só
                                   para quem pode editar. "Mapa" e "Site oficial"
                                   continuam para todos — são leitura. */}
                               {!readOnly && (
                                 <>
-                                  <SmallButton icon="pencil-outline" label="Editar" onPress={() => startEditing(dayIndex, activityIndex, activity)} />
+                                  <SmallButton icon="pencil-outline" label={t('assistantResult.editActivity')} onPress={() => startEditing(dayIndex, activityIndex, activity)} />
                                   <SmallButton
                                     icon="refresh-outline"
-                                    label={regenerating === key ? 'Trocando...' : 'Trocar com IA'}
+                                    label={regenerating === key ? t('assistantResult.swapping') : t('assistantResult.swapWithAI')}
                                     loading={regenerating === key}
                                     onPress={() => regenerateActivity(dayIndex, activityIndex)}
                                   />
@@ -1168,12 +1182,12 @@ export default function AssistantResultScreen({ route, navigation }) {
 
         {activeTab === 'budget' && (
           <View style={styles.panel}>
-            <Text style={styles.panelEyebrow}>ESTIMATIVA PARA TODA A VIAGEM</Text>
-            <Text style={styles.totalBudget}>{formatMoney(plan.budget?.total, plan.budget?.currency || request.currency)}</Text>
+            <Text style={styles.panelEyebrow}>{t('assistantResult.budget.wholeTripEstimate')}</Text>
+            <Text style={styles.totalBudget}>{formatMoney(plan.budget?.total, plan.budget?.currency || request.currency, tag)}</Text>
             {!!request.convertedBudget && request.displayCurrency !== (plan.budget?.currency || request.currency) && (
               <View style={styles.convertedBudgetBox}>
-                <Text style={styles.convertedBudgetLabel}>ORÇAMENTO INFORMADO, CONVERTIDO</Text>
-                <Text style={styles.convertedBudgetValue}>{formatMoney(request.convertedBudget, request.displayCurrency)}</Text>
+                <Text style={styles.convertedBudgetLabel}>{t('assistantResult.budget.informedConverted')}</Text>
+                <Text style={styles.convertedBudgetValue}>{formatMoney(request.convertedBudget, request.displayCurrency, tag)}</Text>
                 <Text style={styles.convertedBudgetDate}>Cotação diária de {request.exchangeDate || 'hoje'}</Text>
               </View>
             )}
@@ -1185,8 +1199,8 @@ export default function AssistantResultScreen({ route, navigation }) {
             <View style={styles.divider} />
             {(plan.budget?.items || []).map(item => (
               <View key={item.category} style={styles.budgetRow}>
-                <View style={{ flex: 1 }}><Text style={styles.budgetCategory}>{item.category}</Text><Text style={styles.budgetNote}>{item.note}</Text></View>
-                <Text style={styles.budgetAmount}>{formatMoney(item.amount, plan.budget.currency)}</Text>
+                <View style={{ flex: 1 }}><Text style={styles.budgetCategory}>{t(budgetCategoryLabelKey(item.category))}</Text><Text style={styles.budgetNote}>{item.note}</Text></View>
+                <Text style={styles.budgetAmount}>{formatMoney(item.amount, plan.budget.currency, tag)}</Text>
               </View>
             ))}
           </View>
@@ -1218,7 +1232,7 @@ export default function AssistantResultScreen({ route, navigation }) {
 
         {activeTab === 'checklist' && (
           <View style={styles.panel}>
-            <View style={styles.progressHeader}><Text style={styles.panelTitle}>Preparação da viagem</Text><Text style={styles.progressText}>{checklistProgress.done}/{checklistProgress.total}</Text></View>
+            <View style={styles.progressHeader}><Text style={styles.panelTitle}>{t('assistantResult.preparation')}</Text><Text style={styles.progressText}>{checklistProgress.done}/{checklistProgress.total}</Text></View>
             <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${checklistProgress.percent}%` }]} /></View>
             {(plan.checklist || []).map((item, index) => (
               // Checklist é estado compartilhado da viagem: marcar um item
@@ -1232,7 +1246,7 @@ export default function AssistantResultScreen({ route, navigation }) {
                 style={styles.checkRow}
               >
                 <Ionicons name={item.done ? 'checkbox' : 'square-outline'} size={22} color={item.done ? '#00D1C1' : '#6F7798'} />
-                <View style={{ flex: 1 }}><Text style={styles.checkCategory}>{item.category}</Text><Text style={[styles.checkItem, item.done && styles.checkDone]}>{item.item}</Text></View>
+                <View style={{ flex: 1 }}><Text style={styles.checkCategory}>{t(checklistCategoryLabelKey(item.category))}</Text><Text style={[styles.checkItem, item.done && styles.checkDone]}>{item.item}</Text></View>
               </TouchableOpacity>
             ))}
           </View>
@@ -1240,11 +1254,11 @@ export default function AssistantResultScreen({ route, navigation }) {
 
         {activeTab === 'tips' && (
           <View style={styles.listGap}>
-            <TipPanel title="Dicas práticas" icon="bulb-outline" color="#A78BFA" items={plan.practicalTips} />
-            <TipPanel title="Segurança" icon="shield-checkmark-outline" color="#FF8AA0" items={plan.safetyTips} />
+            <TipPanel title={t('assistantResult.practicalTips')} icon="bulb-outline" color="#A78BFA" items={plan.practicalTips} />
+            <TipPanel title={t('assistantResult.safetyTips')} icon="shield-checkmark-outline" color="#FF8AA0" items={plan.safetyTips} />
             {!!plan.sources?.length && (
               <View style={styles.panel}>
-                <Text style={styles.panelTitle}>Fontes e atualizações</Text>
+                <Text style={styles.panelTitle}>{t('assistantResult.sources')}</Text>
                 {plan.sources.map(source => (
                   <TouchableOpacity key={`${source.label}-${source.url}`} onPress={() => source.url && Linking.openURL(source.url)} style={styles.sourceRow}>
                     <Ionicons name="open-outline" size={17} color="#8B5CF6" />
@@ -1261,8 +1275,8 @@ export default function AssistantResultScreen({ route, navigation }) {
             <View style={styles.chatHeading}>
               <Ionicons name="sparkles" size={20} color="#A78BFA" />
               <View style={{ flex: 1 }}>
-                <Text style={styles.panelTitle}>Ajuste este roteiro com IA</Text>
-                <Text style={styles.chatHint}>Peça mudanças sem preencher tudo novamente.</Text>
+                <Text style={styles.panelTitle}>{t('assistantResult.adjust.title')}</Text>
+                <Text style={styles.chatHint}>{t('assistantResult.adjust.subtitle')}</Text>
               </View>
             </View>
 
@@ -1296,7 +1310,7 @@ export default function AssistantResultScreen({ route, navigation }) {
               <TextInput
                 value={chatText}
                 onChangeText={setChatText}
-                placeholder="Ex: troque o museu por um passeio ao ar livre"
+                placeholder={t('assistantResult.editPlaceholder')}
                 placeholderTextColor="#69718F"
                 style={styles.chatInput}
                 multiline
@@ -1322,7 +1336,7 @@ export default function AssistantResultScreen({ route, navigation }) {
         {!readOnly && (
           <View style={styles.bottomActions}>
             <TouchableOpacity style={styles.secondaryButton} onPress={() => navigation.replace('TripPlanner', { initialRequest: request })}>
-              <Ionicons name="options-outline" size={18} color="#A78BFA" /><Text style={styles.secondaryText}>Alterar viagem</Text>
+              <Ionicons name="options-outline" size={18} color="#A78BFA" /><Text style={styles.secondaryText}>{t('assistantResult.adjust.cta')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.saveButton} onPress={() => handleSave()} disabled={saving}>
               {saving ? <ActivityIndicator color="#fff" /> : <Ionicons name="bookmark" size={18} color="#fff" />}
@@ -1336,11 +1350,11 @@ export default function AssistantResultScreen({ route, navigation }) {
             onPress={() => navigation.navigate('Main', { screen: 'Profile', params: { screen: 'SavedTrips' } })}
           >
             <Ionicons name="map-outline" size={18} color="#35D3C8" />
-            <Text style={styles.savedTripsText}>Abrir meus roteiros salvos</Text>
+            <Text style={styles.savedTripsText}>{t('assistantResult.openSaved')}</Text>
             <Ionicons name="chevron-forward" size={17} color="#35D3C8" />
           </TouchableOpacity>
         )}
-        <Text style={styles.disclaimer}>Valores são estimativas. Confirme preços, horários, documentos e alertas em fontes oficiais.</Text>
+        <Text style={styles.disclaimer}>{t('assistantResult.estimatesDisclaimer')}</Text>
       </ScrollView>
       {/* Fora do ScrollView, para ficar parado no canto enquanto a lista rola.
           Só na aba Roteiro: é a única longa o bastante para precisar dele. */}
@@ -1363,7 +1377,7 @@ export default function AssistantResultScreen({ route, navigation }) {
             onPress={scrollToTop}
             style={styles.backToTopButton}
             accessibilityRole="button"
-            accessibilityLabel="Voltar ao topo do roteiro"
+            accessibilityLabel={t('assistantResult.backToTop')}
           >
             <Ionicons name="arrow-up" size={20} color={trip.ink} />
           </TouchableOpacity>

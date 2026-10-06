@@ -21,6 +21,7 @@ import {
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { UploadProvider } from './src/context/UploadContext';
 import { ActivePlanProvider } from './src/context/ActivePlanContext';
+import { LocaleProvider } from './src/i18n/LocaleProvider';
 import AppNavigator from './src/navigation/AppNavigator';
 import { SATELLITE_TILE_LOG_PATTERN } from './src/components/map/globeConfig';
 
@@ -64,7 +65,12 @@ export default function App() {
 
   // SafeAreaProvider é o que dá o inset do topo ao banner global de notificações, para
   // ele não nascer embaixo do notch/status bar.
+  // LocaleProvider é o mais externo dos providers: TODA tela traduz, inclusive as
+  // de erro e as de autenticação, que montam fora do resto da árvore. O idioma já
+  // vem aplicado no import de src/i18n (lido do storage), então não há um primeiro
+  // frame em português para quem escolheu outro idioma.
   return (
+    <LocaleProvider>
     <SafeAreaProvider>
       <UploadProvider>
         {/* A tela de roteiros salvos (ProfileStack) aplica o roteiro e o globo
@@ -75,5 +81,6 @@ export default function App() {
         </ActivePlanProvider>
       </UploadProvider>
     </SafeAreaProvider>
+    </LocaleProvider>
   );
 }

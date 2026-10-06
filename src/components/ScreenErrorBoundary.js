@@ -24,6 +24,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { t } from '../i18n';
 import { COLORS } from '../utils/constants';
 
 export default class ScreenErrorBoundary extends React.Component {
@@ -60,20 +61,19 @@ export default class ScreenErrorBoundary extends React.Component {
     return (
       <View style={styles.container}>
         <Ionicons name="cloud-offline-outline" size={44} color={COLORS.textSecondary} />
-        <Text style={styles.title}>Algo deu errado aqui</Text>
+        <Text style={styles.title}>{t('errorBoundary.title')}</Text>
         <Text style={styles.message}>
-          Não foi possível carregar esta tela. Você pode tentar de novo ou usar o menu abaixo para
-          ir para outro lugar.
+          {t('errorBoundary.message')}
         </Text>
 
         <TouchableOpacity
           style={styles.button}
           onPress={this.handleRetry}
           accessibilityRole="button"
-          accessibilityLabel="Tentar carregar a tela de novo"
+          accessibilityLabel={t('errorBoundary.retryLabel')}
         >
           <Ionicons name="refresh" size={18} color={COLORS.white} />
-          <Text style={styles.buttonText}>Tentar de novo</Text>
+          <Text style={styles.buttonText}>{t('errorBoundary.retry')}</Text>
         </TouchableOpacity>
 
         {/* A mensagem crua só em desenvolvimento: para quem está com o app na

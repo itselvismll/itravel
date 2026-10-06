@@ -13,6 +13,7 @@ import { Platform, StyleSheet, Text, View } from 'react-native';
 import CountryFlag from '../CountryFlag';
 import { getAlpha2 } from '../../utils/countryUtils';
 import { countryLabel } from '../../utils/countryContinents';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 export const TAG_WIDTH = 104;
 export const TAG_HEIGHT = 58;
@@ -36,6 +37,7 @@ export default function CountryTag({
   accentColor,
   accentBorderColor,
 }) {
+  const { tag } = useLocale();
   const code = getAlpha2(country?.country_code).toUpperCase();
 
   return (
@@ -58,7 +60,7 @@ export default function CountryTag({
       <View style={styles.tagDivider} />
       <View style={styles.tagFooter}>
         <Text style={styles.tagName} numberOfLines={1}>
-          {countryLabel(country).toUpperCase()}
+          {countryLabel(country, tag).toUpperCase()}
         </Text>
       </View>
     </View>

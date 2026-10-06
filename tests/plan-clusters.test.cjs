@@ -9,8 +9,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadEsm } = require('./helpers/load-esm.cjs');
+const { countryUtilsDeps } = require('./helpers/countryUtilsDeps.cjs');
 
-const countryUtils = loadEsm('src/utils/countryUtils.js');
+const countryUtils = loadEsm('src/utils/countryUtils.js', countryUtilsDeps());
 const geoCountryUtils = loadEsm('src/utils/geo-country-utils.js', {
   './countryUtils': countryUtils,
 });

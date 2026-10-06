@@ -56,27 +56,81 @@ const DEFAULT_BADGE = { icon: 'notifications', color: '#6C2BD9' };
 
 export const getBadge = type => BADGE[type] || DEFAULT_BADGE;
 
-export const getTitle = (notification, actorName) => {
-  switch (notification?.type) {
-    case 'message': return `${actorName} te enviou uma mensagem`;
-    case 'follow': return `${actorName} começou a seguir você`;
-    case 'passport': return `${actorName} compartilhou um passaporte`;
-    case 'comment': return `${actorName} comentou sua foto`;
-    case 'like': return `${actorName} curtiu sua foto`;
-    // O `preview` da notificação carrega o nome da viagem, então o título não
-    // repete: "Fulano te convidou para uma viagem" / "Itália em outubro".
-    case 'trip_invite': return `${actorName} te convidou para uma viagem`;
-    case 'trip_joined': return `${actorName} entrou na sua viagem`;
-    case 'trip_edit': return `${actorName} editou a viagem`;
-    // O `preview` destas duas carrega o TÍTULO DA TAREFA, e não o nome da
-    // viagem: "Elvis criou uma tarefa" / "Levar o adaptador de tomada".
-    case 'trip_task_created': return `${actorName} criou uma tarefa`;
-    case 'trip_task_done': return `${actorName} concluiu uma tarefa`;
-    default:
-      return notification?.message
-        ? `${actorName} ${notification.message}`
-        : 'Você tem uma notificação';
-  }
+// O PREDICADO de cada tipo — "o que a pessoa fez" —, como CHAVE de tradução.
+//
+// POR QUE O PREDICADO SEPARADO, E NÃO A FRASE INTEIRA
+//
+// A lista do sino desenha o nome do autor em NEGRITO e o resto em peso normal,
+// num `<Text>` com um `<Text>` dentro. Uma chave com a frase completa
+// ("%{actor} começou a seguir você") não daria para quebrar nesse ponto sem
+// adivinhar onde o nome termina em cada idioma. Então a chave guarda só o
+// predicado, e quem monta decide: a lista concatena com o negócio em negrito, o
+// banner usa `notifications.titleFormat`.
+//
+// `titleFormat` é "%{actor} %{predicate}" e existe para o tradutor poder mudar a
+// JUNÇÃO, não só as partes — é o ponto onde um idioma de ordem diferente seria
+// acomodado sem mexer em código.
+//
+// A FONTE DO TEXTO É O APP, NÃO O BANCO. A coluna `notifications.message` guarda
+// a frase em português escrita pelos triggers, e ela NÃO é mais lida para nenhum
+// dos 10 tipos conhecidos — só no `default`, para tipo que o app ainda não
+// conhece. Ver a regra "Texto de interface não nasce no banco" no AGENTS.md.
+export const NOTIFICATION_PREDICATE_KEY = Object.freeze({
+  follow: 'notifications.predicate.follow',
+  comment: 'notifications.predicate.comment',
+  like: 'notifications.predicate.like',
+  message: 'notifications.predicate.message',
+  passport: 'notifications.predicate.passport',
+  // O `preview` destas três carrega o nome da viagem, então o predicado não
+  // repete: "Fulano te convidou para uma viagem" / "Itália em outubro".
+  trip_invite: 'notifications.predicate.trip_invite',
+  trip_joined: 'notifications.predicate.trip_joined',
+  trip_edit: 'notifications.predicate.trip_edit',
+  // O `preview` destas duas carrega o TÍTULO DA TAREFA, e não o nome da viagem:
+  // "Elvis criou uma tarefa" / "Levar o adaptador de tomada".
+  trip_task_created: 'notifications.predicate.trip_task_created',
+  trip_task_done: 'notifications.predicate.trip_task_done',
+});
+
+/**
+ * A chave do predicado, ou `null` para tipo que o app não conhece.
+ *
+ * @param {string | null | undefined} type
+ * @returns {string | null}
+ */
+export const getPredicateKey = (type) => (
+  (typeof type === 'string' && NOTIFICATION_PREDICATE_KEY[type]) || null
+);
+
+/**
+ * O predicado já traduzido, ou o `message` do banco como ÚLTIMO recurso.
+ *
+ * O fallback existe para o tipo que chegou ao banco antes de o app aprender a
+ * renderizá-lo. Sair em português nessa hora é melhor do que sair vazio — mas é
+ * o único caminho em que texto do banco ainda aparece na tela.
+ *
+ * @param {{ type?: string, message?: string }} notification
+ * @param {(key: string, options?: object) => string} t
+ * @returns {string}
+ */
+export const getPredicate = (notification, t) => {
+  const key = getPredicateKey(notification?.type);
+  if (key) return t(key);
+  return notification?.message || '';
+};
+
+/**
+ * O título completo: autor + predicado.
+ *
+ * @param {{ type?: string, message?: string }} notification
+ * @param {string} actorName
+ * @param {(key: string, options?: object) => string} t
+ * @returns {string}
+ */
+export const getTitle = (notification, actorName, t) => {
+  const predicate = getPredicate(notification, t);
+  if (!predicate) return t('notifications.fallbackTitle');
+  return t('notifications.titleFormat', { actor: actorName, predicate });
 };
 
 /**

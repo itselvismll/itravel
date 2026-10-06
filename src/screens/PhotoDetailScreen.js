@@ -20,8 +20,10 @@ import StarRating from '../components/StarRating';
 import { notify } from '../utils/dialogs';
 import { supabase } from '../services/supabase';
 import ReportSheet from '../components/ReportSheet';
+import { useLocale } from '../i18n/LocaleProvider';
 
 export default function PhotoDetailScreen({ route, navigation }) {
+  const { t } = useLocale();
   const photoId = route.params?.photoId;
   const [photo, setPhoto] = useState(route.params?.photo || null);
   const [comments, setComments] = useState([]);
@@ -55,7 +57,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
     if (!photoResult.success) {
       setPhoto(null);
       setIndisponivel(!!photoResult.notFound);
-      setError(photoResult.error || 'Não foi possível carregar esta foto.');
+      setError(photoResult.error || t('photoDetail.loadFailed'));
     } else {
       setIndisponivel(false);
       setPhoto(photoResult.data);
@@ -79,7 +81,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
     setCommentLoading(true);
     const result = await addComment(photoId, content);
     if (!result.success) {
-      notify('Erro ao salvar comentário', result.error || 'Tente novamente.');
+      notify(t('photoDetail.commentFailedTitle'), result.error || t('common.actions.tryAgain'));
       setCommentLoading(false);
       return;
     }
@@ -112,16 +114,16 @@ export default function PhotoDetailScreen({ route, navigation }) {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.header}>
-        <TouchableOpacity accessibilityLabel="Voltar" onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityLabel={t('photoDetail.backLabel')} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={23} color="#F7F7F2" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Publicação</Text>
+        <Text style={styles.headerTitle}>{t('photoDetail.title')}</Text>
         <View style={styles.headerActions}>
           {/* Não aparece na própria foto: denunciar o próprio conteúdo não é
               uma ação que signifique alguma coisa. */}
           {!!photo && photo.user_id !== currentUserId && (
             <TouchableOpacity
-              accessibilityLabel="Denunciar publicação"
+              accessibilityLabel={t('photoDetail.reportPostLabel')}
               accessibilityRole="button"
               onPress={() => setReportTarget({ type: 'photo', id: photo.id })}
             >
@@ -129,7 +131,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
             </TouchableOpacity>
           )}
           <TouchableOpacity
-            accessibilityLabel="Voltar ao menu"
+            accessibilityLabel={t('photoDetail.backToMenuLabel')}
             onPress={() => navigation.navigate('Main')}
           >
             <Ionicons name="home-outline" size={22} color="#F7F7F2" />
@@ -150,20 +152,18 @@ export default function PhotoDetailScreen({ route, navigation }) {
         // decisão privada de outra pessoa.
         <View style={styles.center}>
           <Ionicons name="image-outline" size={46} color="#3A4166" />
-          <Text style={styles.errorText}>Esta publicação não está disponível</Text>
-          <Text style={styles.errorHint}>
-            Ela pode ter sido removida ou não estar mais acessível para você.
-          </Text>
+          <Text style={styles.errorText}>{t('photoDetail.unavailable')}</Text>
+          <Text style={styles.errorHint}>{t('photoDetail.unavailableHint')}</Text>
           <TouchableOpacity style={styles.retryButton} onPress={() => navigation.goBack()}>
-            <Text style={styles.retryText}>Voltar</Text>
+            <Text style={styles.retryText}>{t('photoDetail.backButton')}</Text>
           </TouchableOpacity>
         </View>
       ) : error || !photo ? (
         <View style={styles.center}>
           <Ionicons name="image-outline" size={46} color="#68708f" />
-          <Text style={styles.errorText}>{error || 'Foto não encontrada.'}</Text>
+          <Text style={styles.errorText}>{error || t('photoDetail.notFound')}</Text>
           <TouchableOpacity style={styles.retryButton} onPress={loadPhoto}>
-            <Text style={styles.retryText}>Tentar novamente</Text>
+            <Text style={styles.retryText}>{t('photoDetail.retry')}</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -179,10 +179,10 @@ export default function PhotoDetailScreen({ route, navigation }) {
                 <Avatar profile={photo.profiles} size={42} />
                 <View style={styles.authorText}>
                   <Text style={styles.authorName}>
-                    {photo.profiles?.display_name || photo.profiles?.username || 'Viajante'}
+                    {photo.profiles?.display_name || photo.profiles?.username || t('connections.unnamed')}
                   </Text>
                   <Text style={styles.authorUsername}>
-                    @{photo.profiles?.username || 'viajante'}
+                    @{photo.profiles?.username || t('shareCard.defaultUsername')}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -225,14 +225,14 @@ export default function PhotoDetailScreen({ route, navigation }) {
             </>
           )}
           ListEmptyComponent={(
-            <Text style={styles.emptyComments}>Nenhum comentário ainda.</Text>
+            <Text style={styles.emptyComments}>{t('photoDetail.noComments')}</Text>
           )}
           renderItem={({ item }) => (
             <TouchableOpacity style={styles.commentRow} onPress={() => openCommentAuthorProfile(item.profiles)}>
               <Avatar profile={item.profiles} size={34} />
               <View style={styles.commentBubble}>
                 <Text style={styles.commentAuthor}>
-                  {item.profiles?.display_name || `@${item.profiles?.username || 'viajante'}`}
+                  {item.profiles?.display_name || '@' + (item.profiles?.username || t('shareCard.defaultUsername'))}
                 </Text>
                 <Text style={styles.commentContent}>{item.content}</Text>
               </View>
@@ -245,7 +245,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
                   style={styles.commentReport}
                   onPress={() => setReportTarget({ type: 'comment', id: item.id })}
                   accessibilityRole="button"
-                  accessibilityLabel="Denunciar comentário"
+                  accessibilityLabel={t('photoDetail.reportCommentLabel')}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <Ionicons name="flag-outline" size={14} color="#5A6180" />
@@ -268,7 +268,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
           <TextInput
             value={newComment}
             onChangeText={setNewComment}
-            placeholder="Adicionar comentário..."
+            placeholder={t('photoDetail.commentPlaceholder')}
             placeholderTextColor="#8c91aa"
             style={styles.commentInput}
             maxLength={1000}
@@ -276,7 +276,7 @@ export default function PhotoDetailScreen({ route, navigation }) {
             onSubmitEditing={submitComment}
           />
           <TouchableOpacity
-            accessibilityLabel="Enviar comentário"
+            accessibilityLabel={t('photoDetail.sendCommentLabel')}
             style={[styles.sendButton, (!newComment.trim() || commentLoading) && styles.disabled]}
             disabled={!newComment.trim() || commentLoading}
             onPress={submitComment}

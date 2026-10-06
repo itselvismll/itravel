@@ -29,8 +29,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import CountryFlag from '../CountryFlag';
 import { CATEGORY_ICON } from './planRoute';
-import { getCountryNamePtByCode } from '../../utils/countryUtils';
+import { getCountryName } from '../../utils/countryUtils';
 import { NEARBY_PREVIEW_COUNT } from '../../utils/nearbyPlaces';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 /**
  * @param {{
@@ -64,6 +65,7 @@ export default function NearbyPlacesSheet({
   onClose,
   bottom = 0,
 }) {
+  const { t, tag } = useLocale();
   const [expanded, setExpanded] = useState(false);
 
   // Abrir outra parada recolhe a lista. Sem isto, quem expandiu uma parada com
@@ -94,7 +96,7 @@ export default function NearbyPlacesSheet({
             </View>
             <View style={styles.headerText}>
               <Text style={styles.title} numberOfLines={1}>
-                {members.length === 1 ? '1 parada aqui' : `${members.length} paradas aqui`}
+                {t('common.plural.stop', { count: members.length })}
               </Text>
               <Text style={styles.subtitle} numberOfLines={1}>
                 Muito perto umas das outras neste zoom
@@ -109,7 +111,7 @@ export default function NearbyPlacesSheet({
             </View>
             <View style={styles.headerText}>
               <Text style={styles.title} numberOfLines={1}>
-                {stop.title || 'Parada do roteiro'}
+                {stop.title || t('nearbyPlaces.untitledStop')}
               </Text>
               <View style={styles.subtitleRow}>
                 {/* A bandeira só entra quando o país foi resolvido: uma bandeira
@@ -124,7 +126,7 @@ export default function NearbyPlacesSheet({
                 )}
                 <Text style={styles.subtitle} numberOfLines={1}>
                   {[
-                    stop.countryCode ? getCountryNamePtByCode(stop.countryCode, '') : '',
+                    stop.countryCode ? getCountryName(stop.countryCode, '', tag) : '',
                     `Dia ${stop.day}`,
                   ]
                     .filter(Boolean)
@@ -144,7 +146,10 @@ export default function NearbyPlacesSheet({
                 onPress={() => onSelectStop?.(member)}
                 activeOpacity={0.7}
                 accessibilityRole="button"
-                accessibilityLabel={`Abrir ${member?.title || 'parada'} do dia ${member?.day}`}
+                accessibilityLabel={t('nearbyPlaces.openStopLabel', {
+                  title: member?.title || t('nearbyPlaces.genericStopWord'),
+                  day: member?.day,
+                })}
                 style={styles.row}
               >
                 <View style={[styles.rowPin, { backgroundColor: member?.color || '#6C2BD9' }]}>
@@ -152,7 +157,7 @@ export default function NearbyPlacesSheet({
                 </View>
                 <View style={styles.rowText}>
                   <Text style={styles.rowTitle} numberOfLines={1}>
-                    {member?.title || 'Parada do roteiro'}
+                    {member?.title || t('nearbyPlaces.untitledStop')}
                   </Text>
                   <View style={styles.rowMetaRow}>
                     <Ionicons
@@ -174,7 +179,7 @@ export default function NearbyPlacesSheet({
             {loading && !places.length ? (
               <View style={styles.status}>
                 <ActivityIndicator size="small" color="#00D1C1" />
-                <Text style={styles.statusText}>Procurando o que há por perto…</Text>
+                <Text style={styles.statusText}>{t('nearbyPlaces.loading')}</Text>
               </View>
             ) : null}
 
@@ -264,17 +269,20 @@ export default function NearbyPlacesSheet({
   );
 }
 
-const CloseButton = ({ onPress }) => (
+const CloseButton = ({ onPress }) => {
+  const { t } = useLocale();
+  return (
   <TouchableOpacity
     onPress={onPress}
     accessibilityRole="button"
-    accessibilityLabel="Fechar"
+    accessibilityLabel={t('nearbyPlaces.closeLabel')}
     hitSlop={8}
     style={styles.close}
   >
     <Ionicons name="close" size={18} color="rgba(255,255,255,0.6)" />
   </TouchableOpacity>
-);
+  );
+};
 
 const styles = StyleSheet.create({
   sheet: {

@@ -1,3 +1,15 @@
+// As três traduções, importadas como dado puro (JSON), nunca via `src/i18n`: o
+// módulo de i18n lê `expo-localization` e `react-native` no import, o que
+// quebraria o uso deste arquivo como módulo puro nos testes. `getCountryName`
+// recebe o IDIOMA COMO PARÂMETRO — nunca lê um idioma "atual" global — pelo
+// mesmo motivo de `formatDate`/`formatNumber`: previsível para quem chama, e
+// testável sem montar um Provider.
+import ptLocale from '../i18n/locales/pt.json';
+import enLocale from '../i18n/locales/en.json';
+import esLocale from '../i18n/locales/es.json';
+import { COUNTRIES_STATIC } from '../data/countriesStaticData';
+import { DEFAULT_LOCALE_TAG } from './constants';
+
 export const ALPHA3_TO_ALPHA2 = {
   'BRA': 'BR', 'USA': 'US', 'ARG': 'AR', 'PRT': 'PT', 'ESP': 'ES',
   'FRA': 'FR', 'ITA': 'IT', 'DEU': 'DE', 'GBR': 'GB', 'JPN': 'JP',
@@ -126,21 +138,78 @@ export const COUNTRY_NAMES_PT = {
 
 export const getCountryNamePt = (name) => COUNTRY_NAMES_PT[name] || name;
 
-let regionNamesPt;
+// Nações do Reino Unido, por chave de tradução. Não são ISO 3166-1 — são
+// ISO 3166-2, de 6 caracteres — então `Intl.DisplayNames({type:'region'})` NUNCA
+// as reconhece, em NENHUM locale. Testado nos três idiomas que o app suporta: é
+// por isso que elas têm rótulo próprio em pt.json/en.json/es.json em vez de
+// cair no Intl como todo outro país.
+const UK_NATION_NAME_KEY = {
+  'GB-ENG': 'countryNames.ukNations.england',
+  'GB-SCT': 'countryNames.ukNations.scotland',
+  'GB-WLS': 'countryNames.ukNations.wales',
+  'GB-NIR': 'countryNames.ukNations.northernIreland',
+};
 
-export const getCountryNamePtByCode = (code, fallbackName = '') => {
+const LOCALE_DATA = { pt: ptLocale, en: enLocale, es: esLocale };
+
+const translationFor = (key, tag) => {
+  const localeCode = String(tag || '').slice(0, 2).toLowerCase();
+  const data = LOCALE_DATA[localeCode] || LOCALE_DATA.pt;
+  const value = key.split('.').reduce(
+    (acc, part) => (acc && typeof acc === 'object' ? acc[part] : undefined),
+    data
+  );
+  return typeof value === 'string' ? value : null;
+};
+
+const regionNamesByTag = new Map();
+
+/**
+ * Nome do país no idioma pedido.
+ *
+ * @param {string} code alpha-2, alpha-3, ou uma das 4 nações do Reino Unido
+ * @param {string} [fallbackName] usado quando o código não é reconhecido
+ * @param {string} [tag] tag BCP 47 ('pt-BR' | 'en-US' | 'es-ES') — nunca lido de
+ *   um "idioma atual" global, sempre o que quem chama passar
+ */
+export const getCountryName = (code, fallbackName = '', tag = DEFAULT_LOCALE_TAG) => {
+  const ukNameKey = UK_NATION_NAME_KEY[String(code || '').trim().toUpperCase()];
+  if (ukNameKey) {
+    return translationFor(ukNameKey, tag) || getCountryNamePt(fallbackName || code);
+  }
+
   const alpha2 = getAlpha2(code);
   if (!alpha2 || alpha2.length !== 2) {
     return getCountryNamePt(fallbackName || code);
   }
 
   try {
-    regionNamesPt ||= new Intl.DisplayNames(['pt-BR'], { type: 'region' });
-    return regionNamesPt.of(alpha2.toUpperCase()) || getCountryNamePt(fallbackName);
+    let formatter = regionNamesByTag.get(tag);
+    if (!formatter) {
+      formatter = new Intl.DisplayNames([tag], { type: 'region' });
+      regionNamesByTag.set(tag, formatter);
+    }
+    return formatter.of(alpha2.toUpperCase()) || getCountryNamePt(fallbackName);
   } catch {
     return getCountryNamePt(fallbackName || code);
   }
 };
+
+/**
+ * @deprecated use `getCountryName(code, fallbackName, tag)`. Mantido só pelo
+ * risco de um chamador fora da varredura do lote que generalizou o idioma —
+ * sempre devolve o nome em PT (chama sem `tag`). Remover quando confirmar que
+ * nada mais importa isto.
+ */
+export const getCountryNamePtByCode = (code, fallbackName = '') => getCountryName(code, fallbackName, DEFAULT_LOCALE_TAG);
+
+/** Todo país do dataset estático, com nome no idioma pedido. */
+export const buildCountryDirectory = (tag = DEFAULT_LOCALE_TAG) =>
+  Object.entries(COUNTRIES_STATIC).map(([code, country]) => ({
+    code,
+    name: getCountryName(code, country.name, tag),
+    nameEn: country.name,
+  }));
 
 // As 4 nações do Reino Unido, que o app trata como países independentes (têm
 // geometria, bandeira, conquista e badge próprios). NÃO são alpha-3 — são

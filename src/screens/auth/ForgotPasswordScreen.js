@@ -6,9 +6,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { requestPasswordReset } from '../../services/supabase';
 import { notify } from '../../utils/dialogs';
 import HCaptchaWidget from '../../components/auth/HCaptchaWidget';
-import { HCAPTCHA_ENABLED, HCAPTCHA_ERROR_MESSAGE } from '../../components/auth/hcaptchaConfig';
+import { HCAPTCHA_ENABLED } from '../../components/auth/hcaptchaConfig';
+import { useLocale } from '../../i18n/LocaleProvider';
+import { authErrorMessage } from '../../utils/authErrors';
+import { isValidEmail } from '../../utils/authValidation';
 
 export default function ForgotPasswordScreen({ navigation }) {
+  const { t } = useLocale();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
@@ -21,8 +25,8 @@ export default function ForgotPasswordScreen({ navigation }) {
 
   const handleSubmit = async () => {
     const normalizedEmail = email.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-      notify('E-mail inválido', 'Informe o e-mail usado na sua conta.');
+    if (!isValidEmail(normalizedEmail)) {
+      notify(t('auth.forgot.invalidEmailTitle'), t('auth.forgot.invalidEmailMessage'));
       return;
     }
 
@@ -34,12 +38,11 @@ export default function ForgotPasswordScreen({ navigation }) {
       // Token do hCaptcha é de uso único: queimado na tentativa, recarrega.
       captchaRef.current?.reset();
       setCaptchaToken(null);
-      notify(
-        'Não foi possível enviar',
-        /captcha/i.test(result.error || '')
-          ? HCAPTCHA_ERROR_MESSAGE
-          : result.error || 'Tente novamente em alguns minutos.'
-      );
+      // `authErrorMessage` já reconhece o caso do captcha, então o ternário que
+      // existia aqui saiu junto. O `result.error` cru que ele usava como último
+      // recurso é exatamente o que não pode ir para a tela — ver
+      // `utils/authErrors.js`.
+      notify(t('auth.forgot.failedTitle'), authErrorMessage(result, t));
       return;
     }
 
@@ -50,16 +53,16 @@ export default function ForgotPasswordScreen({ navigation }) {
 
   return (
     <View style={styles.screen}>
-      <TouchableOpacity style={styles.back} onPress={() => navigation.goBack()} accessibilityLabel="Voltar">
+      <TouchableOpacity style={styles.back} onPress={() => navigation.goBack()} accessibilityLabel={t('common.actions.back')}>
         <Ionicons name="arrow-back" size={23} color="#F7F7F2" />
       </TouchableOpacity>
       <View style={styles.card}>
         <View style={styles.icon}><Ionicons name="key-outline" size={28} color="#A78BFA" /></View>
-        <Text style={styles.title}>Recuperar senha</Text>
+        <Text style={styles.title}>{t('auth.forgot.title')}</Text>
         <Text style={styles.subtitle}>
           {sent
-            ? 'Enviamos as instruções. Abra o link recebido neste mesmo dispositivo para criar uma nova senha.'
-            : 'Informe o e-mail da sua conta para receber um link seguro de recuperação.'}
+            ? t('auth.forgot.sent')
+            : t('auth.forgot.intro')}
         </Text>
 
         {!sent && (
@@ -68,7 +71,7 @@ export default function ForgotPasswordScreen({ navigation }) {
               style={styles.input}
               value={email}
               onChangeText={setEmail}
-              placeholder="seuemail@exemplo.com"
+              placeholder={t('auth.forgot.emailPlaceholder')}
               placeholderTextColor="#777F9E"
               keyboardType="email-address"
               autoCapitalize="none"
@@ -79,17 +82,17 @@ export default function ForgotPasswordScreen({ navigation }) {
               ref={captchaRef}
               theme="dark"
               onVerify={setCaptchaToken}
-              onError={() => notify('Verificação de segurança', HCAPTCHA_ERROR_MESSAGE)}
+              onError={() => notify(t('auth.captchaTitle'), t('auth.errors.captcha'))}
             />
 
             <TouchableOpacity style={styles.primary} onPress={handleSubmit} disabled={submitDisabled}>
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Enviar link</Text>}
+              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>{t('auth.forgot.submit')}</Text>}
             </TouchableOpacity>
           </>
         )}
 
         <TouchableOpacity style={styles.secondary} onPress={() => navigation.navigate('Login')}>
-          <Text style={styles.secondaryText}>Voltar para o login</Text>
+          <Text style={styles.secondaryText}>{t('auth.forgot.backToLogin')}</Text>
         </TouchableOpacity>
       </View>
     </View>

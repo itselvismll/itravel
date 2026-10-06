@@ -5,20 +5,36 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { signOut, updateRecoveredPassword } from '../../services/supabase';
 import { notify } from '../../utils/dialogs';
+import { useLocale } from '../../i18n/LocaleProvider';
+import { authErrorMessage } from '../../utils/authErrors';
+import { PASSWORD_MIN_LENGTH } from '../../utils/authValidation';
 
 export default function ResetPasswordScreen({ onComplete }) {
+  const { t } = useLocale();
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [loading, setLoading] = useState(false);
   const [visible, setVisible] = useState(false);
 
   const handleSave = async () => {
-    if (password.length < 8) {
-      notify('Senha muito curta', 'Use pelo menos 8 caracteres.');
+    // A REGRA NÃO MUDOU: esta tela sempre exigiu só o comprimento mínimo, e
+    // continua exigindo. O `8` que estava escrito aqui virou
+    // `PASSWORD_MIN_LENGTH`, que é a mesma constante que o cadastro usa — o
+    // número era igual nos dois lugares por coincidência, não por ligação.
+    //
+    // ATENÇÃO para quem for mexer: o cadastro exige maiúscula, minúscula e
+    // número ALÉM do comprimento; a recuperação não. Então é possível sair daqui
+    // com uma senha que o formulário de cadastro recusaria. Não mudei isso nesta
+    // extração, que move texto e não comportamento — mas é divergência real.
+    if (password.length < PASSWORD_MIN_LENGTH) {
+      notify(
+        t('auth.reset.tooShortTitle'),
+        t('auth.reset.tooShortMessage', { count: PASSWORD_MIN_LENGTH })
+      );
       return;
     }
     if (password !== confirmation) {
-      notify('Senhas diferentes', 'Digite a mesma senha nos dois campos.');
+      notify(t('auth.reset.mismatchTitle'), t('auth.reset.mismatchMessage'));
       return;
     }
 
@@ -26,10 +42,12 @@ export default function ResetPasswordScreen({ onComplete }) {
     const result = await updateRecoveredPassword(password);
     if (result.success) {
       await signOut();
-      notify('Senha atualizada', 'Entre novamente usando sua nova senha.');
+      notify(t('auth.reset.doneTitle'), t('auth.reset.doneMessage'));
       onComplete?.();
     } else {
-      notify('Não foi possível atualizar', result.error || 'Solicite um novo link de recuperação.');
+      // O `result.error` cru que estava aqui era o terceiro vazamento de texto do
+      // backend nesta pasta. Ver `utils/authErrors.js`.
+      notify(t('auth.reset.failedTitle'), authErrorMessage(result, t));
     }
     setLoading(false);
   };
@@ -38,14 +56,14 @@ export default function ResetPasswordScreen({ onComplete }) {
     <View style={styles.screen}>
       <View style={styles.card}>
         <View style={styles.icon}><Ionicons name="shield-checkmark-outline" size={29} color="#35D3C8" /></View>
-        <Text style={styles.title}>Crie uma nova senha</Text>
-        <Text style={styles.subtitle}>A nova senha deve ter pelo menos 8 caracteres.</Text>
+        <Text style={styles.title}>{t('auth.reset.title')}</Text>
+        <Text style={styles.subtitle}>{t('auth.reset.intro', { count: PASSWORD_MIN_LENGTH })}</Text>
         <View style={styles.passwordRow}>
           <TextInput
             style={styles.input}
             value={password}
             onChangeText={setPassword}
-            placeholder="Nova senha"
+            placeholder={t('auth.reset.newPasswordPlaceholder')}
             placeholderTextColor="#777F9E"
             secureTextEntry={!visible}
           />
@@ -57,12 +75,12 @@ export default function ResetPasswordScreen({ onComplete }) {
           style={styles.input}
           value={confirmation}
           onChangeText={setConfirmation}
-          placeholder="Confirmar nova senha"
+          placeholder={t('auth.reset.confirmPasswordPlaceholder')}
           placeholderTextColor="#777F9E"
           secureTextEntry={!visible}
         />
         <TouchableOpacity style={styles.primary} onPress={handleSave} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Salvar nova senha</Text>}
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>{t('auth.reset.submit')}</Text>}
         </TouchableOpacity>
       </View>
     </View>

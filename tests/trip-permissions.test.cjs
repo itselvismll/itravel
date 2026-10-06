@@ -22,7 +22,7 @@ const {
   countOwners,
   memberRole,
   tripAbilities,
-  ROLE_LABEL,
+  ROLE_LABEL_KEY,
   TRIP_ROLES,
 } = permissions;
 
@@ -98,9 +98,9 @@ test('convite PENDENTE enxerga e aplica no globo, e nada mais', () => {
   assert.equal(can('owner', 'editItinerary', pendente), false);
 });
 
-test('cada papel tem nome de tela', () => {
+test('cada papel tem chave de rotulo de tela', () => {
   for (const papel of TRIP_ROLES) {
-    assert.ok(ROLE_LABEL[papel], `${papel} precisa de rotulo`);
+    assert.ok(ROLE_LABEL_KEY[papel], `${papel} precisa de chave de rotulo`);
   }
 });
 

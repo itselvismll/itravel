@@ -2,14 +2,16 @@ import React, { useMemo, useState } from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { parseBrazilianDate } from '../utils/dateUtils';
+import { useLocale } from '../i18n/LocaleProvider';
 
-const WEEK_DAYS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
-const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+const WEEK_DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const MONTH_KEYS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const pad = value => String(value).padStart(2, '0');
 const toBr = date => `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
 const startOfDay = date => new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
 export default function CalendarField({ label, value, onChange, minDate = new Date() }) {
+  const { t } = useLocale();
   const selected = parseBrazilianDate(value);
   const [visible, setVisible] = useState(false);
   const [month, setMonth] = useState(() => selected || minDate || new Date());
@@ -27,7 +29,7 @@ export default function CalendarField({ label, value, onChange, minDate = new Da
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <TouchableOpacity style={styles.input} onPress={() => setVisible(true)}>
-        <Text style={value ? styles.value : styles.placeholder}>{value || 'Selecionar data'}</Text>
+        <Text style={value ? styles.value : styles.placeholder}>{value || t('common.calendar.selectDate')}</Text>
         <Ionicons name="calendar-outline" size={19} color="#A78BFA" />
       </TouchableOpacity>
       <Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)}>
@@ -35,10 +37,10 @@ export default function CalendarField({ label, value, onChange, minDate = new Da
           <View style={styles.modal}>
             <View style={styles.monthHeader}>
               <TouchableOpacity onPress={() => moveMonth(-1)} style={styles.icon}><Ionicons name="chevron-back" size={21} color="#fff" /></TouchableOpacity>
-              <Text style={styles.monthTitle}>{MONTHS[month.getMonth()]} {month.getFullYear()}</Text>
+              <Text style={styles.monthTitle}>{t('common.calendar.months.' + MONTH_KEYS[month.getMonth()])} {month.getFullYear()}</Text>
               <TouchableOpacity onPress={() => moveMonth(1)} style={styles.icon}><Ionicons name="chevron-forward" size={21} color="#fff" /></TouchableOpacity>
             </View>
-            <View style={styles.grid}>{WEEK_DAYS.map((day, index) => <Text key={`${day}-${index}`} style={styles.weekDay}>{day}</Text>)}</View>
+            <View style={styles.grid}>{WEEK_DAY_KEYS.map((dayKey, index) => <Text key={dayKey + '-' + index} style={styles.weekDay}>{t('common.calendar.weekDaysShort.' + dayKey)}</Text>)}</View>
             <View style={styles.grid}>
               {days.map((date, index) => {
                 if (!date) return <View key={`empty-${index}`} style={styles.day} />;
@@ -56,7 +58,7 @@ export default function CalendarField({ label, value, onChange, minDate = new Da
                 );
               })}
             </View>
-            <TouchableOpacity style={styles.close} onPress={() => setVisible(false)}><Text style={styles.closeText}>Cancelar</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.close} onPress={() => setVisible(false)}><Text style={styles.closeText}>{t('common.actions.cancel')}</Text></TouchableOpacity>
           </View>
         </View>
       </Modal>

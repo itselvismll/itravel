@@ -13,18 +13,8 @@ import {
   parseMoneyInput,
   sanitizeMoneyInput,
 } from '../services/currencyService';
-
-const formatCurrency = (value, currency) => {
-  try {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency,
-      maximumFractionDigits: 0,
-    }).format(Number(value) || 0);
-  } catch {
-    return `${currency} ${Math.round(Number(value) || 0).toLocaleString('pt-BR')}`;
-  }
-};
+import { useLocale } from '../i18n/LocaleProvider';
+import { formatCurrency, formatNumber } from '../utils/formatNumber';
 
 const BASE_TO_LOCAL = 'baseToLocal';
 const LOCAL_TO_BASE = 'localToBase';
@@ -83,6 +73,7 @@ export default function DestinationBudgetPlanner({
   displayCurrency = 'USD',
   onDisplayCurrencyChange,
 }) {
+  const { t, tag } = useLocale();
   const [rows, setRows] = useState(initialBudgets);
   const [levelMenuOpen, setLevelMenuOpen] = useState(false);
   const onChangeRef = useRef(onChange);
@@ -283,12 +274,12 @@ export default function DestinationBudgetPlanner({
   return (
     <View style={styles.wrapper}>
       <View>
-        <Text style={styles.title}>Orçamento da viagem</Text>
-        <Text style={styles.subtitle}>Defina o estilo da viagem e compare seus limites em qualquer moeda.</Text>
+        <Text style={styles.title}>{t('destinationBudgetPlanner.title')}</Text>
+        <Text style={styles.subtitle}>{t('destinationBudgetPlanner.subtitle')}</Text>
       </View>
 
       <View style={styles.preferenceBlock}>
-        <Text style={styles.fieldLabel}>ESTILO DE ORÇAMENTO</Text>
+        <Text style={styles.fieldLabel}>{t('destinationBudgetPlanner.styleSection')}</Text>
         {(() => {
           const selectedLevel = BUDGET_LEVELS.find(level => level.id === budgetLevel) || BUDGET_LEVELS[1];
           return (
@@ -335,24 +326,24 @@ export default function DestinationBudgetPlanner({
             })}
           </View>
         )}
-        <Text style={styles.aiHint}>A IA usa esta escolha para decidir hospedagem, alimentação, transporte e passeios.</Text>
+        <Text style={styles.aiHint}>{t('destinationBudgetPlanner.styleHint')}</Text>
       </View>
 
       <CurrencyPicker
-        label="Moeda para comparar"
+        label={t('destinationBudgetPlanner.compareCurrencyLabel')}
         value={displayCurrency}
         onChange={onDisplayCurrencyChange}
         supportingText={`Compare seus limites em ${displayCurrency}. A moeda oficial de cada destino continua separada.`}
       />
 
       <View style={styles.divider}>
-        <Text style={styles.fieldLabel}>LIMITE POR DESTINO</Text>
+        <Text style={styles.fieldLabel}>{t('destinationBudgetPlanner.limitSection')}</Text>
       </View>
 
       {!rows.length ? (
         <View style={styles.empty}>
           <Ionicons name="earth-outline" size={24} color="#8B5CF6" />
-          <Text style={styles.emptyText}>Selecione os países em “Destinos da viagem” para montar o orçamento.</Text>
+          <Text style={styles.emptyText}>{t('destinationBudgetPlanner.selectDestinationsHint')}</Text>
         </View>
       ) : rows.map(row => (
         <View key={row.destinationId} style={styles.destinationCard}>
@@ -411,15 +402,15 @@ export default function DestinationBudgetPlanner({
                   ? 'Calculando…'
                   : row.error
                     ? 'Sem cotação'
-                    : `≈ ${Math.round(row.convertedAmount || 0).toLocaleString('pt-BR')}`}
+                    : `≈ ${formatNumber(Math.round(row.convertedAmount || 0), tag)}`}
               </Text>
             </View>
           </View>
           {!!row.error && <Text style={styles.errorText}>{row.error}</Text>}
           {!!row.rateDate && (
             <Text style={styles.rateText}>
-              Comparação {baseCurrency} → {row.comparisonCurrency} • Cotação de {row.rateDate}
-              {row.rateSource ? ' • Fonte: ' : ''}
+              {t('destinationBudgetPlanner.rateComparison', { base: baseCurrency, comparison: row.comparisonCurrency, date: row.rateDate })}
+              {row.rateSource ? t('destinationBudgetPlanner.rateSourcePrefix') : ''}
               {row.rateSource === 'ExchangeRate-API' ? (
                 <Text style={styles.rateLink} onPress={() => Linking.openURL('https://www.exchangerate-api.com')}>
                   ExchangeRate-API
@@ -432,15 +423,15 @@ export default function DestinationBudgetPlanner({
 
       <TouchableOpacity style={styles.addButton} onPress={onAddDestination}>
         <Ionicons name="add-circle-outline" size={19} color="#A78BFA" />
-        <Text style={styles.addButtonText}>Adicionar destino</Text>
+        <Text style={styles.addButtonText}>{t('destinationBudgetPlanner.addDestination')}</Text>
       </TouchableOpacity>
 
       <View style={styles.totalRow}>
         <View>
-          <Text style={styles.totalLabel}>TOTAL ESTIMADO</Text>
-          <Text style={styles.totalHint}>Soma convertida para reais</Text>
+          <Text style={styles.totalLabel}>{t('destinationBudgetPlanner.totalSection')}</Text>
+          <Text style={styles.totalHint}>{t('destinationBudgetPlanner.convertedToBRL')}</Text>
         </View>
-        <Text style={styles.totalValue}>{formatCurrency(total, baseCurrency)}</Text>
+        <Text style={styles.totalValue}>{formatCurrency(total, baseCurrency, tag, { maximumFractionDigits: 0 })}</Text>
       </View>
     </View>
   );

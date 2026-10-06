@@ -28,6 +28,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 // `backdrop-filter` é CSS: existe no web e o React Native ignora a chave (com
 // aviso). Fora do web o círculo fica no fundo sólido translúcido, que é o mesmo
@@ -77,6 +78,7 @@ export default function TripCoverHeader({
   onEdit,
   onMore,
 }) {
+  const { t } = useLocale();
   return (
     <View style={styles.container}>
       <View style={styles.cover}>
@@ -104,19 +106,19 @@ export default function TripCoverHeader({
 
         {onBack ? (
           <View style={styles.topLeft}>
-            <CircleButton icon="chevron-back" label="Voltar" onPress={onBack} />
+            <CircleButton icon="chevron-back" label={t('tripCoverHeader.back')} onPress={onBack} />
           </View>
         ) : null}
 
         <View style={styles.topRight}>
           {onOpenMap ? (
-            <CircleButton icon="map-outline" label="Ver no mapa" onPress={onOpenMap} />
+            <CircleButton icon="map-outline" label={t('tripCoverHeader.viewOnGlobe')} onPress={onOpenMap} />
           ) : null}
           {onEdit ? (
-            <CircleButton icon="create-outline" label="Editar viagem" onPress={onEdit} />
+            <CircleButton icon="create-outline" label={t('tripCoverHeader.edit')} onPress={onEdit} />
           ) : null}
           {onMore ? (
-            <CircleButton icon="ellipsis-horizontal" label="Mais opções" onPress={onMore} />
+            <CircleButton icon="ellipsis-horizontal" label={t('tripCoverHeader.moreOptions')} onPress={onMore} />
           ) : null}
         </View>
 

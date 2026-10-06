@@ -13,6 +13,7 @@ import {
 } from 'maplibre-gl';
 import { Image } from 'react-native';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 // O símbolo passa pelo Image do react-native, e não por um <img> com a URL
 // resolvida na mão: `Image.resolveAssetSource` não existe no react-native-web, e
@@ -93,6 +94,7 @@ const MAP_CONTROL_CLEARANCE_CSS = `
  * sinal de progresso sem virar spinner genérico.
  */
 function GlobeLoadingOverlay() {
+  const { t } = useLocale();
   return (
     <div
       style={{
@@ -108,7 +110,7 @@ function GlobeLoadingOverlay() {
         zIndex: 2,
       }}
       role="status"
-      aria-label="Carregando o globo"
+      aria-label={t('globe.loading')}
     >
       <style>{LOADING_KEYFRAMES}</style>
 
@@ -169,6 +171,7 @@ export default function GlobeMap({
   performanceMode = false,
   style,
 }) {
+  const { t } = useLocale();
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const [failure, setFailure] = useState(null);
@@ -277,7 +280,7 @@ export default function GlobeMap({
         return;
       }
 
-      const message = event?.error?.message || 'Erro desconhecido ao carregar o mapa';
+      const message = event?.error?.message || t('globe.genericMapError');
       setFailure(message);
       onErrorRef.current?.(event?.error || new Error(message));
       // Tile que falha não pode deixar o overlay preso para sempre: melhor

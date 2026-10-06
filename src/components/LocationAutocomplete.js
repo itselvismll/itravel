@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import CountryFlag from './CountryFlag';
-import { COUNTRIES_STATIC } from '../data/countriesStaticData';
-import { getAlpha3, getCountryNamePtByCode } from '../utils/countryUtils';
+import { getAlpha3, buildCountryDirectory } from '../utils/countryUtils';
+import { useLocale } from '../i18n/LocaleProvider';
 import {
   CITY_SEARCH_DEBOUNCE_MS,
   formatAirportLabel,
@@ -14,13 +14,8 @@ import {
   searchTravelLocations,
 } from '../utils/geoSearch';
 
-const COUNTRIES = Object.entries(COUNTRIES_STATIC).map(([code, country]) => ({
-  code,
-  name: getCountryNamePtByCode(code, country.name),
-  nameEn: country.name,
-}));
-
 export default function LocationAutocomplete({ label, value, onChange, placeholder = 'Busque uma cidade ou país' }) {
+  const { tag } = useLocale();
   const [focused, setFocused] = useState(false);
   const [cities, setCities] = useState([]);
   const [airports, setAirports] = useState([]);
@@ -30,9 +25,14 @@ export default function LocationAutocomplete({ label, value, onChange, placehold
 
   useEffect(() => () => clearTimeout(blurTimerRef.current), []);
 
+  // Recalculado por idioma: o nome de cada país muda com `tag`, e trocar o
+  // idioma em runtime não pode deixar a lista presa no idioma de quando o
+  // componente montou.
+  const allCountries = useMemo(() => buildCountryDirectory(tag), [tag]);
+
   const countries = useMemo(
-    () => focused ? searchCountries(COUNTRIES, value, 4) : [],
-    [focused, value]
+    () => focused ? searchCountries(allCountries, value, 4, tag) : [],
+    [focused, value, allCountries, tag]
   );
 
   useEffect(() => {
@@ -52,6 +52,7 @@ export default function LocationAutocomplete({ label, value, onChange, placehold
           signal: controller.signal,
           cityLimit: 6,
           airportLimit: 4,
+          tag,
         });
         setCities(result.cities);
         setAirports(result.airports);
@@ -69,7 +70,7 @@ export default function LocationAutocomplete({ label, value, onChange, placehold
       clearTimeout(timer);
       controller.abort();
     };
-  }, [focused, value]);
+  }, [focused, value, tag]);
 
   const choose = item => {
     clearTimeout(blurTimerRef.current);

@@ -69,3 +69,15 @@ export const LIMITS = {
   MAX_BIO_LENGTH: 150,
   MAX_CAPTION_LENGTH: 500,
 };
+
+// A tag BCP 47 do idioma padrão, que é o fallback de toda formatação.
+//
+// Mora aqui, e não em `src/i18n/`, porque `utils/formatDate` e
+// `utils/formatNumber` são módulos PUROS: eles não importam o contexto de idioma
+// (nem react-native), para o `node:test` conseguir exercitá-los sem browser.
+// Importar de `src/i18n/index.js` arrastaria `expo-localization` para dentro
+// deles e quebraria isso.
+//
+// O catálogo completo dos idiomas, com rótulo e campo de nome do mapa, vive em
+// `src/i18n/index.js` — `SUPPORTED_LOCALES`.
+export const DEFAULT_LOCALE_TAG = 'pt-BR';

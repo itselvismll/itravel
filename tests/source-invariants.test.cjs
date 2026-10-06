@@ -75,7 +75,7 @@ test('travel planner is personalized, structured, cancellable, and editable', ()
   assert.match(result, /toggleChecklist/);
   assert.match(result, /openMap/);
   assert.match(result, /startEditing/);
-  assert.match(result, /Ajuste este roteiro com IA/);
+  assert.match(result, /assistantResult.adjust.title/);
   assert.match(map, /navigation\.navigate\('TripPlanner'\)/);
 });
 
@@ -300,7 +300,7 @@ test('planning, messaging, passport, and explore improvements stay integrated', 
   assert.match(planner, /MultiDestinationSelector/);
   assert.match(planner, /formatMoneyInput/);
   assert.match(planner, /form\.travelerType === 'Casal'/);
-  assert.match(result, /Abrir meus roteiros salvos/);
+  assert.match(result, /assistantResult.openSaved/);
   assert.match(navigation, /name="Messages"/);
   assert.match(navigation, /name="Conversation"/);
   assert.match(navigation, /name="PassportDetail"/);
@@ -308,7 +308,7 @@ test('planning, messaging, passport, and explore improvements stay integrated', 
   assert.match(messages, /shared_passport/);
   assert.match(routing, /REGISTERED_ROUTES/);
   assert.match(routing, /passportShareId/);
-  assert.match(profile, /Opções da publicação/);
+  assert.match(profile, /post.menu.title/);
   assert.match(profile, /navigator\.share/);
   assert.doesNotMatch(explore, />EXPLORAR POR DESTINO</);
   assert.match(explore, /getAlpha3\(photo\.country_code\)/);
@@ -328,7 +328,7 @@ test('public profiles show spaced photo cards with captions and comments', () =>
   assert.match(profile, /gap: 12/);
   assert.match(profile, /photo\.caption/);
   assert.match(profile, /photo\.comment_count/);
-  assert.match(profile, /Voltar ao menu/);
+  assert.match(profile, /publicProfile.backToMenu/);
   assert.match(detail, /getComments/);
   assert.match(detail, /addComment/);
 });
@@ -385,12 +385,16 @@ test('client source is free of console calls and centralizes remote flag images'
   // que sobraria seria uma tela de "algo deu errado" sem rastro nenhum para
   // diagnosticar — pior do que a tela em branco que ele veio substituir.
   //
-  // Os três serviços entraram pelo mesmo motivo, um nível abaixo: eles chamam
-  // RPCs `security definer` (bloqueio, denúncia, cancelamento de exclusão) que
-  // falham do lado do banco, onde a UI só recebe um booleano. Sem o
-  // `console.error`, uma policy recusando a chamada em produção vira "não
-  // aconteceu nada" na tela, sem nome de RPC nem mensagem do Postgres para
-  // investigar depois.
+  // Os serviços entraram pelo mesmo motivo, um nível abaixo: eles chamam RPCs
+  // `security definer` ou tabelas sob RLS (bloqueio, denúncia, cancelamento de
+  // exclusão, preferências de notificação) que falham do lado do banco, onde a UI
+  // só recebe um booleano. Sem o `console.error`, uma policy recusando a chamada
+  // em produção vira "não aconteceu nada" na tela, sem nome de RPC nem mensagem
+  // do Postgres para investigar depois.
+  //
+  // `notificationPreferenceService` é o caso mais traiçoeiro da lista: uma
+  // gravação recusada ali faz o interruptor voltar sozinho, e sem a mensagem do
+  // Postgres não há como distinguir policy errada de rede caída.
   //
   // A lista está na ordem da varredura de diretórios (`visit`), que é a ordem em
   // que `filesWithConsole` é montado — o assert abaixo compara os arrays
@@ -400,6 +404,7 @@ test('client source is free of console calls and centralizes remote flag images'
     'src/navigation/AppNavigator.js',
     'src/services/messageService.js',
     'src/services/moderationService.js',
+    'src/services/notificationPreferenceService.js',
     'src/services/profileService.js',
   ];
   assert.deepEqual(filesWithConsole, CONSOLE_ALLOWLIST);
@@ -450,9 +455,9 @@ test('users can delete only their own posts from feed and profile', () => {
   assert.match(service, /\.eq\('user_id', user\.id\)/);
   assert.match(feedService, /photo_path/);
   assert.match(feed, /post\.user_id === currentUser\?\.id/);
-  assert.match(feed, /accessibilityLabel="Excluir publicação"/);
+  assert.match(feed, /accessibilityLabel=\{t\('post\.delete\.label'\)\}/);
   assert.match(profile, /handleDeletePhoto\(fullscreenPhoto\)/);
-  assert.match(profile, /accessibilityLabel="Excluir publicação"/);
+  assert.match(profile, /accessibilityLabel=\{t\('post\.delete\.label'\)\}/);
   assert.match(migration, /on delete cascade/);
   assert.match(migration, /clear_deleted_photo_cover/);
 });
@@ -478,8 +483,8 @@ test('feed is the home tab with floating navigation and top-level social actions
   assert.match(navigator, /overflow: clip \? 'hidden' : 'visible'/);
   assert.match(navigator, /name="Messages" component=\{MessagesScreen\}/);
   assert.doesNotMatch(navigator, /tabBarLabel: 'Conversas'/);
-  assert.match(feed, /accessibilityLabel="Abrir conversas"/);
-  assert.match(feed, /accessibilityLabel="Abrir notificações"/);
+  assert.match(feed, /accessibilityLabel=\{t\('feed\.openConversations'\)\}/);
+  assert.match(feed, /accessibilityLabel=\{t\('feed\.openNotifications'\)\}/);
 });
 
 test('planner converts currencies, keeps free activities at zero, and exposes verified ticket sites', () => {
@@ -506,7 +511,9 @@ test('password recovery sends a secure link and requires a new password', () => 
   const reset = read('src/screens/auth/ResetPasswordScreen.js');
   const auth = read('src/services/supabase.js');
   const navigator = read('src/navigation/AppNavigator.js');
-  assert.match(login, /Esqueceu sua senha\?/);
+  // O texto virou chave no lote de autenticação. O que importa aqui é que a tela
+  // de login OFEREÇA a recuperação — a frase em português está em pt.json.
+  assert.match(login, /auth\.login\.forgotPassword/);
   assert.match(auth, /resetPasswordForEmail/);
   assert.match(auth, /redirectTo: getPasswordRecoveryRedirectUrl\(\)/);
   assert.match(reset, /updateRecoveredPassword/);
@@ -550,8 +557,8 @@ test('long AI plans must contain exactly the requested duration and explain ever
   assert.match(assistant, /Não use títulos genéricos/);
   assert.match(service, /requestedDuration \* 10000/);
   assert.match(assistant, /shoppingIncluded/);
-  assert.match(assistant, /Passagens, Hospedagem, Alimentação, Transporte local, Passeios e ingressos, Compras e Reserva/);
-  assert.match(result, /O que esse valor inclui\?/);
+  assert.match(assistant, /passagens, hospedagem, alimentação, transporte local, passeios e ingressos, compras e reserva/);
+  assert.match(result, /assistantResult.budget.whatIsIncluded/);
   assert.match(result, /purchaseNote/);
 });
 
@@ -563,21 +570,21 @@ test('trip budget is allocated per destination and consolidated in BRL', () => {
   const assistant = read('supabase/functions/travel-assistant/index.ts');
   assert.match(planner, /<DestinationBudgetPlanner/);
   assert.match(planner, /destinationBudgets/);
-  assert.match(destinationBudget, /Orçamento da viagem/);
-  assert.match(destinationBudget, /Moeda para comparar/);
+  assert.match(destinationBudget, /destinationBudgetPlanner\.title/);
+  assert.match(destinationBudget, /destinationBudgetPlanner\.compareCurrencyLabel/);
   assert.match(destinationBudget, /onDisplayCurrencyChange/);
-  assert.match(destinationBudget, /A IA usa esta escolha para decidir hospedagem, alimentação, transporte e passeios/);
+  assert.match(destinationBudget, /destinationBudgetPlanner\.styleHint/);
   assert.match(destinationBudget, /Econômico/);
   assert.match(destinationBudget, /Equilibrado/);
   assert.match(destinationBudget, /Confortável/);
-  assert.match(destinationBudget, /TOTAL ESTIMADO/);
+  assert.match(destinationBudget, /destinationBudgetPlanner\.totalSection/);
   assert.match(destinationBudget, /Inverter conversão de/);
   assert.match(destinationBudget, /BASE_TO_LOCAL/);
   assert.match(destinationBudget, /destinationCurrency/);
   assert.match(destinationBudget, /comparisonCurrency/);
   assert.doesNotMatch(destinationBudget, /currency: displayCurrency/);
   assert.match(currencyPicker, /getAvailableCurrencies/);
-  assert.match(currencyPicker, /Ex: dólar, euro ou USD/);
+  assert.match(currencyPicker, /currencyPicker\.searchPlaceholder/);
   assert.match(currency, /world-countries@latest\/dist\/countries\.json/);
   assert.match(currency, /currencyCatalogMemoryCache/);
   assert.match(currency, /'Argentine peso': 'ARS'/);
@@ -593,15 +600,27 @@ test('password login preserves the Supabase error code and never hides an unknow
   assert.match(authService, /code: error\?\.code \|\| 'AUTH_LOGIN_FAILED'/);
   assert.match(authService, /status: Number\(error\?\.status\) \|\| 0/);
   assert.match(authService, /trim\(\)\.toLowerCase\(\)/);
-  assert.match(login, /formatLoginError/);
-  assert.match(login, /Código: \$\{safeCode\}/);
+  // O `formatLoginError` local virou `utils/authErrors.js`, usado pelas quatro
+  // telas de conta — ele era o único caminho que já NÃO vazava texto do backend,
+  // e o cadastro e a recuperação vazavam. A intenção deste teste continua a
+  // mesma: o erro desconhecido não pode ser escondido, tem de sair com um código
+  // que o suporte consiga cruzar com o log.
+  assert.match(login, /authErrorMessage\(result, t\)/);
   assert.match(login, /AUTH_UNEXPECTED_ERROR/);
+
+  const authErrors = read('src/utils/authErrors.js');
+  assert.match(authErrors, /AUTH_ERROR_FALLBACK_KEY = 'auth\.errors\.unknown'/);
+  // O código é sanitizado: é isso que impede a mensagem do GoTrue de atravessar
+  // disfarçada de código. Ver os testes em tests/i18n.test.cjs.
+  assert.match(authErrors, /replace\(\/\[\^a-zA-Z0-9_-\]\/g, ''\)/);
+  const pt = JSON.parse(read('src/i18n/locales/pt.json'));
+  assert.match(pt.auth.errors.unknown, /%\{code\}/);
 });
 
 test('country photo fullscreen lets the owner delete the selected photo', () => {
   const gallery = read('src/components/PhotoGallery.js');
   const photoService = read('src/services/photoService.js');
-  assert.match(gallery, /accessibilityLabel="Excluir esta foto"/);
+  assert.match(gallery, /accessibilityLabel=\{t\('photoGallery\.deleteLabel'\)\}/);
   assert.match(gallery, /handleDelete\(fullscreenPhoto\.id, fullscreenPhoto\.photo_path\)/);
   assert.match(photoService, /\.eq\('user_id', user\.id\)/);
 });
@@ -672,10 +691,10 @@ test('message, seasonal explore, requirements, and decimal budget fixes stay int
   assert.match(migration, /get_unread_message_count/);
   assert.match(feed, /CountBadge/);
   assert.doesNotMatch(feed, /styles\.stories/);
-  assert.match(publicProfile, />Mensagem</);
+  assert.match(publicProfile, /publicProfile.message/);
   assert.match(currency, /sanitizeMoneyInput/);
   assert.match(budget, /keyboardType="decimal-pad"/);
-  assert.match(explore, /DESTINOS EM ALTA NESTA ÉPOCA/);
+  assert.match(explore, /explore\.trendingSection/);
   assert.match(explore, /getTourismImage/);
   assert.doesNotMatch(explore, /CountryRequirementsCard/);
   assert.match(countryModal, /CountryRequirementsCard/);
@@ -751,9 +770,19 @@ test('map, currencies, and social notifications do not depend on partial provide
   assert.match(currency, /world-countries@latest\/dist\/countries\.json/);
   assert.match(currency, /open\.er-api\.com\/v6\/latest/);
   assert.match(currency, /api\.frankfurter\.dev\/v2\/rate/);
-  // As sociais continuam sendo exatamente estas três; a Fase 2 acrescentou uma
-  // família SEPARADA (trip_*) em vez de diluir esta.
-  assert.match(socialTypes, /SOCIAL_NOTIFICATION_TYPES = Object\.freeze\(\['follow', 'comment', 'like'\]\)/);
+  // As sociais eram exatamente três; a Fase 2 acrescentou uma família SEPARADA
+  // (trip_*) em vez de diluir esta, e isso continua valendo.
+  //
+  // `message` e `passport` entraram na migração 20260930120000, que devolveu os
+  // dois avisos que chegam pelo chat — removidos juntos na 20260812130000, porque
+  // mensagem gerava uma linha POR MENSAGEM. Agora mensagem é um aviso por conversa
+  // não lida, e passaporte é um aviso por passaporte. A lista é FILTRO (ver o
+  // cabeçalho de socialNotifications.js): sem o tipo aqui, o aviso chega ao banco,
+  // não aparece na tela e nunca é marcado como lido.
+  assert.match(
+    socialTypes,
+    /SOCIAL_NOTIFICATION_TYPES = Object\.freeze\(\[\s*'follow', 'comment', 'like', 'message', 'passport',\s*\]\)/
+  );
   // A família de viagem CRESCE (as tarefas do grupo entraram em 20260923140000),
   // então o que este teste trava não é a lista inteira: é que cada tipo esteja
   // lá dentro. A regex antiga fixava a linha, e qualquer tipo novo a quebrava
@@ -987,8 +1016,8 @@ test('AI planner searches specific cities and airports with country flags', () =
   const municipalities = JSON.parse(read('src/data/brazilianMunicipalities.json'));
   const budget = read('src/components/DestinationBudgetPlanner.js');
 
-  assert.match(planner, /Cidade, país ou aeroporto \(ex: GRU\)/);
-  assert.match(planner, /Destinos e paradas/);
+  assert.match(planner, /tripPlanner.destinationPlaceholder/);
+  assert.match(planner, /tripPlanner.destinationsSection/);
   assert.match(origin, /searchTravelLocations/);
   assert.match(origin, /CountryFlag/);
   assert.match(destinations, /formatAirportLabel/);
@@ -1091,7 +1120,7 @@ test('only one itinerary can be applied to the globe at a time', () => {
   // sobre a capa da viagem, no TripListCard — o que este teste protege é ele
   // EXISTIR e vir do mesmo estado, não o lugar onde é desenhado.
   assert.match(screen, /appliedToMap={isActive}/);
-  assert.match(read('src/components/trip/TripListCard.js'), /No globo/);
+  assert.match(read('src/components/trip/TripListCard.js'), /tripListCard\.onGlobe/);
 });
 
 test('todo peso de Poppins usado no app está carregado no useFonts', () => {

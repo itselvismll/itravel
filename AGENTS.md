@@ -43,6 +43,7 @@ curl -s https://journi.expo.app/ | grep -o '_expo/static/js/web/[^"]*\.js'
 npm test          # node:test, sem browser
 npx tsc --noEmit  # o projeto é JS com checagem via JSDoc
 npm run check     # invariantes de código (scripts/verify-source.cjs)
+npm run sync:locales  # se mexeu em pt.json: espelha a estrutura em en/es
 ```
 
 Mudança que toca a tela também merece `npx expo export --platform web` para um
@@ -84,6 +85,106 @@ renderização em arquivo de plataforma**.
 
 O estado que as duas plataformas compartilham (roteiro aplicado, parada aberta,
 lista de lugares próximos) mora no lado React Native, nunca dentro do mapa.
+
+## Idioma: todo texto de tela nasce como chave de tradução
+
+O app suporta **português, inglês e espanhol**. O português é o único idioma
+completo hoje; `en.json` e `es.json` existem com a mesma estrutura e ainda
+repetem o português, para a tradução ser só preencher.
+
+**Nenhum texto visível ao usuário é escrito direto no código.** Nem em tela nova,
+nem em componente novo, nem "só este rótulo aqui".
+
+```jsx
+// NÃO
+<Text>Salvar viagem</Text>
+<Botao label="Cancelar" />
+
+// SIM
+const { t } = useLocale();
+<Text>{t('trips.save')}</Text>
+<Botao label={t('common.actions.cancel')} />
+```
+
+Onde cada coisa mora:
+
+| o que | onde |
+|---|---|
+| os textos | `src/i18n/locales/pt.json`, por área (`common`, `drawer`, `notifications`, …) |
+| o hook `t` | `src/i18n/LocaleProvider.js` — `useLocale()` |
+| o catálogo de idiomas | `src/i18n/index.js` — `SUPPORTED_LOCALES` |
+| data | `src/utils/formatDate.js` |
+| número, moeda, distância | `src/utils/formatNumber.js` |
+
+Regras que não são óbvias:
+
+- **A chave descreve o SIGNIFICADO, não o texto.** `trips.empty.title`, nunca
+  `trips.naoHaViagens` — senão a chave mente no dia em que o texto mudar.
+- **Depois de mexer em `pt.json`, rode `npm run sync:locales`.** Ele espelha a
+  estrutura em `en.json`/`es.json` preservando o que já foi traduzido. O teste de
+  paridade falha se os três divergirem.
+- **Plural é chave com `one`/`other`**, nunca ternário no código. Ver
+  `common.plural.*`; `21 dias` e `1 dia` saem de `t('common.plural.day', { count })`.
+- **Interpolação é `%{nome}`.** O teste cobra que a tradução use as MESMAS
+  variáveis do português — tradutor que troca `%{name}` por "name" deixa um
+  buraco na frase.
+- **Módulo puro não importa o contexto de idioma.** Ele guarda a CHAVE e quem
+  renderiza resolve — ver `labelKey`/`subtitleKey` em
+  `src/utils/notificationCategories.js` e `NOTIFICATION_PREDICATE_KEY` em
+  `src/utils/notificationRouting.js`. É o que mantém esses módulos exercitáveis
+  no `node:test` sem browser.
+- **Não traduza:** mensagem de `console.*`, nome de rota, chave de storage, nome
+  de coluna, nem conteúdo escrito pelo usuário (bio, legenda, comentário, título
+  de tarefa, e o `preview` das notificações).
+
+### O que segura a regra
+
+`tests/i18n-no-hardcoded-text.test.cjs` falha quando aparece texto cravado em
+JSX ou em prop de texto. Ele funciona como **catraca**: a lista `PENDENTES` tem
+os arquivos que a extração ainda não alcançou, e um segundo teste exige que
+arquivo já extraído SAIA dela. Arquivo novo nasce fora da lista — portanto já
+sob a regra.
+
+Exceção legítima (sigla, símbolo, nome próprio) vai em `LITERAIS_PERMITIDOS`,
+**com o motivo escrito**. Exceção é decisão registrada, não escape silencioso.
+
+A extração dos arquivos que faltam está sendo feita em lotes; a ordem combinada
+está no comentário de `PENDENTES`.
+
+## Texto de interface não nasce no banco
+
+Trigger e função do Postgres **não gravam frase em português** em coluna que vai
+para a tela. Gravam o DADO — tipo, ator, id, e o que mais a frase precisar — e o
+app monta o texto.
+
+O molde é a notificação. Os triggers escrevem `notifications.message` com frases
+como `'começou a seguir você'`, e isso **não é mais lido** para nenhum dos dez
+tipos conhecidos: o app resolve `NOTIFICATION_PREDICATE_KEY[type]` numa chave de
+tradução (`src/utils/notificationRouting.js`). A coluna continua sendo gravada
+por compatibilidade, e só é lida como último recurso, para um tipo que o app
+ainda não aprendeu a renderizar.
+
+Por que isso importa: **texto gravado não traduz depois.** Uma linha escrita em
+português em setembro continua em português para sempre, mesmo quando o app
+inteiro já fala inglês — e as linhas antigas não podem ser reescritas, porque
+ninguém sabe em que idioma o destinatário estava quando o aviso chegou. Filtrar
+ou migrar depois é pior: `update ... set message = ...` em cima de histórico é
+perda de dado.
+
+Na prática, ao escrever um trigger novo que gera algo visível:
+
+1. grave o tipo e os identificadores em colunas próprias;
+2. acrescente o tipo em `NOTIFICATION_PREDICATE_KEY` e a chave nos três JSON;
+3. acrescente o tipo em `SOCIAL_NOTIFICATION_TYPES` ou `TRIP_NOTIFICATION_TYPES`
+   (`src/utils/socialNotifications.js`) — aquela lista é FILTRO: tipo que não
+   está lá chega ao banco, não aparece na tela e nunca é marcado como lido;
+4. mapeie o tipo em `notification_category` (SQL) e em
+   `src/utils/notificationCategories.js`, que o teste compara entre si.
+
+**Se algum caso tornar isso inviável, avise antes de gravar a frase.** Pode
+haver razão legítima — texto que depende de dado que o app não tem em mãos no
+momento de renderizar —, mas é decisão consciente, com o custo declarado, nunca
+o caminho mais curto.
 
 ## Feature flags
 

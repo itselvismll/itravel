@@ -9,7 +9,7 @@ import { badgeCountries, planPointCountries } from './planBadges';
 import { getWorldGeoData } from '../../services/geoService';
 import { buildCountryAnchors } from './countryCentroids';
 import { statusOf } from './countryStatus';
-import { getCountryNamePtByCode } from '../../utils/countryUtils';
+import { getCountryName } from '../../utils/countryUtils';
 import { getGeoCountryAlpha3, getGeoCountryName } from '../../utils/geo-country-utils';
 
 /**
@@ -46,6 +46,7 @@ import { getGeoCountryAlpha3, getGeoCountryName } from '../../utils/geo-country-
  * cabeçalho da folha — é resolvido AQUI, que é onde o GeoJSON existe.
  */
 export default function NativeGlobe({
+  tag = 'pt-BR',
   visitedCodes = [],
   wishlistCodes = [],
   focusCountry = null,
@@ -84,13 +85,15 @@ export default function NativeGlobe({
 
     return Object.entries(anchors).map(([code, anchor]) => ({
       code,
-      name: getCountryNamePtByCode(code, names.get(code) || code),
+      // `tag` é string serializável, igual todo outro prop que cruza a ponte da
+      // WebView — é o `LocaleProvider` do lado nativo (GlobeScreen) que manda.
+      name: getCountryName(code, names.get(code) || code, tag),
       lat: anchor.lat,
       lng: anchor.lng,
       area: anchor.area,
       status: statusOf(code, visited, wishlist),
     }));
-  }, [anchors, geoData, visited, wishlist]);
+  }, [anchors, geoData, visited, wishlist, tag]);
 
   const countriesByCode = useMemo(
     () => new Map(countries.map((country) => [country.code, country])),

@@ -32,6 +32,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { trip, font, shadow, radius } from '../../theme/tripCollab';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 const LARGURA = 208;
 /** Respiro minimo ate a borda da tela, para o menu nunca encostar. */
@@ -57,6 +58,7 @@ const MARGEM = 12;
  * }} props
  */
 export default function MemberActionsMenu({ visible = false, anchor = null, actions = [], onClose }) {
+  const { t } = useLocale();
   const { width: larguraTela, height: alturaTela } = useWindowDimensions();
 
   if (!visible || !actions.length) return null;
@@ -96,7 +98,7 @@ export default function MemberActionsMenu({ visible = false, anchor = null, acti
       {/* O fundo inteiro fecha o menu. E invisivel de proposito: escurecer a
           tela transformaria uma acao pequena (mudar o papel de alguem) num
           momento pesado. */}
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Fechar menu" />
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel={t('tripMemberActions.closeLabel')} />
 
       <View style={[styles.menu, { left, top }]}>
         {actions.map((action, index) => (

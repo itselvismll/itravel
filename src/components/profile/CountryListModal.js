@@ -22,6 +22,7 @@ import { Ionicons } from '@expo/vector-icons';
 import CountryTag from './CountryTag';
 import { filterCountries, groupByContinent } from '../../utils/countryContinents';
 import { countryKey, tagRotation } from './countryGridData';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 /**
  * @param {{
@@ -37,17 +38,19 @@ export default function CountryListModal({
   visible,
   onClose,
   countries = [],
-  title = 'Países',
+  title,
   accentColor,
   accentBorderColor,
 }) {
+  const { t, tag } = useLocale();
+  const tituloExibido = title ?? t('countryList.defaultTitle');
   const [query, setQuery] = useState('');
 
   // Filtra ANTES de agrupar: agrupar a lista inteira e depois filtrar dentro de
   // cada seção deixaria cabeçalhos de continente sem nenhum país embaixo.
   const sections = useMemo(
-    () => groupByContinent(filterCountries(countries, query)),
-    [countries, query]
+    () => groupByContinent(filterCountries(countries, query, tag), tag),
+    [countries, query, tag]
   );
 
   const total = countries?.length ?? 0;
@@ -72,7 +75,7 @@ export default function CountryListModal({
           <Pressable
             onPress={handleClose}
             accessibilityRole="button"
-            accessibilityLabel="Fechar"
+            accessibilityLabel={t('countryList.closeLabel')}
             style={styles.closeButton}
             // A área de toque do X é maior que o ícone: 24px de ícone é menos
             // que o mínimo confortável para o polegar no topo da tela.
@@ -81,9 +84,9 @@ export default function CountryListModal({
             <Ionicons name="close" size={24} color="#F7F7F2" />
           </Pressable>
           <View style={styles.headerText}>
-            <Text style={styles.title} numberOfLines={1}>{title}</Text>
+            <Text style={styles.title} numberOfLines={1}>{tituloExibido}</Text>
             <Text style={styles.subtitle}>
-              {total} {total === 1 ? 'país' : 'países'}
+              {t('common.plural.country', { count: total })}
             </Text>
           </View>
         </View>
@@ -93,7 +96,7 @@ export default function CountryListModal({
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Buscar país"
+            placeholder={t('countryList.searchPlaceholder')}
             placeholderTextColor="#697093"
             style={styles.searchInput}
             autoCorrect={false}
@@ -103,7 +106,7 @@ export default function CountryListModal({
             clearButtonMode="while-editing"
           />
           {!!query && (
-            <Pressable onPress={() => setQuery('')} hitSlop={10} accessibilityLabel="Limpar busca">
+            <Pressable onPress={() => setQuery('')} hitSlop={10} accessibilityLabel={t('countryList.clearSearchLabel')}>
               <Ionicons name="close-circle" size={16} color="#697093" />
             </Pressable>
           )}
@@ -118,7 +121,7 @@ export default function CountryListModal({
           renderSectionHeader={({ section }) => (
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, !!accentColor && { color: accentColor }]}>
-                {section.title}
+                {t(section.titleKey)}
               </Text>
               <Text style={styles.sectionCount}>{section.data.length}</Text>
             </View>
@@ -142,7 +145,7 @@ export default function CountryListModal({
               <Text style={styles.emptyText}>
                 {query
                   ? `Nenhum país encontrado para "${query.trim()}".`
-                  : 'Nenhum país nesta lista ainda.'}
+                  : t('countryList.emptyDefault')}
               </Text>
             </View>
           }
@@ -152,7 +155,7 @@ export default function CountryListModal({
             repetiria o total que já está no cabeçalho. */}
         {!!query && found > 0 && (
           <Text style={styles.resultCount}>
-            {found} {found === 1 ? 'resultado' : 'resultados'}
+            {t('common.plural.result', { count: found })}
           </Text>
         )}
       </SafeAreaView>

@@ -9,7 +9,10 @@ import { USERNAME_MAX_LENGTH, normalizeUsername, validateUsername } from '../../
 import Logo from '../../components/Logo';
 import { notify } from '../../utils/dialogs';
 import HCaptchaWidget from '../../components/auth/HCaptchaWidget';
-import { HCAPTCHA_ENABLED, HCAPTCHA_ERROR_MESSAGE } from '../../components/auth/hcaptchaConfig';
+import { HCAPTCHA_ENABLED } from '../../components/auth/hcaptchaConfig';
+import { useLocale } from '../../i18n/LocaleProvider';
+import { authErrorMessage } from '../../utils/authErrors';
+import { isValidEmail, PASSWORD_MIN_LENGTH, validatePassword } from '../../utils/authValidation';
 
 // Os documentos legais saem do mesmo host do app web (journi.expo.app por
 // padrão, sobrescrito por EXPO_PUBLIC_WEB_APP_URL). Reaproveitar a constante
@@ -17,6 +20,7 @@ import { HCAPTCHA_ENABLED, HCAPTCHA_ERROR_MESSAGE } from '../../components/auth/
 const LEGAL_DOCS_BASE_URL = API_CONFIG.WEB_APP_URL.replace(/\/+$/, '');
 
 export default function RegisterScreen({ navigation, onRegisterSuccess }) {
+  const { t } = useLocale();
   const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
   const [usernameAvailable, setUsernameAvailable] = useState(null);
@@ -34,25 +38,10 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
     /** @type {Record<string, string | null>} */ ({})
   );
 
-  const validateEmail = (email) => {
-    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return re.test(email);
-  };
-
-  const validatePassword = (password) => {
-    const hasMinLength = password.length >= 8;
-    const hasUpperCase = /[A-Z]/.test(password);
-    const hasLowerCase = /[a-z]/.test(password);
-    const hasNumber = /[0-9]/.test(password);
-    
-    return {
-      isValid: hasMinLength && hasUpperCase && hasLowerCase && hasNumber,
-      hasMinLength,
-      hasUpperCase,
-      hasLowerCase,
-      hasNumber,
-    };
-  };
+  // Os dois validadores saíram daqui para `utils/authValidation.js`. As REGRAS
+  // são as mesmas — mesmo mínimo, mesmas quatro condições, mesmo regex de
+  // e-mail. O que mudou é que cada requisito agora carrega a chave do próprio
+  // texto, em vez de a condição morar aqui e a frase quarenta linhas abaixo.
 
   // Os documentos moram em public/termos.html e public/privacidade.html e são
   // servidos pelo próprio host do app. Antes isto eram dois Alert com texto
@@ -69,7 +58,7 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
     try {
       await Linking.openURL(url);
     } catch {
-      notify('Não foi possível abrir', `Acesse ${url} pelo navegador.`);
+      notify(t('auth.register.openDocFailedTitle'), t('auth.register.openDocFailedMessage', { url }));
     }
   };
 
@@ -78,7 +67,7 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
     const newErrors = /** @type {Record<string, string>} */ ({});
 
     if (!fullName.trim()) {
-      newErrors.fullName = 'Nome completo é obrigatório';
+      newErrors.fullName = t('auth.fields.fullNameRequired');
     }
 
     // Mesma regra do trigger de cadastro e da edição de perfil — ver
@@ -89,26 +78,26 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
     }
 
     if (!email) {
-      newErrors.email = 'Email é obrigatório';
-    } else if (!validateEmail(email)) {
-      newErrors.email = 'Email inválido';
+      newErrors.email = t('auth.fields.emailRequired');
+    } else if (!isValidEmail(email)) {
+      newErrors.email = t('auth.fields.emailInvalid');
     }
 
     const passwordValidation = validatePassword(password);
     if (!password) {
-      newErrors.password = 'Senha é obrigatória';
+      newErrors.password = t('auth.fields.passwordRequired');
     } else if (!passwordValidation.isValid) {
-      newErrors.password = 'Senha não atende aos requisitos de segurança';
+      newErrors.password = t('auth.fields.passwordWeak');
     }
 
     if (!confirmPassword) {
-      newErrors.confirmPassword = 'Confirme sua senha';
+      newErrors.confirmPassword = t('auth.fields.confirmPasswordRequired');
     } else if (password !== confirmPassword) {
-      newErrors.confirmPassword = 'As senhas não coincidem';
+      newErrors.confirmPassword = t('auth.fields.passwordMismatch');
     }
 
     if (!acceptedTerms) {
-      newErrors.terms = 'Você deve aceitar os termos de uso';
+      newErrors.terms = t('auth.fields.termsRequired');
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -130,17 +119,12 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
       captchaRef.current?.reset();
       setCaptchaToken(null);
 
-      let errorMessage = result.error;
-
-      if (errorMessage.includes('already registered')) {
-        errorMessage = 'Este email já está cadastrado';
-      } else if (/rate limit|too many|429/i.test(errorMessage)) {
-        errorMessage = 'Muitas tentativas de cadastro em pouco tempo. Aguarde alguns minutos e tente novamente.';
-      } else if (/captcha/i.test(errorMessage)) {
-        errorMessage = HCAPTCHA_ERROR_MESSAGE;
-      }
-
-      notify('Erro no Cadastro', errorMessage);
+      // ERA AQUI O VAZAMENTO: `let errorMessage = result.error` começava com o
+      // texto cru do GoTrue e só o substituía se casasse um dos três padrões.
+      // Qualquer outro erro — e são muitos — ia inteiro para o diálogo, em
+      // inglês e contando detalhe de infraestrutura. Ver `utils/authErrors.js`,
+      // que cobre os cinco casos conhecidos e dá um código curto para o resto.
+      notify(t('auth.register.errorTitle'), authErrorMessage(result, t));
     }
   };
 
@@ -170,7 +154,7 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
             <Logo size={50} />
           </View>
           
-          <Text style={styles.headerTitle}>Criar Conta</Text>
+          <Text style={styles.headerTitle}>{t('auth.register.headerTitle')}</Text>
         </LinearGradient>
 
         <View style={styles.card}>
@@ -180,7 +164,7 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
               <Ionicons name="person-outline" size={20} color={COLORS.gray} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="Nome completo"
+                placeholder={t('auth.register.fullNamePlaceholder')}
                 placeholderTextColor={COLORS.textSecondary}
                 value={fullName}
                 onChangeText={(text) => {
@@ -201,7 +185,7 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
               <Ionicons name="at" size={20} color={COLORS.gray} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="Nome de usuário"
+                placeholder={t('auth.register.usernamePlaceholder')}
                 placeholderTextColor={COLORS.textSecondary}
                 value={username}
                 onChangeText={async (text) => {
@@ -229,10 +213,10 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
               <ActivityIndicator size="small" color="#6C2BD9" style={{ marginTop: 4, alignSelf: 'flex-start' }} />
             )}
             {usernameAvailable === true && username.length >= 3 && (
-              <Text style={{ color: 'green', fontSize: 11, marginTop: 4 }}>✓ Username disponível</Text>
+              <Text style={{ color: 'green', fontSize: 11, marginTop: 4 }}>{t('auth.register.usernameAvailable')}</Text>
             )}
             {usernameAvailable === false && (
-              <Text style={{ color: 'red', fontSize: 11, marginTop: 4 }}>✗ Username já em uso</Text>
+              <Text style={{ color: 'red', fontSize: 11, marginTop: 4 }}>{t('auth.register.usernameTaken')}</Text>
             )}
             {errors.username && <Text style={styles.errorText}>{errors.username}</Text>}
           </View>
@@ -243,7 +227,7 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
               <Ionicons name="mail-outline" size={20} color={COLORS.gray} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="Email"
+                placeholder={t('auth.register.emailPlaceholder')}
                 placeholderTextColor={COLORS.textSecondary}
                 value={email}
                 onChangeText={(text) => {
@@ -265,7 +249,7 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
               <Ionicons name="lock-closed-outline" size={20} color={COLORS.gray} style={styles.inputIcon} />
               <TextInput
                 style={[styles.input, styles.inputWithIcon]}
-                placeholder="Senha"
+                placeholder={t('auth.register.passwordPlaceholder')}
                 placeholderTextColor={COLORS.textSecondary}
                 value={password}
                 onChangeText={(text) => {
@@ -292,50 +276,26 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
             {/* Requisitos de Senha */}
             {password.length > 0 && (
               <View style={styles.passwordRequirements}>
-                <Text style={styles.requirementTitle}>Sua senha deve ter:</Text>
-                <View style={styles.requirement}>
-                  <Ionicons 
-                    name={passwordValidation.hasMinLength ? "checkmark-circle" : "close-circle"} 
-                    size={16} 
-                    color={passwordValidation.hasMinLength ? COLORS.success : COLORS.error} 
-                  />
-                  <Text style={[styles.requirementText, passwordValidation.hasMinLength && styles.requirementMet]}>
-                    Mínimo 8 caracteres
-                  </Text>
-                </View>
-                <View style={styles.requirement}>
-                  <Ionicons 
-                    name={passwordValidation.hasUpperCase ? "checkmark-circle" : "close-circle"} 
-                    size={16} 
-                    color={passwordValidation.hasUpperCase ? COLORS.success : COLORS.error} 
-                  />
-                  <Text style={[styles.requirementText, passwordValidation.hasUpperCase && styles.requirementMet]}>
-                    Uma letra maiúscula
-                  </Text>
-                </View>
-                <View style={styles.requirement}>
-                  <Ionicons 
-                    name={passwordValidation.hasLowerCase ? "checkmark-circle" : "close-circle"} 
-                    size={16} 
-                    color={passwordValidation.hasLowerCase ? COLORS.success : COLORS.error} 
-                  />
-                  <Text style={[styles.requirementText, passwordValidation.hasLowerCase && styles.requirementMet]}>
-                    Uma letra minúscula
-                  </Text>
-                </View>
-                <View style={styles.requirement}>
-                  <Ionicons 
-                    name={passwordValidation.hasNumber ? "checkmark-circle" : "close-circle"} 
-                    size={16} 
-                    color={passwordValidation.hasNumber ? COLORS.success : COLORS.error} 
-                  />
-                  <Text style={[styles.requirementText, passwordValidation.hasNumber && styles.requirementMet]}>
-                    Um número
-                  </Text>
-                </View>
+                <Text style={styles.requirementTitle}>{t('auth.password.requirementsTitle')}</Text>
+                {/* Eram QUATRO blocos quase idênticos escritos à mão, cada um com
+                    a frase do requisito dentro. Agora a lista vem de
+                    PASSWORD_REQUIREMENTS, onde a condição e a chave do texto
+                    moram juntas — acrescentar um requisito não mexe nesta tela. */}
+                {passwordValidation.requirements.map((requisito) => (
+                  <View key={requisito.id} style={styles.requirement}>
+                    <Ionicons
+                      name={requisito.met ? 'checkmark-circle' : 'close-circle'}
+                      size={16}
+                      color={requisito.met ? COLORS.success : COLORS.error}
+                    />
+                    <Text style={[styles.requirementText, requisito.met && styles.requirementMet]}>
+                      {t(requisito.labelKey, { count: PASSWORD_MIN_LENGTH })}
+                    </Text>
+                  </View>
+                ))}
               </View>
             )}
-            
+
             {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
           </View>
 
@@ -345,7 +305,7 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
               <Ionicons name="lock-closed-outline" size={20} color={COLORS.gray} style={styles.inputIcon} />
               <TextInput
                 style={[styles.input, styles.inputWithIcon]}
-                placeholder="Confirmar senha"
+                placeholder={t('auth.register.confirmPasswordPlaceholder')}
                 placeholderTextColor={COLORS.textSecondary}
                 value={confirmPassword}
                 onChangeText={(text) => {
@@ -388,24 +348,24 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
             
             <View style={{ flex: 1, pointerEvents: 'box-none' }}>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' }}>
-                <Text style={{ fontSize: 13, color: COLORS.text }}>Aceito os </Text>
+                <Text style={{ fontSize: 13, color: COLORS.text }}>{t('auth.register.termsPrefix')}</Text>
                 <TouchableOpacity
                   onPress={() => openLegalDoc('termos.html')}
                   accessibilityRole="link"
-                  accessibilityLabel="Abrir os Termos de Uso"
+                  accessibilityLabel={t('auth.register.openTermsLabel')}
                 >
                   <Text style={{ fontSize: 13, color: COLORS.primary, fontWeight: '600', textDecorationLine: 'underline' }}>
-                    Termos de Uso
+                    {t('auth.register.termsLink')}
                   </Text>
                 </TouchableOpacity>
-                <Text style={{ fontSize: 13, color: COLORS.text }}> e </Text>
+                <Text style={{ fontSize: 13, color: COLORS.text }}>{t('auth.register.termsAnd')}</Text>
                 <TouchableOpacity
                   onPress={() => openLegalDoc('privacidade.html')}
                   accessibilityRole="link"
-                  accessibilityLabel="Abrir a Política de Privacidade"
+                  accessibilityLabel={t('auth.register.openPrivacyLabel')}
                 >
                   <Text style={{ fontSize: 13, color: COLORS.primary, fontWeight: '600', textDecorationLine: 'underline' }}>
-                    Política de Privacidade
+                    {t('auth.register.privacyLink')}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -417,7 +377,7 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
           <HCaptchaWidget
             ref={captchaRef}
             onVerify={setCaptchaToken}
-            onError={() => notify('Verificação de segurança', HCAPTCHA_ERROR_MESSAGE)}
+            onError={() => notify(t('auth.captchaTitle'), t('auth.errors.captcha'))}
           />
 
           {/* Botão Cadastrar */}
@@ -433,10 +393,10 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
               end={{ x: 1, y: 0 }}
             >
               {loading ? (
-                <Text style={styles.buttonText}>Criando conta...</Text>
+                <Text style={styles.buttonText}>{t('auth.register.submitting')}</Text>
               ) : (
                 <>
-                  <Text style={styles.buttonText}>Criar Conta</Text>
+                  <Text style={styles.buttonText}>{t('auth.register.submit')}</Text>
                   <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
                 </>
               )}
@@ -449,7 +409,8 @@ export default function RegisterScreen({ navigation, onRegisterSuccess }) {
             onPress={() => navigation.navigate('Login')}
           >
             <Text style={styles.linkText}>
-              Já tem conta? <Text style={styles.linkTextBold}>Faça login</Text>
+              {t('auth.register.loginPrompt')}{' '}
+              <Text style={styles.linkTextBold}>{t('auth.register.loginCta')}</Text>
             </Text>
           </TouchableOpacity>
         </View>

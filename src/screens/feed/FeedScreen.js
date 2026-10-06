@@ -11,25 +11,29 @@ import { getFeedPhotos } from '../../services/followService';
 import { getUnreadMessageCount } from '../../services/messageService';
 import { getComments, addComment } from '../../services/socialService';
 import { addFavorite, deletePhoto, removeFavorite } from '../../services/photoService';
-import { getCountryNamePtByCode } from '../../utils/countryUtils';
+import { getCountryName } from '../../utils/countryUtils';
 import { useUpload } from '../../context/UploadContext';
 import StarRating from '../../components/StarRating';
 import Avatar from '../../components/Avatar';
 import CountryFlag from '../../components/CountryFlag';
 import ShareToJourniModal from '../../components/ShareToJourniModal';
 import { confirm, notify } from '../../utils/dialogs';
+import { useLocale } from '../../i18n/LocaleProvider';
 import { NOTIFICATION_TYPES, isKnownNotification } from '../../utils/socialNotifications';
 import { openPostgresChangesChannel } from '../../services/realtimeChannel';
 import useTabBarContentPadding from '../../hooks/useTabBarContentPadding';
 
-const timeAgo = (dateStr) => {
+// O formato é "5min atrás", diferente do "5min" da tela de notificações. Os
+// dois continuam diferentes de propósito: unificá-los mudaria o visual, e esta
+// fase move texto, não aparência.
+const timeAgo = (dateStr, t) => {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
   const hours = Math.floor(diff / 3600000);
   const days = Math.floor(diff / 86400000);
-  if (mins < 60) return `${mins}min atrás`;
-  if (hours < 24) return `${hours}h atrás`;
-  return `${days}d atrás`;
+  if (mins < 60) return t('common.time.minutesAgo', { count: mins });
+  if (hours < 24) return t('common.time.hoursAgo', { count: hours });
+  return t('common.time.daysAgo', { count: days });
 };
 
 const FEED_PAGE_SIZE = 12;
@@ -44,19 +48,21 @@ function CountBadge({ count }) {
 }
 
 function FeedHeader({ navigation, unreadMessages, unreadNotifications }) {
+  const { t } = useLocale();
+
   return (
     <View style={styles.header}>
       <View style={styles.headerContent}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Início</Text>
-          <Text style={styles.headerSub}>Acompanhe as viagens de quem você segue</Text>
+          <Text style={styles.headerTitle}>{t('feed.title')}</Text>
+          <Text style={styles.headerSub}>{t('feed.empty.text')}</Text>
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity
             style={styles.headerActionButton}
             onPress={() => navigation.navigate('Messages')}
             accessibilityRole="button"
-            accessibilityLabel="Abrir conversas"
+            accessibilityLabel={t('feed.openConversations')}
           >
             <Ionicons name="chatbubbles-outline" size={22} color="#FFFFFF" />
             <CountBadge count={unreadMessages} />
@@ -65,7 +71,7 @@ function FeedHeader({ navigation, unreadMessages, unreadNotifications }) {
             style={styles.headerActionButton}
             onPress={() => navigation.navigate('Notificações')}
             accessibilityRole="button"
-            accessibilityLabel="Abrir notificações"
+            accessibilityLabel={t('feed.openNotifications')}
           >
             <Ionicons name="notifications-outline" size={22} color="#FFFFFF" />
             <CountBadge count={unreadNotifications} />
@@ -77,6 +83,7 @@ function FeedHeader({ navigation, unreadMessages, unreadNotifications }) {
 }
 
 export default function FeedScreen({ navigation }) {
+  const { t, tag } = useLocale();
   // Folga para o último post não terminar atrás da tab bar flutuante.
   const tabBarPadding = useTabBarContentPadding();
   const [currentUser, setCurrentUser] = useState(null);
@@ -222,7 +229,7 @@ export default function FeedScreen({ navigation }) {
         else next.delete(photoId);
         return next;
       });
-      notify('Não foi possível atualizar a curtida', result.error || 'Tente novamente.');
+      notify(t('feed.like.failedTitle'), result.error || t('common.actions.retry'));
     }
   };
 
@@ -232,7 +239,7 @@ export default function FeedScreen({ navigation }) {
     setCommentModal(true);
     const result = await getComments(photo.id);
     if (result.success) setComments(result.data);
-    else notify('Erro ao carregar comentários', result.error || 'Tente novamente.');
+    else notify(t('feed.comments.loadFailedTitle'), result.error || t('common.actions.retry'));
   };
 
   const submitComment = async () => {
@@ -244,7 +251,7 @@ export default function FeedScreen({ navigation }) {
       const updated = await getComments(commentPhoto.id);
       if (updated.success) setComments(updated.data);
     } else {
-      notify('Erro ao salvar comentário', result.error || 'Tente novamente.');
+      notify(t('feed.comments.saveFailedTitle'), result.error || t('common.actions.retry'));
     }
     setCommentLoading(false);
   };
@@ -264,7 +271,7 @@ export default function FeedScreen({ navigation }) {
       }
     } catch (error) {
       if (error?.name !== 'AbortError') {
-        notify('Erro ao compartilhar', 'Não foi possível compartilhar esta foto.');
+        notify(t('feed.share.failedTitle'), t('feed.share.failedMessage'));
       }
     }
   };
@@ -273,8 +280,8 @@ export default function FeedScreen({ navigation }) {
     if (photo.user_id !== currentUser?.id || deletingPhotoId) return;
 
     const accepted = await confirm(
-      'Excluir publicação',
-      'A foto, a legenda e os comentários serão excluídos permanentemente. Deseja continuar?'
+      t('post.delete.confirmTitle'),
+      t('post.delete.confirmMessage')
     );
     if (!accepted) return;
 
@@ -282,7 +289,7 @@ export default function FeedScreen({ navigation }) {
     try {
       const result = await deletePhoto(photo.id, photo.photo_path);
       if (!result.success) {
-        notify('Erro ao excluir', result.error || 'Não foi possível excluir a publicação.');
+        notify(t('post.delete.failedTitle'), result.error || t('post.delete.failedMessage'));
         return;
       }
 
@@ -297,7 +304,7 @@ export default function FeedScreen({ navigation }) {
         setCommentPhoto(null);
         setComments([]);
       }
-      notify('Publicação excluída', result.warning || 'Sua publicação foi removida.');
+      notify(t('post.delete.doneTitle'), result.warning || t('post.delete.doneMessage'));
     } finally {
       setDeletingPhotoId(null);
     }
@@ -321,7 +328,7 @@ export default function FeedScreen({ navigation }) {
       {isEmpty ? (
         <View style={styles.emptyState}>
           <Ionicons name="earth-outline" size={56} color="#ddd" />
-          <Text style={styles.emptyTitle}>Seu feed está vazio</Text>
+          <Text style={styles.emptyTitle}>{t('feed.empty.title')}</Text>
           <Text style={styles.emptySub}>
             Siga viajantes no Explorar para ver as aventuras deles aqui
           </Text>
@@ -329,7 +336,7 @@ export default function FeedScreen({ navigation }) {
             style={styles.emptyBtn}
             onPress={() => navigation.navigate('Explore')}
           >
-            <Text style={styles.emptyBtnText}>Explorar viajantes</Text>
+            <Text style={styles.emptyBtnText}>{t('feed.empty.cta')}</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -381,7 +388,7 @@ export default function FeedScreen({ navigation }) {
                             />
                           )}
                           <Text style={styles.postAuthorMeta}>
-                            {[post.city, getCountryNamePtByCode(post.country_code, post.country_name)]
+                            {[post.city, getCountryName(post.country_code, post.country_name, tag)]
                               .filter(Boolean)
                               .join(', ')}
                           </Text>
@@ -389,14 +396,14 @@ export default function FeedScreen({ navigation }) {
                       </View>
                     </TouchableOpacity>
                     <View style={styles.postHeaderActions}>
-                      <Text style={styles.postTime}>{timeAgo(post.created_at)}</Text>
+                      <Text style={styles.postTime}>{timeAgo(post.created_at, t)}</Text>
                       {post.user_id === currentUser?.id && (
                         <TouchableOpacity
                           style={styles.deletePostButton}
                           onPress={() => handleDeletePhoto(post)}
                           disabled={deletingPhotoId !== null}
                           accessibilityRole="button"
-                          accessibilityLabel="Excluir publicação"
+                          accessibilityLabel={t('post.delete.label')}
                         >
                           {deletingPhotoId === post.id ? (
                             <ActivityIndicator size="small" color="#D64545" />
@@ -489,7 +496,7 @@ export default function FeedScreen({ navigation }) {
         <View style={styles.commentOverlay}>
           <View style={styles.commentSheet}>
             <View style={styles.commentSheetHeader}>
-              <Text style={styles.commentSheetTitle}>Comentários</Text>
+              <Text style={styles.commentSheetTitle}>{t('feed.comments.title')}</Text>
               <TouchableOpacity onPress={() => setCommentModal(false)}>
                 <Ionicons name="close" size={24} color="#333" />
               </TouchableOpacity>
@@ -502,7 +509,7 @@ export default function FeedScreen({ navigation }) {
               contentContainerStyle={{ padding: 4 }}
               ListEmptyComponent={
                 <Text style={styles.commentEmpty}>
-                  Nenhum comentário ainda. Seja o primeiro!
+                  {t('feed.comments.empty')}
                 </Text>
               }
               renderItem={({ item }) => (
@@ -544,7 +551,7 @@ export default function FeedScreen({ navigation }) {
               <TextInput
                 value={newComment}
                 onChangeText={setNewComment}
-                placeholder="Adicionar comentário..."
+                placeholder={t('feed.comments.placeholder')}
                 placeholderTextColor="#aaa"
                 style={styles.commentTextInput}
                 maxLength={1000}

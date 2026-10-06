@@ -28,6 +28,17 @@ const { makeReactNative, fakeVectorIcons, host } = require('./helpers/fake-react
 const socialNotifications = loadEsm('src/utils/socialNotifications.js');
 const notificationRouting = loadEsm('src/utils/notificationRouting.js');
 
+// Resolve chave de tradução contra o pt.json do projeto, com interpolação
+// %{var} — o mínimo do i18n-js de que estas telas dependem.
+const ptJson = JSON.parse(
+  require('fs').readFileSync(require('path').join(__dirname, '..', 'src/i18n/locales/pt.json'), 'utf8')
+);
+const tDoPt = (chave, opcoes = {}) => {
+  const valor = String(chave).split('.').reduce((o, k) => (o ?? {})[k], ptJson);
+  if (typeof valor !== 'string') throw new Error('chave inexistente no pt.json: ' + chave);
+  return valor.replace(/%\{(\w+)\}/g, (_, nome) => String(opcoes[nome] ?? ''));
+};
+
 const TRIP_ID = '11111111-1111-4111-8111-111111111111';
 const ACTOR = { id: '22222222-2222-4222-8222-222222222222', username: 'vero', display_name: 'Vero' };
 
@@ -139,6 +150,10 @@ const montarTela = async (linhas) => {
       '../components/Avatar': { __esModule: true, default: host('Avatar') },
       '../utils/notificationRouting': notificationRouting,
       '../utils/socialNotifications': socialNotifications,
+      // O `t` do teste resolve a chave no pt.json DE VERDADE. Um `t` que
+      // devolvesse a chave crua deixaria estas asserções passarem com a chave
+      // errada — e é a chave certa que decide o texto na tela.
+      '../i18n/LocaleProvider': { useLocale: () => ({ t: tDoPt }) },
     },
     { jsx: true }
   );

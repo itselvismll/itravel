@@ -22,8 +22,10 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { confirm, notify } from '../../utils/dialogs';
 import { getBlockedUsers, unblockUser } from '../../services/moderationService';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 export default function BlockedUsersScreen({ navigation }) {
+  const { t } = useLocale();
   const [bloqueados, setBloqueados] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [desbloqueando, setDesbloqueando] = useState(null);
@@ -40,12 +42,11 @@ export default function BlockedUsersScreen({ navigation }) {
   useFocusEffect(useCallback(() => { carregar(); }, [carregar]));
 
   const desbloquear = async (item) => {
-    const nome = item.display_name || (item.username ? `@${item.username}` : 'esta pessoa');
+    const nome = item.display_name || (item.username ? `@${item.username}` : t('blockedUsers.thisPerson'));
 
     const aceitou = await confirm(
-      'Desbloquear',
-      `${nome} volta a ver seu perfil e seu conteúdo, e você volta a ver o dela.\n\n`
-      + 'Vocês NÃO voltam a se seguir — se quiserem, é só seguir de novo.'
+      t('blockedUsers.confirm.title'),
+      t('blockedUsers.confirm.message', { name: nome })
     );
     if (!aceitou) return;
 
@@ -54,7 +55,10 @@ export default function BlockedUsersScreen({ navigation }) {
     setDesbloqueando(null);
 
     if (!resultado.success) {
-      notify('Não foi possível desbloquear', resultado.error || 'Tente novamente em instantes.');
+      notify(
+        t('blockedUsers.failed.title'),
+        resultado.error || t('blockedUsers.failed.genericMessage')
+      );
       return;
     }
 
@@ -64,7 +68,7 @@ export default function BlockedUsersScreen({ navigation }) {
   };
 
   const renderItem = ({ item }) => {
-    const nome = item.display_name || item.username || 'Usuário removido';
+    const nome = item.display_name || item.username || t('blockedUsers.removedUser');
     const inicial = (item.display_name?.[0] || item.username?.[0] || '?').toUpperCase();
 
     return (
@@ -87,11 +91,11 @@ export default function BlockedUsersScreen({ navigation }) {
           onPress={() => desbloquear(item)}
           disabled={desbloqueando === item.blocked_id}
           accessibilityRole="button"
-          accessibilityLabel={`Desbloquear ${nome}`}
+          accessibilityLabel={t('blockedUsers.unblockLabel', { name: nome })}
         >
           {desbloqueando === item.blocked_id
             ? <ActivityIndicator size="small" color="#A78BFA" />
-            : <Text style={styles.unblockText}>Desbloquear</Text>}
+            : <Text style={styles.unblockText}>{t('blockedUsers.unblock')}</Text>}
         </TouchableOpacity>
       </View>
     );
@@ -104,11 +108,11 @@ export default function BlockedUsersScreen({ navigation }) {
           style={styles.backBtn}
           onPress={() => navigation.goBack()}
           accessibilityRole="button"
-          accessibilityLabel="Voltar"
+          accessibilityLabel={t('common.actions.back')}
         >
           <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Usuários bloqueados</Text>
+        <Text style={styles.headerTitle}>{t('blockedUsers.title')}</Text>
         <View style={styles.backBtn} />
       </View>
 
@@ -119,10 +123,8 @@ export default function BlockedUsersScreen({ navigation }) {
       ) : bloqueados.length === 0 ? (
         <View style={styles.center}>
           <Ionicons name="shield-checkmark-outline" size={38} color="#3A4166" />
-          <Text style={styles.emptyTitle}>Ninguém bloqueado</Text>
-          <Text style={styles.emptyText}>
-            Quando você bloquear alguém, essa pessoa aparece aqui e você pode desfazer quando quiser.
-          </Text>
+          <Text style={styles.emptyTitle}>{t('blockedUsers.empty.title')}</Text>
+          <Text style={styles.emptyText}>{t('blockedUsers.empty.text')}</Text>
         </View>
       ) : (
         <FlatList

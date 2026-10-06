@@ -33,6 +33,7 @@ import { getOrCreateConversation } from '../../services/messageService';
 import { blockUser, isBlockedByMe, unblockUser } from '../../services/moderationService';
 import ReportSheet from '../../components/ReportSheet';
 import { confirm, notify } from '../../utils/dialogs';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 // A lista de níveis que vivia AQUI foi removida.
 //
@@ -43,6 +44,7 @@ import { confirm, notify } from '../../utils/dialogs';
 // é a única fonte, e o TravelerLevelCard desenha as duas.
 
 export default function PublicProfileScreen({ route, navigation }) {
+  const { t } = useLocale();
   const { userId } = route.params;
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
@@ -204,11 +206,11 @@ export default function PublicProfileScreen({ route, navigation }) {
     setProcessandoBloqueio(false);
 
     if (!resultado.success) {
-      notify('Não foi possível bloquear', resultado.error || 'Tente novamente em instantes.');
+      notify(t('publicProfile.block.failedTitle'), resultado.error || t('blockedUsers.failed.genericMessage'));
       return;
     }
 
-    notify('Usuário bloqueado', 'Vocês não se veem mais. Para desfazer, vá em Configurações › Usuários bloqueados.');
+    notify(t('publicProfile.block.doneTitle'), t('publicProfile.block.doneMessage'));
     navigation.goBack();
   };
 
@@ -220,12 +222,12 @@ export default function PublicProfileScreen({ route, navigation }) {
     setProcessandoBloqueio(false);
 
     if (!resultado.success) {
-      notify('Não foi possível desbloquear', resultado.error || 'Tente novamente em instantes.');
+      notify(t('publicProfile.block.unblockFailedTitle'), resultado.error || t('blockedUsers.failed.genericMessage'));
       return;
     }
 
     setBloqueado(false);
-    notify('Usuário desbloqueado', 'Vocês voltam a se ver. Vocês NÃO voltam a se seguir.');
+    notify(t('publicProfile.block.unblockDoneTitle'), t('publicProfile.block.unblockDoneMessage'));
   };
 
   const openPhoto = (photo) => {
@@ -251,13 +253,13 @@ export default function PublicProfileScreen({ route, navigation }) {
     return (
       <View style={styles.center}>
         <Ionicons name="person-remove-outline" size={38} color="#3A4166" />
-        <Text style={styles.notFound}>Este perfil não está disponível</Text>
+        <Text style={styles.notFound}>{t('publicProfile.unavailable')}</Text>
         <Text style={styles.notFoundHint}>
           Ele pode ter sido removido ou não estar mais acessível para você.
         </Text>
         <TouchableOpacity style={styles.menuButton} onPress={() => navigation.navigate('Main')}>
           <Ionicons name="home-outline" size={18} color="#fff" />
-          <Text style={styles.menuButtonText}>Voltar ao menu</Text>
+          <Text style={styles.menuButtonText}>{t('publicProfile.backToMenu')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -269,18 +271,18 @@ export default function PublicProfileScreen({ route, navigation }) {
   return (
     <View style={styles.screen}>
       <View style={styles.topBar}>
-        <TouchableOpacity accessibilityLabel="Voltar" onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityLabel={t('common.actions.back')} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={23} color="#F7F7F2" />
         </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Perfil</Text>
+        <Text style={styles.topBarTitle}>{t('publicProfile.title')}</Text>
         <View style={styles.topBarActions}>
           <TouchableOpacity
-            accessibilityLabel="Voltar ao menu"
+            accessibilityLabel={t('publicProfile.backToMenu')}
             style={styles.homeButton}
             onPress={() => navigation.navigate('Main')}
           >
             <Ionicons name="home-outline" size={20} color="#F7F7F2" />
-            <Text style={styles.homeText}>Menu</Text>
+            <Text style={styles.homeText}>{t('publicProfile.menu')}</Text>
           </TouchableOpacity>
 
           {/* Bloquear e denunciar vivem atrás do "..." e não soltos na barra:
@@ -289,7 +291,7 @@ export default function PublicProfileScreen({ route, navigation }) {
               perfil — ninguém se bloqueia nem se denuncia. */}
           {!isOwnProfile && (
             <TouchableOpacity
-              accessibilityLabel="Mais opções"
+              accessibilityLabel={t('publicProfile.moreOptions')}
               accessibilityRole="button"
               style={styles.moreButton}
               onPress={() => setMenuVisible(true)}
@@ -326,12 +328,12 @@ export default function PublicProfileScreen({ route, navigation }) {
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{visitedCountries.length}</Text>
-              <Text style={styles.statLabel}>Países</Text>
+              <Text style={styles.statLabel}>{t('profile.stats.countries')}</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{photos.length}</Text>
-              <Text style={styles.statLabel}>Fotos</Text>
+              <Text style={styles.statLabel}>{t('profile.stats.photos')}</Text>
             </View>
             <View style={styles.statDivider} />
             <TouchableOpacity
@@ -339,7 +341,7 @@ export default function PublicProfileScreen({ route, navigation }) {
               onPress={() => navigation.navigate('Connections', { userId, mode: 'followers' })}
             >
               <Text style={styles.statValue}>{followCounts.followers}</Text>
-              <Text style={styles.statLabel}>Seguidores</Text>
+              <Text style={styles.statLabel}>{t('profile.stats.followers')}</Text>
             </TouchableOpacity>
             <View style={styles.statDivider} />
             <TouchableOpacity
@@ -347,7 +349,7 @@ export default function PublicProfileScreen({ route, navigation }) {
               onPress={() => navigation.navigate('Connections', { userId, mode: 'following' })}
             >
               <Text style={styles.statValue}>{followCounts.following}</Text>
-              <Text style={styles.statLabel}>Seguindo</Text>
+              <Text style={styles.statLabel}>{t('profile.stats.following')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -363,7 +365,7 @@ export default function PublicProfileScreen({ route, navigation }) {
               </TouchableOpacity>
               <TouchableOpacity onPress={openConversation} style={styles.messageButton}>
                 <Ionicons name="chatbubble-ellipses-outline" size={18} color="#F7F7F2" />
-                <Text style={styles.messageButtonText}>Mensagem</Text>
+                <Text style={styles.messageButtonText}>{t('publicProfile.message')}</Text>
               </TouchableOpacity>
             </View>
           ) : null}
@@ -381,15 +383,15 @@ export default function PublicProfileScreen({ route, navigation }) {
         {visitedCountries.length > 0 ? (
           <CountryGridSection
             countries={visitedCountries}
-            title="Países visitados"
+            title={t('publicProfile.visitedCountries')}
             icon="book-outline"
           />
         ) : null}
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>PUBLICAÇÕES</Text>
+          <Text style={styles.sectionTitle}>{t('publicProfile.postsSection')}</Text>
           {photos.length === 0 ? (
-            <Text style={styles.emptyPhotos}>Nenhuma foto pública ainda.</Text>
+            <Text style={styles.emptyPhotos}>{t('publicProfile.noPhotos')}</Text>
           ) : (
             <View style={styles.photoGrid}>
               {photos.map((photo) => (
@@ -430,7 +432,7 @@ export default function PublicProfileScreen({ route, navigation }) {
                     <View style={styles.commentCount}>
                       <Ionicons name="chatbubble-outline" size={13} color="#9aa0c6" />
                       <Text style={styles.commentCountText}>
-                        {photo.comment_count} {photo.comment_count === 1 ? 'comentário' : 'comentários'}
+                        {t('common.plural.comment', { count: photo.comment_count })}
                       </Text>
                     </View>
                   </View>
@@ -452,7 +454,7 @@ export default function PublicProfileScreen({ route, navigation }) {
         <Pressable
           style={styles.menuOverlay}
           onPress={() => setMenuVisible(false)}
-          accessibilityLabel="Fechar"
+          accessibilityLabel={t('common.actions.close')}
         />
         <View style={styles.menuSheet}>
           <View style={styles.menuHandle} />
@@ -464,12 +466,12 @@ export default function PublicProfileScreen({ route, navigation }) {
               setReportVisible(true);
             }}
             accessibilityRole="button"
-            accessibilityLabel="Denunciar perfil"
+            accessibilityLabel={t('publicProfile.report.profile')}
           >
             <Ionicons name="flag-outline" size={19} color="#F7F7F2" />
             <View style={styles.menuItemText}>
-              <Text style={styles.menuItemLabel}>Denunciar perfil</Text>
-              <Text style={styles.menuItemHint}>Nossa equipe analisa. A pessoa não fica sabendo.</Text>
+              <Text style={styles.menuItemLabel}>{t('publicProfile.report.profile')}</Text>
+              <Text style={styles.menuItemHint}>{t('publicProfile.report.note')}</Text>
             </View>
           </TouchableOpacity>
 

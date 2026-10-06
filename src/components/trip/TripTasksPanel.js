@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import MemberAvatar from './MemberAvatar';
 import { trip, font, shadow } from '../../theme/tripCollab';
 import { fullPersonName } from '../../utils/personName';
+import { useLocale } from '../../i18n/LocaleProvider';
 import {
   TASK_TITLE_MAX_LENGTH,
   canCreateTask,
@@ -46,6 +47,7 @@ export default function TripTasksPanel({
   onToggle,
   onDelete,
 }) {
+  const { t } = useLocale();
   const podeCriar = canCreateTask(abilities);
 
   const [formOpen, setFormOpen] = useState(false);
@@ -102,7 +104,7 @@ export default function TripTasksPanel({
   return (
     <View style={styles.panel}>
       <View style={styles.header}>
-        <Text style={styles.title}>Tarefas do grupo</Text>
+        <Text style={styles.title}>{t('tripTasks.title')}</Text>
         {progress.total > 0 ? (
           <Text style={styles.progress}>{progress.done}/{progress.total}</Text>
         ) : null}
@@ -156,7 +158,7 @@ export default function TripTasksPanel({
                 <Text style={styles.assigneeName} numberOfLines={1}>{row.assignee.label}</Text>
               </View>
             ) : (
-              <Text style={styles.unassigned}>Sem responsável</Text>
+              <Text style={styles.unassigned}>{t('tripTasks.unassigned')}</Text>
             )}
 
             {row.completedLabel ? (
@@ -184,7 +186,7 @@ export default function TripTasksPanel({
           accessibilityRole="button"
         >
           <Ionicons name="add" size={16} color={trip.accentSoft} />
-          <Text style={styles.newButtonText}>Nova tarefa</Text>
+          <Text style={styles.newButtonText}>{t('tripTasks.newTask')}</Text>
         </TouchableOpacity>
       ) : null}
 
@@ -193,14 +195,14 @@ export default function TripTasksPanel({
           <TextInput
             value={title}
             onChangeText={(texto) => { setTitle(texto); setFormError(''); }}
-            placeholder="O que precisa ser feito?"
+            placeholder={t('tripTasks.titlePlaceholder')}
             placeholderTextColor={trip.inkFaint}
             style={styles.input}
             maxLength={TASK_TITLE_MAX_LENGTH}
             autoFocus
           />
 
-          <Text style={styles.formLabel}>Responsável</Text>
+          <Text style={styles.formLabel}>{t('tripTasks.assignee')}</Text>
           <View style={styles.people}>
             {/* "Ninguém" é uma escolha, e não a ausência de escolha: tarefa do
                 grupo sem dono definido existe, e o banco aceita `assigned_to`
@@ -212,7 +214,7 @@ export default function TripTasksPanel({
               accessibilityState={{ selected: assignedTo === null }}
             >
               <Ionicons name="people-outline" size={14} color={assignedTo === null ? trip.ink : trip.inkDim} />
-              <Text style={[styles.personName, assignedTo === null && styles.personNameOn]}>Ninguém</Text>
+              <Text style={[styles.personName, assignedTo === null && styles.personNameOn]}>{t('tripTasks.nobody')}</Text>
             </TouchableOpacity>
 
             {candidatos.map((member) => {
@@ -244,7 +246,7 @@ export default function TripTasksPanel({
 
           <View style={styles.formActions}>
             <TouchableOpacity onPress={fecharForm} style={styles.cancel} accessibilityRole="button">
-              <Text style={styles.cancelText}>Cancelar</Text>
+              <Text style={styles.cancelText}>{t('tripTasks.cancel')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={criar}

@@ -3,9 +3,11 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
+import { useLocale } from '../../i18n/LocaleProvider';
 import { COLORS, SIZES } from '../../utils/constants';
 
 export default function ConfirmEmailScreen({ navigation, route }) {
+  const { t } = useLocale();
   const email = route?.params?.email || '';
   const [copied, setCopied] = useState(false);
   const copyTimeoutRef = useRef(null);
@@ -37,7 +39,7 @@ export default function ConfirmEmailScreen({ navigation, route }) {
           </LinearGradient>
         </View>
 
-        <Text style={styles.title}>Confirme seu email</Text>
+        <Text style={styles.title}>{t('auth.confirmEmail.title')}</Text>
 
         <Text style={styles.message}>
           Enviamos um link de confirmação para o email abaixo. Clique no
@@ -60,7 +62,7 @@ export default function ConfirmEmailScreen({ navigation, route }) {
             />
           </View>
         </TouchableOpacity>
-        {copied && <Text style={styles.copiedToast}>Email copiado</Text>}
+        {copied && <Text style={styles.copiedToast}>{t('auth.confirmEmail.copied')}</Text>}
 
         <View style={styles.spamNotice}>
           <Ionicons name="alert-circle-outline" size={18} color="#FF9A00" />
@@ -80,7 +82,7 @@ export default function ConfirmEmailScreen({ navigation, route }) {
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
           >
-            <Text style={styles.buttonText}>Voltar para o login</Text>
+            <Text style={styles.buttonText}>{t('auth.confirmEmail.backToLogin')}</Text>
             <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
           </LinearGradient>
         </TouchableOpacity>

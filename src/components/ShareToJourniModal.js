@@ -5,6 +5,7 @@ import Avatar from './Avatar';
 import { getShareRecipients, shareWithUser } from '../services/messageService';
 import { notify } from '../utils/dialogs';
 import { INSTAGRAM_FEATURE_ENABLED } from '../utils/instagram';
+import { useLocale } from '../i18n/LocaleProvider';
 
 /**
  * `onInstagramShare` é opcional de propósito: quem chama decide se a opção faz
@@ -24,6 +25,7 @@ import { INSTAGRAM_FEATURE_ENABLED } from '../utils/instagram';
  * }} props
  */
 export default function ShareToJourniModal({ visible, onClose, resource, onExternalShare, onInstagramShare }) {
+  const { t } = useLocale();
   const [recipients, setRecipients] = useState([]);
   const [loading, setLoading] = useState(false);
   const [sendingId, setSendingId] = useState(null);
@@ -39,10 +41,10 @@ export default function ShareToJourniModal({ visible, onClose, resource, onExter
     const result = await shareWithUser(profile.id, resource);
     setSendingId(null);
     if (!result.success) {
-      notify('Erro ao compartilhar', ('error' in result && result.error) || 'Tente novamente.');
+      notify(t('shareToJourni.failedTitle'), ('error' in result && result.error) || t('common.actions.tryAgain'));
       return;
     }
-    notify('Enviado', `Compartilhado com ${profile.display_name || profile.username}.`);
+    notify(t('shareToJourni.doneTitle'), t('shareToJourni.doneMessage', { name: profile.display_name || profile.username }));
     onClose();
   };
 
@@ -50,7 +52,7 @@ export default function ShareToJourniModal({ visible, onClose, resource, onExter
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.sheet}>
-          <View style={styles.header}><Text style={styles.title}>Compartilhar</Text><TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color="#F7F7F2" /></TouchableOpacity></View>
+          <View style={styles.header}><Text style={styles.title}>{t('shareToJourni.title')}</Text><TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color="#F7F7F2" /></TouchableOpacity></View>
           {/* Desativado por decisão de produto — ver INSTAGRAM_FEATURE_ENABLED
               em utils/instagram.js.
 
@@ -62,26 +64,26 @@ export default function ShareToJourniModal({ visible, onClose, resource, onExter
               style={styles.instagram}
               onPress={() => { onClose(); onInstagramShare(); }}
               accessibilityRole="button"
-              accessibilityLabel="Compartilhar nos Stories do Instagram"
+              accessibilityLabel={t('shareToJourni.instagramA11y')}
             >
               <Ionicons name="logo-instagram" size={21} color="#F7F7F2" />
-              <View style={{ flex: 1 }}><Text style={styles.externalTitle}>Compartilhar no Instagram</Text><Text style={styles.instagramSub}>Abre o editor de Stories com seu passaporte</Text></View>
+              <View style={{ flex: 1 }}><Text style={styles.externalTitle}>{t('shareToJourni.instagramLabel')}</Text><Text style={styles.instagramSub}>{t('shareToJourni.instagramHint')}</Text></View>
               <Ionicons name="chevron-forward" size={18} color="rgba(247,247,242,0.7)" />
             </TouchableOpacity>
           )}
           {!!onExternalShare && (
             <TouchableOpacity style={styles.external} onPress={() => { onClose(); onExternalShare(); }}>
               <Ionicons name="share-social-outline" size={21} color="#A78BFA" />
-              <View style={{ flex: 1 }}><Text style={styles.externalTitle}>Outros aplicativos</Text><Text style={styles.externalSub}>WhatsApp, Instagram, mensagens e mais</Text></View>
+              <View style={{ flex: 1 }}><Text style={styles.externalTitle}>{t('shareToJourni.otherApps')}</Text><Text style={styles.externalSub}>{t('shareToJourni.otherAppsHint')}</Text></View>
               <Ionicons name="chevron-forward" size={18} color="#777F9E" />
             </TouchableOpacity>
           )}
-          <Text style={styles.sectionLabel}>AMIGOS NO JOURNI</Text>
+          <Text style={styles.sectionLabel}>{t('shareToJourni.friendsSection')}</Text>
           {loading ? <ActivityIndicator color="#A78BFA" style={{ margin: 28 }} /> : (
             <FlatList
               data={recipients}
               keyExtractor={item => item.id}
-              ListEmptyComponent={<Text style={styles.empty}>Siga outros viajantes para compartilhar publicações e roteiros.</Text>}
+              ListEmptyComponent={<Text style={styles.empty}>{t('shareToJourni.emptyFriends')}</Text>}
               renderItem={({ item }) => (
                 <TouchableOpacity style={styles.person} onPress={() => share(item)} disabled={!!sendingId}>
                   <Avatar profile={item} size={42} />

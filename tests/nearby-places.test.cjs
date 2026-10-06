@@ -10,6 +10,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadEsm } = require('./helpers/load-esm.cjs');
+const { countryUtilsDeps } = require('./helpers/countryUtilsDeps.cjs');
 
 const MAPBOX_TOKEN = 'pk.test';
 
@@ -18,7 +19,8 @@ const MAPBOX_TOKEN = 'pk.test';
 // deduplicação da folha e a categorização mudam junto, e estes testes precisam
 // enxergar isso.
 const geoSearch = loadEsm('src/utils/geoSearch.js', {
-  './countryUtils': loadEsm('src/utils/countryUtils.js'),
+  './countryUtils': loadEsm('src/utils/countryUtils.js', countryUtilsDeps()),
+  './constants': loadEsm('src/utils/constants.js'),
   'expo/fetch': { fetch: (/** @type {any} */ url, /** @type {any} */ init) => global.fetch(url, init) },
   '../data/brazilianMunicipalities.json': [],
 });

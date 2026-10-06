@@ -16,6 +16,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 /**
  * @param {{
@@ -35,6 +36,7 @@ export default function TripListCard({
   onPress,
   onLongPress,
 }) {
+  const { t } = useLocale();
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -63,7 +65,7 @@ export default function TripListCard({
       {appliedToMap ? (
         <View style={styles.badge}>
           <Ionicons name="earth" size={11} color="#FFFFFF" />
-          <Text style={styles.badgeText}>No globo</Text>
+          <Text style={styles.badgeText}>{t('tripListCard.onGlobe')}</Text>
         </View>
       ) : null}
 

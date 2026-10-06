@@ -3,6 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import ConfirmHcaptcha from '@hcaptcha/react-native-hcaptcha';
 import { COLORS, SIZES } from '../../utils/constants';
+import { useLocale } from '../../i18n/LocaleProvider';
 import { HCAPTCHA_ENABLED, HCAPTCHA_SITE_KEY } from './hcaptchaConfig';
 
 /**
@@ -29,6 +30,7 @@ import { HCAPTCHA_ENABLED, HCAPTCHA_SITE_KEY } from './hcaptchaConfig';
  * @param {import('react').ForwardedRef<HCaptchaWidgetHandle>} ref
  */
 function HCaptchaWidgetImpl({ onVerify, onError, style }, ref) {
+  const { t } = useLocale();
   const captchaRef = useRef(null);
   const lastEventRef = useRef(null);
   const [verified, setVerified] = useState(false);
@@ -95,7 +97,7 @@ function HCaptchaWidgetImpl({ onVerify, onError, style }, ref) {
         disabled={verified}
         activeOpacity={0.8}
         accessibilityRole="button"
-        accessibilityLabel="Verificação de segurança"
+        accessibilityLabel={t('auth.captchaTitle')}
       >
         <Ionicons
           name={verified ? 'checkmark-circle' : 'shield-checkmark-outline'}
@@ -103,7 +105,7 @@ function HCaptchaWidgetImpl({ onVerify, onError, style }, ref) {
           color={verified ? COLORS.success : COLORS.gray}
         />
         <Text style={[styles.triggerText, verified && styles.triggerTextVerified]}>
-          {verified ? 'Verificação concluída' : 'Toque para verificar que não é um robô'}
+          {verified ? t('auth.captchaVerified') : t('auth.captchaPrompt')}
         </Text>
       </TouchableOpacity>
 

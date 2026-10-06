@@ -7,6 +7,8 @@ import { Platform } from 'react-native';
 import ShareCard from '../../components/ShareCard';
 import ShareToJourniModal from '../../components/ShareToJourniModal';
 import SettingsDrawer from '../../components/SettingsDrawer';
+import { useLocale } from '../../i18n/LocaleProvider';
+import { formatDateLongPadded } from '../../utils/formatDate';
 import {
   View,
   Text,
@@ -24,7 +26,7 @@ import { getProfile } from '../../services/profileService';
 import { normalizeBio } from '../../utils/bio';
 import InstagramBadge from '../../components/profile/InstagramBadge';
 import { deletePhoto, getAllUserPhotos, getPhotoCommentCounts } from '../../services/photoService';
-import { getCountryNamePtByCode } from '../../utils/countryUtils';
+import { getCountryName } from '../../utils/countryUtils';
 import StarRating from '../../components/StarRating';
 import CountryFlag from '../../components/CountryFlag';
 import CountryGridSection from '../../components/profile/CountryGridSection';
@@ -42,6 +44,7 @@ import {
 import useTabBarContentPadding from '../../hooks/useTabBarContentPadding';
 
 export default function ProfileScreen({ navigation }) {
+  const { t, tag } = useLocale();
   // Folga para o fim do perfil não terminar atrás da tab bar flutuante.
   const tabBarPadding = useTabBarContentPadding();
   const [profile, setProfile] = useState(null);
@@ -108,10 +111,14 @@ export default function ProfileScreen({ navigation }) {
 
       const { data: notifs } = await supabase
         .from('notifications')
-        .select('id, type, actor_id, photo_id, message')
+        .select('id, type, actor_id, photo_id, passport_share_id, conversation_id, message')
         .eq('user_id', user.id)
         .eq('read', false);
-      const uniqueNotifications = new Set((notifs || []).map(item => `${item.type}:${item.actor_id}:${item.photo_id || ''}:${item.message}`));
+      // A mesma ordem de especificidade de NotificationsScreen, e pelo mesmo
+      // motivo: sem `conversation_id` o badge contaria duas conversas da mesma
+      // pessoa como uma, e sem `passport_share_id` dois passaportes da mesma
+      // conversa também.
+      const uniqueNotifications = new Set((notifs || []).map(item => `${item.type}:${item.actor_id}:${item.photo_id || item.passport_share_id || item.conversation_id || ''}:${item.message}`));
       setUnreadCount(uniqueNotifications.size);
     } catch {
       setProfile(null);
@@ -128,7 +135,7 @@ export default function ProfileScreen({ navigation }) {
 
   const handleLogout = async () => {
     setSettingsVisible(false);
-    const confirmacao = await confirm('Sair da conta', 'Tem certeza que deseja sair da sua conta?');
+    const confirmacao = await confirm(t('profile.logout.confirmTitle'), t('profile.logout.confirmMessage'));
     if (!confirmacao) return;
 
     try {
@@ -136,10 +143,10 @@ export default function ProfileScreen({ navigation }) {
       if (result.success) {
         // AppNavigator reage à mudança de sessão e mostra a tela de login.
       } else {
-        notify('Erro ao sair', result.error || 'Não foi possível sair da conta.');
+        notify(t('profile.logout.failedTitle'), result.error || t('profile.logout.failedMessage'));
       }
     } catch (error) {
-      notify('Erro ao sair', error.message || 'Não foi possível sair da conta.');
+      notify(t('profile.logout.failedTitle'), error.message || t('profile.logout.failedMessage'));
     }
   };
 
@@ -180,13 +187,13 @@ export default function ProfileScreen({ navigation }) {
         link.href = dataUrl;
         link.download = 'meu-passaporte-journi.png';
         link.click();
-        notify('Passaporte baixado', 'A imagem foi salva. Agora você pode enviá-la pelo WhatsApp, Instagram ou outro aplicativo.');
+        notify(t('profile.passportShare.downloadedTitle'), t('profile.passportShare.downloadedMessage'));
       } else {
         const uri = await captureRef(shareCardRef, { format: 'png', quality: 1 });
         await Sharing.shareAsync(uri);
       }
     } catch {
-      notify('Erro ao compartilhar', 'Não foi possível gerar seu passaporte agora.');
+      notify(t('profile.passportShare.failedTitle'), t('profile.passportShare.failedMessage'));
     }
   };
 
@@ -201,7 +208,7 @@ export default function ProfileScreen({ navigation }) {
     try {
       uri = await captureRef(shareCardRef, { format: 'png', quality: 1 });
     } catch {
-      notify('Erro ao compartilhar', 'Não foi possível gerar seu passaporte agora.');
+      notify(t('profile.passportShare.failedTitle'), t('profile.passportShare.failedMessage'));
       return;
     }
 
@@ -211,8 +218,8 @@ export default function ProfileScreen({ navigation }) {
 
     if (status === STORIES_SEM_APP) {
       notify(
-        'Instagram não encontrado',
-        'Instale o Instagram para publicar seu passaporte nos Stories. Você também pode usar "Outros aplicativos" e escolher onde compartilhar.'
+        t('profile.passportShare.instagramMissingTitle'),
+        t('profile.passportShare.instagramMissingMessage')
       );
       return;
     }
@@ -222,15 +229,15 @@ export default function ProfileScreen({ navigation }) {
       // Instagram recusa o conteúdo. Mensagem separada para quem for investigar
       // não procurar defeito no aparelho.
       notify(
-        'Compartilhamento indisponível',
-        'O compartilhamento nos Stories ainda não está configurado nesta versão do app. Use "Outros aplicativos" por enquanto.'
+        t('profile.passportShare.unavailableTitle'),
+        t('profile.passportShare.unavailableMessage')
       );
       return;
     }
 
     notify(
-      'Erro ao compartilhar',
-      'Não foi possível abrir o Instagram agora. Tente por "Outros aplicativos".'
+      t('profile.passportShare.failedTitle'),
+      t('profile.passportShare.instagramFailedMessage')
     );
   };
 
@@ -238,8 +245,8 @@ export default function ProfileScreen({ navigation }) {
     if (!photo || deletingPhotoId) return;
 
     const accepted = await confirm(
-      'Excluir publicação',
-      'A foto, a legenda e os comentários serão excluídos permanentemente. Deseja continuar?'
+      t('post.delete.confirmTitle'),
+      t('post.delete.confirmMessage')
     );
     if (!accepted) return;
 
@@ -247,13 +254,13 @@ export default function ProfileScreen({ navigation }) {
     try {
       const result = await deletePhoto(photo.id, photo.photo_path);
       if (!result.success) {
-        notify('Erro ao excluir', result.error || 'Não foi possível excluir a publicação.');
+        notify(t('post.delete.failedTitle'), result.error || t('post.delete.failedMessage'));
         return;
       }
 
       setPhotos(current => current.filter(item => item.id !== photo.id));
       setFullscreenPhoto(null);
-      notify('Publicação excluída', result.warning || 'Sua publicação foi removida.');
+      notify(t('post.delete.doneTitle'), result.warning || t('post.delete.doneMessage'));
     } finally {
       setDeletingPhotoId(null);
     }
@@ -280,7 +287,7 @@ export default function ProfileScreen({ navigation }) {
           onPress={() => setSettingsVisible(true)}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           accessibilityRole="button"
-          accessibilityLabel="Configurações"
+          accessibilityLabel={t('profile.settings')}
         >
           <Ionicons name="settings-outline" size={24} color="#F7F7F2" />
         </TouchableOpacity>
@@ -333,7 +340,7 @@ export default function ProfileScreen({ navigation }) {
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
             <Text style={styles.statVal}>{visitedCountries.length}</Text>
-            <Text style={styles.statLbl}>Países</Text>
+            <Text style={styles.statLbl}>{t('profile.stats.countries')}</Text>
           </View>
           <View style={styles.statDivider} />
           <TouchableOpacity
@@ -344,7 +351,7 @@ export default function ProfileScreen({ navigation }) {
             })}
           >
             <Text style={styles.statVal}>{followersCount}</Text>
-            <Text style={styles.statLbl}>Seguidores</Text>
+            <Text style={styles.statLbl}>{t('profile.stats.followers')}</Text>
           </TouchableOpacity>
           <View style={styles.statDivider} />
           <TouchableOpacity
@@ -355,7 +362,7 @@ export default function ProfileScreen({ navigation }) {
             })}
           >
             <Text style={styles.statVal}>{followingCount}</Text>
-            <Text style={styles.statLbl}>Seguindo</Text>
+            <Text style={styles.statLbl}>{t('profile.stats.following')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -380,8 +387,8 @@ export default function ProfileScreen({ navigation }) {
           <Ionicons name="map-outline" size={20} color="#C4B5FD" />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.tripPlansTitle}>Minhas viagens</Text>
-          <Text style={styles.tripPlansSubtitle}>Acesse roteiros, orçamento e checklist</Text>
+          <Text style={styles.tripPlansTitle}>{t('profile.myTrips.title')}</Text>
+          <Text style={styles.tripPlansSubtitle}>{t('profile.myTrips.subtitle')}</Text>
         </View>
         <Ionicons name="chevron-forward" size={20} color="#8D95B4" />
       </TouchableOpacity>
@@ -389,7 +396,7 @@ export default function ProfileScreen({ navigation }) {
       {/* Passaporte */}
       <CountryGridSection
         countries={visitedCountries}
-        title="Passaporte"
+        title={t('profile.passport')}
         icon="book-outline"
         emptyState={{
           icon: 'bag-outline',
@@ -401,7 +408,7 @@ export default function ProfileScreen({ navigation }) {
       {wishlist.length > 0 && (
         <CountryGridSection
           countries={wishlist}
-          title="Quero visitar"
+          title={t('profile.wishlist')}
           icon="heart-outline"
           accentColor="#00D1C1"
           accentBorderColor="#00A89C"
@@ -411,19 +418,19 @@ export default function ProfileScreen({ navigation }) {
       {/* Botão compartilhar passaporte */}
       <TouchableOpacity style={styles.shareBtn} onPress={() => setPassportShareVisible(true)}>
         <Ionicons name="share-social-outline" size={18} color="white" />
-        <Text style={styles.shareBtnText}>Compartilhar meu passaporte</Text>
+        <Text style={styles.shareBtnText}>{t('profile.sharePassport')}</Text>
       </TouchableOpacity>
 
       {/* Publicações do usuário */}
       <View style={styles.card}>
         <View style={styles.cardTitleRow}>
           <Ionicons name="newspaper-outline" size={14} color="#999" />
-          <Text style={styles.cardTitle}>PUBLICAÇÕES</Text>
+          <Text style={styles.cardTitle}>{t('profile.postsSection')}</Text>
         </View>
         {photos.length === 0 ? (
           <View style={styles.emptyFav}>
             <Ionicons name="images-outline" size={28} color="#ddd" />
-            <Text style={styles.emptyFavText}>Nenhuma foto ainda</Text>
+            <Text style={styles.emptyFavText}>{t('profile.noPhotos')}</Text>
           </View>
         ) : (
           <View style={styles.publicationsGrid}>
@@ -432,7 +439,7 @@ export default function ProfileScreen({ navigation }) {
                 <TouchableOpacity
                   style={styles.publicationMenu}
                   onPress={() => setPostMenuPhoto(photo)}
-                  accessibilityLabel="Opções da publicação"
+                  accessibilityLabel={t('post.menu.title')}
                 >
                   <Ionicons name="ellipsis-horizontal" size={21} color="#fff" />
                 </TouchableOpacity>
@@ -463,7 +470,7 @@ export default function ProfileScreen({ navigation }) {
         <View style={styles.card}>
           <View style={styles.cardTitleRow}>
             <Ionicons name="earth-outline" size={14} color="#999" />
-            <Text style={styles.cardTitle}>PAÍSES VISITADOS</Text>
+            <Text style={styles.cardTitle}>{t('profile.visitedSection')}</Text>
           </View>
           {visitedCountries.map((country, i) => (
             <View key={i} style={styles.countryRow}>
@@ -475,7 +482,7 @@ export default function ProfileScreen({ navigation }) {
               />
               <View style={{ flex: 1 }}>
                 <Text style={styles.countryName}>
-                  {getCountryNamePtByCode(country.country_code, country.country_name)}
+                  {getCountryName(country.country_code, country.country_name, tag)}
                 </Text>
               </View>
             </View>
@@ -487,10 +494,10 @@ export default function ProfileScreen({ navigation }) {
         <View style={styles.card}>
           <View style={styles.cardTitleRow}>
             <Ionicons name="earth-outline" size={14} color="#999" />
-            <Text style={styles.cardTitle}>PAÍSES VISITADOS</Text>
+            <Text style={styles.cardTitle}>{t('profile.visitedSection')}</Text>
           </View>
           <Text style={{ fontSize: 12, color: '#999', textAlign: 'center', paddingVertical: 16 }}>
-            Nenhum país visitado ainda. Explore o mapa!
+            {t('profile.noVisited')}
           </Text>
         </View>
       )}
@@ -535,13 +542,21 @@ export default function ProfileScreen({ navigation }) {
         setSettingsVisible(false);
         navigation.navigate('BlockedUsers');
       }}
+      onNotificationPreferences={() => {
+        setSettingsVisible(false);
+        navigation.navigate('NotificationPreferences');
+      }}
+      onLanguage={() => {
+        setSettingsVisible(false);
+        navigation.navigate('Language');
+      }}
       onLogout={handleLogout}
     />
 
     <Modal visible={!!postMenuPhoto} transparent animationType="fade" onRequestClose={() => setPostMenuPhoto(null)}>
       <TouchableOpacity style={styles.postMenuOverlay} activeOpacity={1} onPress={() => setPostMenuPhoto(null)}>
         <View style={styles.postMenuSheet}>
-          <Text style={styles.postMenuTitle}>Opções da publicação</Text>
+          <Text style={styles.postMenuTitle}>{t('post.menu.title')}</Text>
           <TouchableOpacity
             style={styles.postMenuDelete}
             onPress={() => {
@@ -551,9 +566,9 @@ export default function ProfileScreen({ navigation }) {
             }}
           >
             <Ionicons name="trash-outline" size={20} color="#FF6B7D" />
-            <Text style={styles.postMenuDeleteText}>Excluir publicação</Text>
+            <Text style={styles.postMenuDeleteText}>{t('post.delete.label')}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.postMenuCancel} onPress={() => setPostMenuPhoto(null)}><Text style={styles.postMenuCancelText}>Cancelar</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.postMenuCancel} onPress={() => setPostMenuPhoto(null)}><Text style={styles.postMenuCancelText}>{t('common.actions.cancel')}</Text></TouchableOpacity>
         </View>
       </TouchableOpacity>
     </Modal>
@@ -624,7 +639,7 @@ export default function ProfileScreen({ navigation }) {
               )}
               {fullscreenPhoto.created_at && (
                 <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>
-                  {new Date(fullscreenPhoto.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                  {formatDateLongPadded(fullscreenPhoto.created_at, tag)}
                 </Text>
               )}
               <TouchableOpacity
@@ -632,14 +647,14 @@ export default function ProfileScreen({ navigation }) {
                 onPress={() => handleDeletePhoto(fullscreenPhoto)}
                 disabled={deletingPhotoId !== null}
                 accessibilityRole="button"
-                accessibilityLabel="Excluir publicação"
+                accessibilityLabel={t('post.delete.label')}
               >
                 {deletingPhotoId === fullscreenPhoto.id ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
                   <>
                     <Ionicons name="trash-outline" size={17} color="#fff" />
-                    <Text style={styles.deletePhotoText}>Excluir publicação</Text>
+                    <Text style={styles.deletePhotoText}>{t('post.delete.label')}</Text>
                   </>
                 )}
               </TouchableOpacity>

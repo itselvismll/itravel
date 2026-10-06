@@ -1,0 +1,1042 @@
+{
+  "common": {
+    "actions": {
+      "save": "Save",
+      "cancel": "Cancel",
+      "confirm": "Confirm",
+      "back": "Back",
+      "close": "Close",
+      "retry": "Try again",
+      "copy": "Copy",
+      "copied": "Copied",
+      "delete": "Delete",
+      "report": "Report",
+      "accept": "Accept",
+      "tryAgain": "Try again.",
+      "tryAgainSoon": "Try again in a moment.",
+      "send": "Send",
+      "sending": "Sending...",
+      "continue_": "Continue",
+      "skip": "Skip",
+      "copy_": "Copy",
+      "seeAll": "see all"
+    },
+    "someone": "Someone",
+    "toast": {
+      "linkCopied": "Link copied",
+      "saveFailed": "Couldn't save"
+    },
+    "time": {
+      "now": "now",
+      "minutesShort": "%{count}min",
+      "hoursShort": "%{count}h",
+      "daysShort": "%{count}d",
+      "minutesAgo": "%{count}min ago",
+      "hoursAgo": "%{count}h ago",
+      "daysAgo": "%{count}d ago"
+    },
+    "plural": {
+      "day": {
+        "one": "%{count} day",
+        "other": "%{count} days"
+      },
+      "country": {
+        "one": "%{count} country",
+        "other": "%{count} countries"
+      },
+      "photo": {
+        "one": "%{count} photo",
+        "other": "%{count} photos"
+      },
+      "person": {
+        "one": "%{count} person",
+        "other": "%{count} people"
+      },
+      "result": {
+        "one": "%{count} result",
+        "other": "%{count} results"
+      },
+      "comment": {
+        "one": "%{count} comment",
+        "other": "%{count} comments"
+      },
+      "stop": {
+        "one": "%{count} stop",
+        "other": "%{count} stops"
+      },
+      "character": {
+        "one": "%{count} character",
+        "other": "%{count} characters"
+      }
+    },
+    "calendar": {
+      "months": {
+        "jan": "January",
+        "feb": "February",
+        "mar": "March",
+        "apr": "April",
+        "may": "May",
+        "jun": "June",
+        "jul": "July",
+        "aug": "August",
+        "sep": "September",
+        "oct": "October",
+        "nov": "November",
+        "dec": "December"
+      },
+      "weekDaysShort": {
+        "sun": "S",
+        "mon": "M",
+        "tue": "T",
+        "wed": "W",
+        "thu": "T",
+        "fri": "F",
+        "sat": "S"
+      },
+      "selectDate": "Select date"
+    }
+  },
+  "nav": {
+    "home": "Home",
+    "map": "Map",
+    "explore": "Explore",
+    "profile": "Profile"
+  },
+  "auth": {
+    "login": {
+      "tagline": "Your trips. Your stories. Your connections.",
+      "welcome": "Welcome back!",
+      "subtitle": "Sign in to continue your journey",
+      "emailPlaceholder": "Email",
+      "passwordPlaceholder": "Password",
+      "forgotPassword": "Forgot your password?",
+      "submit": "Sign in",
+      "submitting": "Signing in...",
+      "signUpCta": "Sign up for free",
+      "needHelp": "Need help?",
+      "errorTitle": "Login error",
+      "googleErrorTitle": "Google login error",
+      "googleGeneric": "Couldn't sign in with Google.",
+      "googleProviderDisabled": "Google login isn't enabled in this environment.",
+      "orDivider": "or"
+    },
+    "register": {
+      "headerTitle": "Create Account",
+      "errorTitle": "Sign-up error",
+      "fullNamePlaceholder": "Full name",
+      "usernamePlaceholder": "Username",
+      "emailPlaceholder": "Email",
+      "passwordPlaceholder": "Password",
+      "confirmPasswordPlaceholder": "Confirm password",
+      "submit": "Create Account",
+      "submitting": "Creating account...",
+      "loginPrompt": "Already have an account?",
+      "loginCta": "Sign in",
+      "termsPrefix": "I accept the ",
+      "termsLink": "Terms of Use",
+      "termsAnd": " and ",
+      "privacyLink": "Privacy Policy",
+      "openTermsLabel": "Open the Terms of Use",
+      "openPrivacyLabel": "Open the Privacy Policy",
+      "openDocFailedTitle": "Couldn't open",
+      "openDocFailedMessage": "Go to %{url} in your browser.",
+      "usernameAvailable": "✓ Username available",
+      "usernameTaken": "✗ Username already taken"
+    },
+    "forgot": {
+      "title": "Reset password",
+      "intro": "Enter your account email to receive a secure recovery link.",
+      "sent": "We've sent the instructions. Open the link on this same device to create a new password.",
+      "submit": "Send link",
+      "backToLogin": "Back to login",
+      "invalidEmailTitle": "Invalid email",
+      "invalidEmailMessage": "Enter the email used on your account.",
+      "failedTitle": "Couldn't send",
+      "failedMessage": "Try again in a few minutes.",
+      "emailPlaceholder": "youremail@example.com"
+    },
+    "reset": {
+      "title": "Create a new password",
+      "intro": "The new password must have at least %{count} characters.",
+      "submit": "Save new password",
+      "tooShortTitle": "Password too short",
+      "tooShortMessage": "Use at least %{count} characters.",
+      "mismatchTitle": "Passwords don't match",
+      "mismatchMessage": "Enter the same password in both fields.",
+      "doneTitle": "Password updated",
+      "doneMessage": "Sign in again using your new password.",
+      "failedTitle": "Couldn't update",
+      "failedMessage": "Request a new recovery link.",
+      "newPasswordPlaceholder": "New password",
+      "confirmPasswordPlaceholder": "Confirm new password"
+    },
+    "confirmEmail": {
+      "title": "Confirm your email",
+      "copied": "Email copied",
+      "backToLogin": "Back to login"
+    },
+    "fields": {
+      "emailRequired": "Email is required",
+      "emailInvalid": "Invalid email",
+      "passwordRequired": "Password is required",
+      "passwordWeak": "Password doesn't meet the security requirements",
+      "confirmPasswordRequired": "Confirm your password",
+      "passwordMismatch": "Passwords don't match",
+      "fullNameRequired": "Full name is required",
+      "termsRequired": "You must accept the terms of use"
+    },
+    "password": {
+      "requirementsTitle": "Your password must have:",
+      "requirements": {
+        "minLength": "At least %{count} characters",
+        "upperCase": "An uppercase letter",
+        "lowerCase": "A lowercase letter",
+        "number": "A number"
+      }
+    },
+    "errors": {
+      "invalidCredentials": "Incorrect email or password",
+      "emailNotConfirmed": "Please confirm your email before signing in",
+      "userAlreadyExists": "This email is already registered",
+      "weakPassword": "Choose a stronger password: at least %{count} characters, with uppercase, lowercase and a number.",
+      "rateLimit": "Too many attempts in a short time. Wait a few minutes and try again.",
+      "userBanned": "This account is temporarily unavailable. Contact support.",
+      "network": "Couldn't connect. Check your internet and try again.",
+      "captcha": "Couldn't validate the security check. Try again.",
+      "unknown": "Couldn't complete this now. Code: %{code}"
+    },
+    "captchaTitle": "Security check",
+    "captchaVerified": "Verification complete",
+    "captchaPrompt": "Tap to verify you're not a robot"
+  },
+  "drawer": {
+    "closeLabel": "Close settings",
+    "sections": {
+      "account": "ACCOUNT",
+      "community": "COMMUNITY",
+      "preferences": "PREFERENCES",
+      "support": "SUPPORT"
+    },
+    "items": {
+      "editProfile": "Edit profile",
+      "myTrips": "My trips",
+      "blockedUsers": "Blocked users",
+      "inviteFriends": "Invite friends",
+      "inviteFriendsSubtitle": "Invite who travels with you",
+      "notifications": "Notifications",
+      "language": "Language",
+      "talkToTeam": "Talk to the team",
+      "termsAndPrivacy": "Terms and privacy",
+      "logout": "Log out"
+    },
+    "version": "Journi v%{version}"
+  },
+  "appInvite": {
+    "withHandle": "I'm using Journi to track my trips and plan the next ones. Join me — find me at @%{username}: %{url}",
+    "withoutHandle": "I'm using Journi to track my trips and plan the next ones. Join me: %{url}"
+  },
+  "feed": {
+    "title": "Home",
+    "empty": {
+      "title": "Your feed is empty",
+      "text": "Follow the trips of people you follow",
+      "cta": "Explore travelers"
+    },
+    "openConversations": "Open conversations",
+    "openNotifications": "Open notifications",
+    "comments": {
+      "title": "Comments",
+      "empty": "No comments yet. Be the first!",
+      "placeholder": "Add a comment...",
+      "loadFailedTitle": "Error loading comments",
+      "saveFailedTitle": "Error saving comment"
+    },
+    "like": {
+      "failedTitle": "Couldn't update the like"
+    },
+    "share": {
+      "failedTitle": "Error sharing",
+      "failedMessage": "Couldn't share this photo."
+    }
+  },
+  "post": {
+    "delete": {
+      "label": "Delete post",
+      "confirmTitle": "Delete post",
+      "confirmMessage": "The photo, caption and comments will be permanently deleted. Continue?",
+      "failedTitle": "Error deleting",
+      "failedMessage": "Couldn't delete the post.",
+      "doneTitle": "Post deleted",
+      "doneMessage": "Your post has been removed."
+    },
+    "menu": {
+      "title": "Post options"
+    }
+  },
+  "profile": {
+    "settings": "Settings",
+    "stats": {
+      "countries": "Countries",
+      "followers": "Followers",
+      "following": "Following",
+      "photos": "Photos"
+    },
+    "myTrips": {
+      "title": "My trips",
+      "subtitle": "Access itineraries, budget and checklist"
+    },
+    "sharePassport": "Share my passport",
+    "postsSection": "POSTS",
+    "noPhotos": "No photos yet",
+    "visitedSection": "COUNTRIES VISITED",
+    "noVisited": "No countries visited yet. Explore the map!",
+    "passport": "Passport",
+    "wishlist": "Want to visit",
+    "logout": {
+      "confirmTitle": "Log out",
+      "confirmMessage": "Are you sure you want to log out of your account?",
+      "failedTitle": "Error logging out",
+      "failedMessage": "Couldn't log out of the account."
+    },
+    "passportShare": {
+      "downloadedTitle": "Passport downloaded",
+      "downloadedMessage": "The image was saved. Now you can send it via WhatsApp, Instagram or another app.",
+      "failedTitle": "Error sharing",
+      "failedMessage": "Couldn't generate your passport right now.",
+      "instagramMissingTitle": "Instagram not found",
+      "instagramMissingMessage": "Install Instagram to post your passport to Stories. You can also use \"Other apps\" and choose where to share.",
+      "unavailableTitle": "Sharing unavailable",
+      "unavailableMessage": "Sharing to Stories isn't set up yet in this version of the app. Use \"Other apps\" for now.",
+      "instagramFailedMessage": "Couldn't open Instagram right now. Try \"Other apps\" instead."
+    }
+  },
+  "editProfile": {
+    "title": "Edit profile",
+    "save": "Save",
+    "changePhoto": "Tap to change the photo",
+    "fields": {
+      "name": "Name",
+      "namePlaceholder": "What should we call you",
+      "username": "Username",
+      "usernamePlaceholder": "yourusername",
+      "bio": "Bio",
+      "bioPlaceholder": "Tell us something about your trips",
+      "bioLabel": "Profile bio",
+      "instagram": "Instagram",
+      "instagramPlaceholder": "your.username",
+      "instagramLabel": "Instagram username"
+    },
+    "limitReached": "Character limit reached",
+    "trimToSave": "Remove %{characters} to save",
+    "usernameAvailable": "✓ Available",
+    "usernameTaken": "✗ Already taken",
+    "account": {
+      "section": "Account",
+      "deleteAccount": "Delete my account",
+      "deleteFailedTitle": "Couldn't delete",
+      "deleteFailedMessage": "Try again in a moment.",
+      "deletedTitle": "Account deleted",
+      "deletedMessage": "We'll miss you. If you change your mind, log back in within %{count} days and your account comes back as it was.",
+      "confirmTitle": "Delete my account",
+      "confirmMessage": "Your account goes offline right now and no one can see your profile, photos or comments anymore.\n\nYou have %{count} days to change your mind: just log back in with the same email and password and everything comes back.\n\nAfter that period, your data and photos are permanently deleted, with no way to recover them."
+    }
+  },
+  "publicProfile": {
+    "title": "Profile",
+    "unavailable": "This profile isn't available",
+    "backToMenu": "Back to menu",
+    "menu": "Menu",
+    "moreOptions": "More options",
+    "message": "Message",
+    "postsSection": "POSTS",
+    "noPhotos": "No public photos yet.",
+    "visitedCountries": "Countries visited",
+    "report": {
+      "profile": "Report profile",
+      "note": "Our team reviews it. The person won't be notified."
+    },
+    "block": {
+      "failedTitle": "Couldn't block",
+      "failedMessage": "Try again in a moment.",
+      "doneTitle": "User blocked",
+      "doneMessage": "You no longer see each other. To undo this, go to Settings › Blocked users.",
+      "unblockFailedTitle": "Couldn't unblock",
+      "unblockDoneTitle": "User unblocked",
+      "unblockDoneMessage": "You can see each other again. You do NOT automatically follow each other again."
+    }
+  },
+  "connections": {
+    "following": "Following",
+    "followers": "Followers",
+    "loadFailed": "Couldn't load this list.",
+    "emptyFollowing": "This profile doesn't follow anyone yet.",
+    "emptyFollowers": "This profile doesn't have any followers yet.",
+    "unnamed": "Traveler"
+  },
+  "passportDetail": {
+    "title": "Passport received",
+    "unavailable": "Passport unavailable",
+    "sharedOn": "Shared on %{date}"
+  },
+  "savedTrips": {
+    "title": "My trips",
+    "subtitle": "Planned and saved itineraries",
+    "empty": {
+      "title": "No saved itineraries",
+      "text": "Plan your next trip and find everything organized here.",
+      "cta": "Plan a trip"
+    },
+    "localBadge": "LOCAL",
+    "loadFailedTitle": "Error loading itineraries",
+    "delete": {
+      "confirmTitle": "Delete itinerary",
+      "confirmMessage": "Remove “%{title}”?",
+      "failedTitle": "Error deleting"
+    },
+    "noMapPoints": {
+      "title": "No points on the map",
+      "message": "This itinerary has no coordinates. Generate it again to see it on the globe."
+    },
+    "globeFailedTitle": "Couldn't update the globe"
+  },
+  "tripPlanner": {
+    "title": "Plan with AI",
+    "subtitle": "An itinerary made for your travel style",
+    "destinationSection": "YOUR NEXT DESTINATION",
+    "intro": "Tell us the details. We'll organize the adventure.",
+    "interestsHint": "Choose up to 6 interests.",
+    "estimatesDisclaimer": "Costs and times are estimates. Confirm bookings and official rules.",
+    "paces": {
+      "calm": "Relaxed",
+      "balanced": "Balanced",
+      "intense": "Intense"
+    },
+    "routeSection": "Route",
+    "originPlaceholder": "Leaving from (optional)",
+    "destinationPlaceholder": "City, country or airport (e.g. GRU)",
+    "destinationsSection": "Destinations and stops",
+    "datesSection": "Dates",
+    "departure": "Departure",
+    "returnDate": "Return",
+    "howManyDays": "How many days?",
+    "daysPlaceholder": "E.g.: 7",
+    "travelersSection": "Who's going",
+    "travelersLabel": "Number of travelers",
+    "budgetSection": "Budget",
+    "paceSection": "Trip pace",
+    "interestsSection": "What you like",
+    "preferencesSection": "Important preferences",
+    "foodLabel": "Food",
+    "foodPlaceholder": "E.g.: vegetarian, lactose-free...",
+    "accessibilityLabel": "Accessibility",
+    "accessibilityPlaceholder": "Mobility, breaks, children, seniors...",
+    "notesLabel": "Notes",
+    "notesPlaceholder": "Something you can't miss or prefer to avoid"
+  },
+  "assistantResult": {
+    "opening": "Opening the trip…",
+    "invited": "You've been invited",
+    "personalizedBadge": "PERSONALIZED ITINERARY",
+    "tabs": {
+      "itinerary": "Itinerary",
+      "budget": "Budget",
+      "checklist": "Checklist",
+      "tips": "Tips"
+    },
+    "budget": {
+      "whatIsIncluded": "What does this amount include?",
+      "wholeTripEstimate": "ESTIMATE FOR THE WHOLE TRIP",
+      "informedConverted": "BUDGET ENTERED, CONVERTED",
+      "scopeFromCategories": "The total considers: %{categories}.",
+      "scopeFallback": "Open the Budget tab to check the categories considered."
+    },
+    "preparation": "Trip preparation",
+    "sources": "Sources and updates",
+    "adjust": {
+      "title": "Adjust this itinerary with AI",
+      "subtitle": "Request changes without filling everything out again.",
+      "cta": "Change trip",
+      "failedTitle": "Couldn't adjust the itinerary",
+      "swapFailedTitle": "Couldn't swap the activity"
+    },
+    "openSaved": "Open my saved itineraries",
+    "estimatesDisclaimer": "Amounts are estimates. Confirm prices, times, documents and alerts with official sources.",
+    "save": {
+      "failedTitle": "Error saving",
+      "doneTitle": "Itinerary saved",
+      "doneMessage": "You'll find this trip in your profile."
+    },
+    "invite": {
+      "acceptFailedTitle": "Couldn't accept"
+    },
+    "tasks": {
+      "createFailedTitle": "Couldn't create",
+      "updateFailedTitle": "Couldn't update",
+      "deleteFailedTitle": "Couldn't delete",
+      "deleteConfirmTitle": "Delete task",
+      "deleteConfirmMessage": "\"%{title}\" will be removed from the list for all participants.",
+      "untitled": "This task"
+    },
+    "backToTripStatus": "Back",
+    "acceptInviteLabel": "Accept trip invite",
+    "cancelEdit": "Cancel",
+    "openMap": "Map",
+    "openOfficialSite": "Official site",
+    "editActivity": "Edit",
+    "practicalTips": "Practical tips",
+    "safetyTips": "Safety",
+    "editPlaceholder": "E.g.: swap the museum for an outdoor activity",
+    "backToTop": "Back to top of itinerary",
+    "saving": "Saving...",
+    "applyEdit": "Apply",
+    "swapping": "Swapping...",
+    "swapWithAI": "Swap with AI",
+    "period": {
+      "manha": "Morning",
+      "tarde": "Afternoon",
+      "noite": "Night",
+      "outro": "Other time"
+    },
+    "budgetCategory": {
+      "passagens": "Flights",
+      "hospedagem": "Lodging",
+      "alimentacao": "Food",
+      "transporteLocal": "Local transport",
+      "passeiosIngressos": "Tours and tickets",
+      "comprasReserva": "Shopping and reserve",
+      "outro": "Other"
+    },
+    "checklistCategory": {
+      "documentos": "Documents",
+      "saude": "Health",
+      "dinheiro": "Money",
+      "conectividade": "Connectivity",
+      "bagagem": "Luggage",
+      "outro": "Other"
+    }
+  },
+  "currencyPicker": {
+    "title": "Choose the currency",
+    "searchHint": "Search by name or international code.",
+    "searchPlaceholder": "E.g.: dollar, euro or USD",
+    "closeLabel": "Close currency picker",
+    "empty": "No currency found.",
+    "defaultName": "Brazilian real"
+  },
+  "countryRequirements": {
+    "specificReviewed": "Specific information reviewed",
+    "genericReview": "General information — check the official source",
+    "entryHealth": "Entry and health",
+    "entryHealthFor": "Entry and health — %{country}",
+    "disclaimer": "Rules change. Check official sources before buying or boarding.",
+    "documentsSection": "Documents and authorizations",
+    "vaccinesSection": "Vaccines and health"
+  },
+  "destinationBudgetPlanner": {
+    "title": "Trip budget",
+    "subtitle": "Set the trip style and compare your limits in any currency.",
+    "styleSection": "BUDGET STYLE",
+    "styleHint": "The AI uses this choice to decide lodging, food, transport and tours.",
+    "limitSection": "LIMIT PER DESTINATION",
+    "selectDestinationsHint": "Select the countries in “Trip destinations” to build the budget.",
+    "addDestination": "Add destination",
+    "totalSection": "ESTIMATED TOTAL",
+    "convertedToBRL": "Total converted to reais",
+    "rateComparison": "Comparing %{base} → %{comparison} • Rate as of %{date}",
+    "rateSourcePrefix": " • Source: ",
+    "compareCurrencyLabel": "Currency to compare"
+  },
+  "legalSheet": {
+    "title": "Policy and Privacy",
+    "closeLabel": "Close",
+    "openInBrowserHint": "Opens in browser",
+    "openFailedTitle": "Couldn't open",
+    "openFailedMessage": "Go to %{url} in your browser.",
+    "terms": {
+      "label": "Terms of Use",
+      "description": "Rules for use, content and account"
+    },
+    "privacy": {
+      "label": "Privacy Policy",
+      "description": "What data we collect and your rights"
+    }
+  },
+  "reportSheet": {
+    "failedTitle": "Couldn't report",
+    "doneTitle": "Report sent",
+    "doneMessage": "Our team will review it. Thanks for letting us know.",
+    "closeLabel": "Close",
+    "otherPlaceholder": "Describe the issue",
+    "detailsLabel": "Report details",
+    "submitLabel": "Send report"
+  },
+  "errorBoundary": {
+    "title": "Something went wrong here",
+    "retry": "Try again",
+    "retryLabel": "Try loading the screen again",
+    "message": "Couldn't load this screen. You can try again or use the menu below to go somewhere else."
+  },
+  "multiDestinationSelector": {
+    "mainBadge": "MAIN",
+    "hint": "Add countries, specific cities or airports. The first one will be the main destination.",
+    "countrySubtitle": "Country",
+    "citySubtitle": "City",
+    "destinationPlaceholder": "City, country or airport (e.g. GRU)"
+  },
+  "countryDetail": {
+    "loading": "Loading information...",
+    "stats": {
+      "photos": "photos",
+      "cities": "cities",
+      "favorites": "favorites"
+    },
+    "about": "About the country",
+    "fields": {
+      "capital": "Capital",
+      "population": "Population",
+      "language": "Language",
+      "currency": "Currency",
+      "code": "Code",
+      "area": "Area"
+    },
+    "foodsSection": "Typical foods",
+    "attractionsSection": "Tourist spots",
+    "photosSection": "Your Photos",
+    "addPhoto": "Add photo",
+    "loadFailed": "Couldn't load the information",
+    "genericErrorTitle": "Error",
+    "genericLoadFailed": "Couldn't load this country's details.",
+    "removedTitle": "Removed",
+    "removedMessage": "%{country} was removed from countries visited",
+    "markedTitle": "Marked!",
+    "markedMessage": "%{country} was added to countries visited!",
+    "updateFailed": "Couldn't update the country"
+  },
+  "globe": {
+    "webOnly": "The 3D globe is only available on the web version.",
+    "loading": "Loading the globe",
+    "loadingCountries": "Loading countries…",
+    "loadFailed": "Couldn't load the globe",
+    "genericMapError": "Unknown error loading the map",
+    "searchLabel": "Search country",
+    "searchPlaceholder": "Search country...",
+    "closeSearchLabel": "Close search",
+    "noCountryFound": "No country found",
+    "planWithAI": "Plan a trip with AI..."
+  },
+  "nearbyPlaces": {
+    "loading": "Looking for what's nearby…",
+    "closeLabel": "Close",
+    "untitledStop": "Itinerary stop",
+    "openStopLabel": "Open %{title} from day %{day}",
+    "genericStopWord": "stop"
+  },
+  "worldMap": {
+    "loading": "Loading world map..."
+  },
+  "onboarding": {
+    "firstCountryDone": "Your map has begun!",
+    "markFirstCountry": "Mark your first country",
+    "skipStepLabel": "Skip this step",
+    "skipLabel": "Skip the intro",
+    "startUsingLabel": "Start using Journi",
+    "nextSlideLabel": "Next slide",
+    "start": "Get started",
+    "continue_": "Continue",
+    "slides": {
+      "map": {
+        "title": "Your world on a map",
+        "subtitle": "Mark the countries you've visited and watch your globe gain color."
+      },
+      "memories": {
+        "title": "Keep your memories",
+        "subtitle": "Add photos from the cities you've passed through."
+      },
+      "next": {
+        "title": "Plan your next trip",
+        "subtitle": "Build your wishlist and create itineraries with AI help."
+      }
+    },
+    "firstCountryIsYours": "%{country} is now yours."
+  },
+  "chooseUsername": {
+    "hintDefault": "3 to 10 characters",
+    "checking": "Checking...",
+    "available": "Available",
+    "taken": "Already taken",
+    "title": "Choose your username",
+    "continue_": "Continue"
+  },
+  "photoGallery": {
+    "loadFailedTitle": "Error",
+    "loadFailed": "Couldn't load the photos.",
+    "deleteConfirmTitle": "Delete photo",
+    "deleteConfirmMessage": "Are you sure you want to delete this photo?",
+    "deleteDoneTitle": "Photo deleted",
+    "deleteDoneMessage": "Photo deleted successfully!",
+    "deleteFailedTitle": "Error deleting",
+    "deleteFailedMessage": "Couldn't delete the photo.",
+    "removeCoverConfirmTitle": "Remove cover",
+    "removeCoverConfirmMessage": "Remove this photo as the country's cover?",
+    "removeCoverDoneTitle": "Cover removed",
+    "removeCoverDoneMessage": "Photo removed as cover!",
+    "removeCoverFailed": "Couldn't remove the cover photo.",
+    "setCoverConfirmTitle": "Set as cover",
+    "setCoverConfirmMessage": "Set this photo as the country's cover on the map?",
+    "replaceCoverConfirmTitle": "Replace cover",
+    "replaceCoverConfirmMessage": "There's already a cover photo. Do you want to replace it with the new one?",
+    "setCoverDoneTitle": "Cover set",
+    "setCoverDoneMessage": "Photo set as cover!",
+    "setCoverFailed": "Couldn't set the cover photo.",
+    "noCity": "No city",
+    "public": "Public",
+    "private": "Private",
+    "deleteLabel": "Delete this photo",
+    "loading": "Loading photos...",
+    "empty": "No photos yet",
+    "favoritesSection": "Favorites"
+  },
+  "photoUploader": {
+    "fileTooBigTitle": "File too large",
+    "fileTooBigMessage": "The image must be at most 5MB.",
+    "permissionTitle": "Permission required",
+    "permissionMessage": "Allow access to photos to add an image.",
+    "libraryFailedTitle": "Error",
+    "libraryFailedMessage": "Couldn't open your photo library.",
+    "cityRequiredTitle": "City required",
+    "cityRequiredMessage": "Please select the city where the photo was taken.",
+    "countryUnknownTitle": "Country not identified",
+    "countryUnknownMessage": "Select the city again so we can identify the photo's country.",
+    "uploadedPartialTitle": "Photo sent",
+    "uploadedPartialMessage": "The photo was saved, but we couldn't update the visited country right now.",
+    "uploadFailedTitle": "Upload error",
+    "uploadFailedMessage": "Couldn't upload the photo.",
+    "captionPlaceholder": "Add a caption (optional)",
+    "cityPlaceholder": "Type the city name...",
+    "searchingCities": "Searching cities...",
+    "specificPlace": "Specific place",
+    "searchFailed": "Couldn't search right now. Check your connection and try again.",
+    "noCityFound": "No city found. Try another name.",
+    "placePlaceholder": "E.g.: Christ the Redeemer, Pelourinho...",
+    "rating": "Rating",
+    "ratingLevels": {
+      "1": "Bad",
+      "2": "Fair",
+      "3": "Good",
+      "4": "Great",
+      "5": "Excellent"
+    },
+    "ratingQuestion": "What did you think?",
+    "reviewPlaceholder": "Tell us a bit about your experience...",
+    "public": "Public photo",
+    "private": "Private photo",
+    "publicHint": "Shows up in Explore",
+    "privateHint": "Only you can see it",
+    "submit": "Upload Photo",
+    "submitting": "Uploading...",
+    "submitted": "Sent!",
+    "specificPlaceLabel": "Specific place",
+    "ratingLabel": "Rating",
+    "optional": "(optional)",
+    "addButton": "+ Add Photo"
+  },
+  "photoDetail": {
+    "title": "Post",
+    "unavailable": "This post isn't available",
+    "notFound": "Photo not found.",
+    "loadFailed": "Couldn't load this photo.",
+    "backLabel": "Back",
+    "backToMenuLabel": "Back to menu",
+    "reportPostLabel": "Report post",
+    "reportCommentLabel": "Report comment",
+    "commentFailedTitle": "Error saving comment",
+    "commentPlaceholder": "Add a comment...",
+    "sendCommentLabel": "Send comment",
+    "noComments": "No comments yet.",
+    "backButton": "Back",
+    "unavailableHint": "It may have been removed or no longer be accessible to you.",
+    "retry": "Try again"
+  },
+  "countryList": {
+    "defaultTitle": "Countries",
+    "closeLabel": "Close",
+    "searchPlaceholder": "Search country",
+    "clearSearchLabel": "Clear search",
+    "emptyDefault": "No countries in this list yet.",
+    "continents": {
+      "americas": "Americas",
+      "europe": "Europe",
+      "africa": "Africa",
+      "asia": "Asia",
+      "oceania": "Oceania",
+      "other": "Other"
+    }
+  },
+  "countryNames": {
+    "ukNations": {
+      "england": "England",
+      "scotland": "Scotland",
+      "wales": "Wales",
+      "northernIreland": "Northern Ireland"
+    }
+  },
+  "shareCard": {
+    "defaultUsername": "traveler",
+    "tagline": "PASSPORT",
+    "emptyVisited": "Your journey is just beginning",
+    "wishlistTitle": "dreaming of",
+    "emptyWishlist": "No destinations on the list yet",
+    "domain": "journi.app"
+  },
+  "shareToJourni": {
+    "title": "Share",
+    "instagramLabel": "Share to Instagram Stories",
+    "instagramA11y": "Share to Instagram Stories",
+    "otherApps": "Other apps",
+    "otherAppsHint": "WhatsApp, Instagram, messages and more",
+    "friendsSection": "FRIENDS ON JOURNI",
+    "emptyFriends": "Follow other travelers to share posts and itineraries.",
+    "failedTitle": "Error sharing",
+    "doneTitle": "Sent",
+    "doneMessage": "Shared with %{name}.",
+    "instagramHint": "Opens the Stories editor with your passport"
+  },
+  "tripMemberActions": {
+    "closeLabel": "Close menu"
+  },
+  "tripCoverHeader": {
+    "back": "Back",
+    "viewOnGlobe": "View on map",
+    "edit": "Edit trip",
+    "moreOptions": "More options"
+  },
+  "tripListCard": {
+    "onGlobe": "On the globe"
+  },
+  "tripTasks": {
+    "title": "Group tasks",
+    "unassigned": "Unassigned",
+    "newTask": "New task",
+    "assignee": "Assignee",
+    "nobody": "Nobody",
+    "cancel": "Cancel",
+    "titlePlaceholder": "What needs to be done?",
+    "you": "You",
+    "unnamedParticipant": "Participant",
+    "creating": "Creating...",
+    "create": "Create task",
+    "emptyOrganizer": "No tasks yet. Create the first one and choose who's responsible.",
+    "emptyMember": "No tasks for now. Whoever organizes the trip can create and assign tasks here."
+  },
+  "tripTravelers": {
+    "title": "Participants",
+    "loading": "Loading…",
+    "invitePending": "Invite sent · pending",
+    "failedTitle": "Something went wrong",
+    "thisPerson": "this person",
+    "unnamed": "Traveler",
+    "inviteLabel": "Invite people",
+    "actionsFor": "Actions for %{name}",
+    "unnamedParticipant": "participant",
+    "actions": {
+      "allowEdit": "Allow editing",
+      "onlyView": "Make view-only",
+      "promote": "Make organizer",
+      "promoteConfirmTitle": "Make organizer?",
+      "promoteConfirmMessage": "%{name} will be able to invite, remove participants and delete the trip — the same things you can do.",
+      "cancelInvite": "Cancel invite",
+      "removeFromTrip": "Remove from trip",
+      "cancelInviteConfirmTitle": "Cancel invite?",
+      "removeConfirmTitle": "Remove from trip?",
+      "cancelInviteConfirmMessage": "%{name} won't be able to join through this invite anymore.",
+      "removeConfirmMessage": "%{name} loses access to the itinerary. What's already been edited stays in the trip."
+    },
+    "roles": {
+      "owner": "Organizer",
+      "editor": "Can edit",
+      "viewer": "View only"
+    }
+  },
+  "tripInvite": {
+    "redeeming": "Joining the trip…",
+    "redeemFailedDefault": "This invite is no longer valid.",
+    "unavailableTitle": "Invite unavailable",
+    "goHome": "Go home",
+    "invitePeople": "Invite people",
+    "results": "Results",
+    "invited": "Invited",
+    "invite": "Invite",
+    "inviteFailedTitle": "Couldn't invite",
+    "linkFailedTitle": "Couldn't generate the link",
+    "searchPlaceholder": "Name or Journi username",
+    "backLabel": "Back",
+    "orShareLink": "or share a link",
+    "linkTitle": "Invite link",
+    "copyLinkLabel": "Copy invite link",
+    "copied": "Copied",
+    "copy_": "Copy",
+    "shareOtherApp": "Share on another app",
+    "generateLink": "Generate invite link",
+    "roleNoticePrefix": "Whoever joins will be able to ",
+    "roleNoticeStrong": "edit the itinerary",
+    "roleNoticeSuffix": ". Only you can change this later.",
+    "unnamed": "Traveler"
+  },
+  "explore": {
+    "title": "Explore",
+    "subtitle": "Discover destinations and travelers",
+    "suggestedSection": "SUGGESTED FOR YOU",
+    "trendingSection": "TRENDING DESTINATIONS THIS SEASON",
+    "recommendedPhotosSection": "PHOTOS RECOMMENDED FOR YOU",
+    "travelersSection": "TRAVELERS",
+    "searchPlaceholder": "Search destinations or people...",
+    "visited": "Visited %{country}",
+    "follow": "Follow",
+    "following": "Following",
+    "seasonalTrend": "Seasonal trend",
+    "communityCredit": "Journi Community",
+    "updateProfileFailedTitle": "Error",
+    "updateProfileFailed": "Couldn't update this profile.",
+    "deletePostFailedTitle": "Error deleting",
+    "deletePostFailed": "Couldn't delete this post.",
+    "deletePostDoneTitle": "Post deleted",
+    "deletePostDoneMessage": "Your photo has been removed.",
+    "deletePostLabel": "Delete my post",
+    "unnamed": "Traveler"
+  },
+  "conversation": {
+    "unavailable": "This conversation isn't available",
+    "reportProfileLabel": "Report profile",
+    "reportMessageHint": "Hold to report this message",
+    "viewPost": "View post",
+    "openSharedTrip": "Open shared itinerary",
+    "journiPassport": "Journi Passport",
+    "openSharedPassport": "Open shared passport",
+    "messagePlaceholder": "Message...",
+    "untitledTrip": "Journi itinerary",
+    "unnamedTraveler": "Traveler",
+    "unnamedUsername": "traveler",
+    "unavailableHint": "It may have ended or no longer be accessible to you.",
+    "backButton": "Back"
+  },
+  "messages": {
+    "title": "Conversations",
+    "subtitle": "Share trips with your friends",
+    "backLabel": "Back to home",
+    "empty": {
+      "title": "No conversations yet",
+      "text": "Share a post, itinerary or passport with someone you follow."
+    },
+    "previews": {
+      "photo": "Shared a post",
+      "plan": "Shared an itinerary",
+      "passport": "Shared a passport",
+      "empty": "New conversation"
+    },
+    "unnamed": "Traveler"
+  },
+  "support": {
+    "successTitle": "We received your message, thank you!",
+    "backLabel": "Back",
+    "title": "Help and support",
+    "subtitle": "Tell us what happened",
+    "emailSection": "Your email",
+    "emailPlaceholder": "youremail@example.com",
+    "subjectSection": "Subject",
+    "descriptionSection": "Describe what happened",
+    "descriptionPlaceholder": "The more details, the faster we can help...",
+    "submit": "Send",
+    "submitting": "Sending...",
+    "validation": {
+      "emailRequired": "Enter your email.",
+      "emailInvalid": "Invalid email.",
+      "subjectRequired": "Choose a subject.",
+      "descriptionRequired": "Describe what happened."
+    },
+    "submitFailed": "Couldn't send your message right now. Try again.",
+    "categories": {
+      "bug": "Report a bug",
+      "duvida": "Question",
+      "sugestao": "Suggestion"
+    },
+    "successBack": "Back",
+    "successMessage": "Our team will review it and, if needed, reply by email at %{email}."
+  },
+  "notificationPreferences": {
+    "title": "Notifications",
+    "all": {
+      "label": "All notifications",
+      "helpOn": "Turn off to silence everything without losing your choices below.",
+      "helpPaused": "Paused. Your choices are still saved."
+    },
+    "sections": {
+      "social": "SOCIAL",
+      "trips": "TRIPS"
+    },
+    "rows": {
+      "social_follows": "New followers",
+      "social_comments": "Comments on your posts",
+      "social_likes": "Likes on your posts",
+      "social_messages": "Direct messages",
+      "social_messagesSubtitle": "And passports received in chat",
+      "trip_invites": "Trip invites",
+      "trip_joins": "Someone joined the trip",
+      "trip_edits": "Itinerary edits",
+      "trip_editsSubtitle": "When someone changes a stop",
+      "trip_tasks": "Group tasks",
+      "trip_tasksSubtitle": "Created and completed"
+    },
+    "footnote": "Notifications you've already received stay in the bell, even after turning off a category."
+  },
+  "language": {
+    "title": "Language",
+    "automatic": "Automatic",
+    "automaticSubtitle": "Follows the device language (%{language})",
+    "footnote": "English and Spanish translation is in progress. For now, choosing another language only changes the date and number formats.",
+    "selectedLabel": "selected"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "empty": "No notifications yet",
+    "loadFailed": "Couldn't load the notifications.",
+    "retry": "Try again",
+    "fallbackTitle": "You have a notification",
+    "titleFormat": "%{actor} %{predicate}",
+    "predicate": {
+      "follow": "started following you",
+      "comment": "commented on your photo",
+      "like": "liked your photo",
+      "message": "sent you a message",
+      "passport": "shared a passport with you",
+      "trip_invite": "invited you to a trip",
+      "trip_joined": "joined your trip",
+      "trip_edit": "edited the trip",
+      "trip_task_created": "created a task",
+      "trip_task_done": "completed a task"
+    }
+  },
+  "blockedUsers": {
+    "title": "Blocked users",
+    "empty": {
+      "title": "No one blocked",
+      "text": "When you block someone, that person shows up here and you can undo it whenever you want."
+    },
+    "unblock": "Unblock",
+    "unblockLabel": "Unblock %{name}",
+    "removedUser": "Removed user",
+    "thisPerson": "this person",
+    "confirm": {
+      "title": "Unblock",
+      "message": "%{name} will be able to see your profile and content again, and you'll see theirs too.\n\nYou do NOT automatically follow each other again — if you want to, just follow again."
+    },
+    "failed": {
+      "title": "Couldn't unblock",
+      "message": "Try again in a moment.",
+      "genericMessage": "Try again in a moment."
+    }
+  },
+  "planDayTabs": {
+    "previousDay": "Previous day",
+    "nextDay": "Next day"
+  }
+}

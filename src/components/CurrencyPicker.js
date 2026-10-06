@@ -5,16 +5,18 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import CountryFlag from './CountryFlag';
 import { FALLBACK_CURRENCIES, getAvailableCurrencies } from '../services/currencyService';
+import { useLocale } from '../i18n/LocaleProvider';
 
 export const CURRENCIES = FALLBACK_CURRENCIES;
 
 export default function CurrencyPicker({ label = '', value, onChange, supportingText = '' }) {
+  const { t } = useLocale();
   const [visible, setVisible] = useState(false);
   const [currencies, setCurrencies] = useState(FALLBACK_CURRENCIES);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const selected = currencies.find(item => item.code === value)
-    || { code: value || 'BRL', name: value || 'Real brasileiro', country: '' };
+    || { code: value || 'BRL', name: value || t('currencyPicker.defaultName'), country: '' };
   const normalizedQuery = query.trim().toLocaleLowerCase('pt-BR');
   const filteredCurrencies = useMemo(() => currencies.filter(item => (
     !normalizedQuery
@@ -59,14 +61,14 @@ export default function CurrencyPicker({ label = '', value, onChange, supporting
           <View style={styles.modal}>
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.title}>Escolha a moeda</Text>
-                <Text style={styles.modalSubtitle}>Pesquise pelo nome ou código internacional.</Text>
+                <Text style={styles.title}>{t('currencyPicker.title')}</Text>
+                <Text style={styles.modalSubtitle}>{t('currencyPicker.searchHint')}</Text>
               </View>
               <TouchableOpacity
                 style={styles.closeButton}
                 onPress={() => setVisible(false)}
                 accessibilityRole="button"
-                accessibilityLabel="Fechar seletor de moeda"
+                accessibilityLabel={t('currencyPicker.closeLabel')}
               >
                 <Ionicons name="close" size={20} color="#B2B8CF" />
               </TouchableOpacity>
@@ -76,7 +78,7 @@ export default function CurrencyPicker({ label = '', value, onChange, supporting
               <TextInput
                 value={query}
                 onChangeText={setQuery}
-                placeholder="Ex: dólar, euro ou USD"
+                placeholder={t('currencyPicker.searchPlaceholder')}
                 placeholderTextColor="#626987"
                 style={styles.searchInput}
                 autoCorrect={false}
@@ -88,7 +90,7 @@ export default function CurrencyPicker({ label = '', value, onChange, supporting
               data={filteredCurrencies}
               keyExtractor={item => item.code}
               keyboardShouldPersistTaps="handled"
-              ListEmptyComponent={<Text style={styles.emptyText}>Nenhuma moeda encontrada.</Text>}
+              ListEmptyComponent={<Text style={styles.emptyText}>{t('currencyPicker.empty')}</Text>}
               renderItem={({ item }) => (
               <TouchableOpacity
                 style={[styles.option, item.code === value && styles.optionActive]}

@@ -11,6 +11,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { deleteTripPlan, getSavedTripPlans } from '../../services/tripPlanService';
 import { confirm, notify } from '../../utils/dialogs';
+import { useLocale } from '../../i18n/LocaleProvider';
 import { useActivePlan } from '../../context/ActivePlanContext';
 import useTabBarContentPadding from '../../hooks/useTabBarContentPadding';
 import TripListCard from '../../components/trip/TripListCard';
@@ -24,6 +25,7 @@ import {
 } from '../../utils/tripSummary';
 
 export default function SavedTripsScreen({ navigation }) {
+  const { t } = useLocale();
   // Dentro do ProfileStack, sob as tabs: a barra cobriria o último roteiro.
   const tabBarPadding = useTabBarContentPadding();
   const [plans, setPlans] = useState([]);
@@ -43,7 +45,7 @@ export default function SavedTripsScreen({ navigation }) {
     setLoading(true);
     const result = await getSavedTripPlans();
     if (result.success) setPlans(result.data);
-    else notify('Erro ao carregar roteiros', result.error);
+    else notify(t('savedTrips.loadFailedTitle'), result.error);
     setLoading(false);
   }, []);
 
@@ -83,11 +85,11 @@ export default function SavedTripsScreen({ navigation }) {
   };
 
   const removePlan = async (plan) => {
-    const approved = await confirm('Excluir roteiro', `Remover “${plan.title}”?`);
+    const approved = await confirm(t('savedTrips.delete.confirmTitle'), t('savedTrips.delete.confirmMessage', { title: plan.title }));
     if (!approved) return;
     const result = await deleteTripPlan(plan.id);
     if (!result.success) {
-      notify('Erro ao excluir', result.error);
+      notify(t('savedTrips.delete.failedTitle'), result.error);
       return;
     }
     // O roteiro excluído não pode continuar plotado no globo.
@@ -104,12 +106,12 @@ export default function SavedTripsScreen({ navigation }) {
     // Roteiro antigo, salvo antes de as coordenadas existirem, não tem o que
     // plotar — melhor dizer isso do que aplicar e o globo não mudar nada.
     if (!isActive && !hasPoints) {
-      notify('Sem pontos no mapa', 'Este roteiro não tem coordenadas. Gere-o novamente para vê-lo no globo.');
+      notify(t('savedTrips.noMapPoints.title'), t('savedTrips.noMapPoints.message'));
       return;
     }
 
     const result = isActive ? await removeFromMap() : await applyToMap(plan);
-    if (!result.success) notify('Não foi possível atualizar o globo', result.error);
+    if (!result.success) notify(t('savedTrips.globeFailedTitle'), result.error);
   };
 
   return (
@@ -119,8 +121,8 @@ export default function SavedTripsScreen({ navigation }) {
           <Ionicons name="arrow-back" size={22} color="#F7F7F2" />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Minhas viagens</Text>
-          <Text style={styles.subtitle}>Roteiros planejados e salvos</Text>
+          <Text style={styles.title}>{t('savedTrips.title')}</Text>
+          <Text style={styles.subtitle}>{t('savedTrips.subtitle')}</Text>
         </View>
         <TouchableOpacity onPress={() => navigation.getParent()?.navigate('TripPlanner')} style={styles.newButton}>
           <Ionicons name="add" size={20} color="#fff" />
@@ -132,11 +134,11 @@ export default function SavedTripsScreen({ navigation }) {
       ) : plans.length === 0 ? (
         <View style={styles.empty}>
           <View style={styles.emptyIcon}><Ionicons name="map-outline" size={34} color="#A78BFA" /></View>
-          <Text style={styles.emptyTitle}>Nenhum roteiro salvo</Text>
-          <Text style={styles.emptyText}>Planeje sua próxima viagem e encontre tudo organizado aqui.</Text>
+          <Text style={styles.emptyTitle}>{t('savedTrips.empty.title')}</Text>
+          <Text style={styles.emptyText}>{t('savedTrips.empty.text')}</Text>
           <TouchableOpacity style={styles.createButton} onPress={() => navigation.getParent()?.navigate('TripPlanner')}>
             <Ionicons name="sparkles" size={18} color="#fff" />
-            <Text style={styles.createText}>Planejar viagem</Text>
+            <Text style={styles.createText}>{t('savedTrips.empty.cta')}</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -187,7 +189,7 @@ export default function SavedTripsScreen({ navigation }) {
                     </Text>
                   </TouchableOpacity>
 
-                  {plan.local_only ? <Text style={styles.localBadge}>LOCAL</Text> : null}
+                  {plan.local_only ? <Text style={styles.localBadge}>{t('savedTrips.localBadge')}</Text> : null}
 
                   <TouchableOpacity
                     onPress={() => removePlan(plan)}

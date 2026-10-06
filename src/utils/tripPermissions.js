@@ -27,10 +27,14 @@
 export const TRIP_ROLES = Object.freeze(['viewer', 'editor', 'owner']);
 
 /** Como cada papel é chamado na tela. */
-export const ROLE_LABEL = Object.freeze({
-  owner: 'Organizador',
-  editor: 'Pode editar',
-  viewer: 'Só visualiza',
+// O texto saiu daqui para `pt.json` (tripTravelers.roles.*) na fase 1 do
+// i18n. Este módulo é puro (sem react-native, sem contexto de idioma), então
+// ele guarda a CHAVE, e quem renderiza resolve com `t()` — mesma regra de
+// `notificationCategories.labelKey` e `TRAVEL_PACES.labelKey`.
+export const ROLE_LABEL_KEY = Object.freeze({
+  owner: 'tripTravelers.roles.owner',
+  editor: 'tripTravelers.roles.editor',
+  viewer: 'tripTravelers.roles.viewer',
 });
 
 /**

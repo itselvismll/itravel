@@ -1,4 +1,5 @@
-import { ALPHA3_TO_ALPHA2, getAlpha3, getCountryNamePtByCode } from '../utils/countryUtils';
+import { ALPHA3_TO_ALPHA2, getAlpha3, getCountryName } from '../utils/countryUtils';
+import { DEFAULT_LOCALE_TAG } from '../utils/constants';
 import { inCountry, toCountry } from '../utils/countryPreposition';
 
 const PORTAL_CONSULAR_URL = 'https://www.gov.br/mre/pt-br/assuntos/portal-consular';
@@ -154,7 +155,7 @@ export const CONTENT_REVIEWED_AT = '10/08/2026';
  *   healthVerified: boolean,
  * }}
  */
-export const getFallbackTravelRequirements = countryCode => {
+export const getFallbackTravelRequirements = (countryCode, tag = DEFAULT_LOCALE_TAG) => {
   // Normaliza para string ANTES de qualquer coisa: `getAlpha3` chama `.trim()` no
   // que recebe e explodia com um número. Esta função desenha uma tela sobre
   // documento e vacina — ela não pode derrubar o modal por causa do tipo do
@@ -171,7 +172,7 @@ export const getFallbackTravelRequirements = countryCode => {
   // ALPHA3_TO_ALPHA2 conhece, que é o mesmo universo do globo e do passaporte.
   const identified = Boolean(raw) && Boolean(ALPHA3_TO_ALPHA2[raw]);
   const code = identified ? raw : '';
-  const countryName = identified ? getCountryNamePtByCode(code, code) : '';
+  const countryName = identified ? getCountryName(code, code, tag) : '';
 
   const entry = getDocuments(code, countryName);
 

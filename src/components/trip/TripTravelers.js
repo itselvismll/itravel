@@ -29,9 +29,10 @@ import { Ionicons } from '@expo/vector-icons';
 import MemberAvatar from './MemberAvatar';
 import MemberActionsMenu from './MemberActionsMenu';
 import { setTripMemberRole, removeTripMember } from '../../services/tripMemberService';
-import { ROLE_LABEL } from '../../utils/tripPermissions';
+import { ROLE_LABEL_KEY } from '../../utils/tripPermissions';
 import { confirm, notify } from '../../utils/dialogs';
 import { trip, font, shadow, radius } from '../../theme/tripCollab';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 /**
  * A cor do pontinho de cada papel.
@@ -69,6 +70,7 @@ export default function TripTravelers({
   onInvite,
   onChanged,
 }) {
+  const { t } = useLocale();
   // Qual menu esta aberto, e onde ancora-lo. Guardar o retangulo medido (e nao
   // so o id) e o que permite o menu abrir junto do avatar daquela pessoa.
   const [menu, setMenu] = useState(/** @type {{ member: any, anchor: any } | null} */ (null));
@@ -97,14 +99,14 @@ export default function TripTravelers({
       // A mensagem vem do banco quando ele tem uma ("Voce e o unico
       // organizador..."), e o servico garante que exista alguma. Ver
       // tripMemberService.
-      notify('Não deu certo', resultado?.error || 'Tente de novo em instantes.');
+      notify(t('tripTravelers.failedTitle'), resultado?.error || t('common.actions.tryAgainSoon'));
       return;
     }
     onChanged?.();
   }, [onChanged]);
 
   const acoesPara = useCallback((member) => {
-    const nome = member.profile?.display_name || member.profile?.username || 'esta pessoa';
+    const nome = member.profile?.display_name || member.profile?.username || t('tripTravelers.thisPerson');
     /** @type {Array<any>} */
     const acoes = [];
 
@@ -115,7 +117,7 @@ export default function TripTravelers({
       if (member.role === 'viewer') {
         acoes.push({
           key: 'allow-edit',
-          label: 'Permitir edição',
+          label: t('tripTravelers.actions.allowEdit'),
           icon: 'create-outline',
           color: trip.d2,
           onPress: () => executar(member, () => setTripMemberRole({
@@ -125,7 +127,7 @@ export default function TripTravelers({
       } else if (member.role === 'editor') {
         acoes.push({
           key: 'only-view',
-          label: 'Deixar só visualizar',
+          label: t('tripTravelers.actions.onlyView'),
           icon: 'eye-outline',
           color: trip.inkDim,
           onPress: () => executar(member, () => setTripMemberRole({
@@ -137,7 +139,7 @@ export default function TripTravelers({
       if (member.role !== 'owner') {
         acoes.push({
           key: 'promote',
-          label: 'Tornar organizador',
+          label: t('tripTravelers.actions.promote'),
           icon: 'star',
           color: trip.gold,
           onPress: async () => {
@@ -145,9 +147,8 @@ export default function TripTravelers({
             // exatamente o mesmo poder, inclusive o de rebaixar quem o promoveu.
             // Confirmar aqui e barato; descobrir depois, nao.
             const ok = await confirm(
-              'Tornar organizador?',
-              `${nome} poderá convidar, remover participantes e excluir a viagem — `
-              + 'as mesmas coisas que você pode.'
+              t('tripTravelers.actions.promoteConfirmTitle'),
+              t('tripTravelers.actions.promoteConfirmMessage', { name: nome })
             );
             if (ok) {
               executar(member, () => setTripMemberRole({ tripId, userId: member.id, role: 'owner' }));
@@ -164,16 +165,16 @@ export default function TripTravelers({
         // Convite ainda nao aceito nao e "remover da viagem" — a pessoa nunca
         // entrou. Chamar as duas coisas pelo mesmo nome faria o organizador
         // hesitar antes de desfazer um convite mandado por engano.
-        label: pendente ? 'Cancelar convite' : 'Remover da viagem',
+        label: pendente ? t('tripTravelers.actions.cancelInvite') : t('tripTravelers.actions.removeFromTrip'),
         icon: 'close',
         destructive: true,
         color: trip.d1,
         onPress: async () => {
           const ok = await confirm(
-            pendente ? 'Cancelar convite?' : 'Remover da viagem?',
+            pendente ? t('tripTravelers.actions.cancelInviteConfirmTitle') : t('tripTravelers.actions.removeConfirmTitle'),
             pendente
-              ? `${nome} não poderá mais entrar por este convite.`
-              : `${nome} perde o acesso ao roteiro. O que já foi editado continua na viagem.`
+              ? t('tripTravelers.actions.cancelInviteConfirmMessage', { name: nome })
+              : t('tripTravelers.actions.removeConfirmMessage', { name: nome })
           );
           if (ok) executar(member, () => removeTripMember({ tripId, userId: member.id }));
         },
@@ -181,7 +182,7 @@ export default function TripTravelers({
     }
 
     return acoes;
-  }, [abilities, currentUserId, executar, tripId]);
+  }, [abilities, currentUserId, executar, tripId, t]);
 
   // Sem ninguem e sem carregar nao ha o que dizer: acontece no roteiro que ainda
   // nao foi salvo, onde a viagem existe so na tela.
@@ -193,7 +194,7 @@ export default function TripTravelers({
     <View style={styles.card}>
       <View style={styles.header}>
         <View style={styles.headerText}>
-          <Text style={styles.title}>Participantes</Text>
+          <Text style={styles.title}>{t('tripTravelers.title')}</Text>
           <Text style={styles.subtitle}>
             {aceitos === 1 ? '1 pessoa nesta viagem' : `${aceitos} pessoas nesta viagem`}
             {members.length > aceitos ? ` · ${members.length - aceitos} convidada(s)` : ''}
@@ -205,7 +206,7 @@ export default function TripTravelers({
             onPress={onInvite}
             style={styles.inviteButton}
             accessibilityRole="button"
-            accessibilityLabel="Convidar pessoas"
+            accessibilityLabel={t('tripTravelers.inviteLabel')}
           >
             <Ionicons name="person-add" size={17} color="#FFFFFF" />
           </TouchableOpacity>
@@ -215,7 +216,7 @@ export default function TripTravelers({
       {loading && !members.length ? (
         <View style={styles.loadingRow}>
           <ActivityIndicator size="small" color={trip.inkDim} />
-          <Text style={styles.loadingText}>Carregando…</Text>
+          <Text style={styles.loadingText}>{t('tripTravelers.loading')}</Text>
         </View>
       ) : null}
 
@@ -247,21 +248,21 @@ export default function TripTravelers({
             <View style={styles.rowText}>
               <View style={styles.nameLine}>
                 <Text style={styles.name} numberOfLines={1}>
-                  {member.profile?.display_name || member.profile?.username || 'Viajante'}
+                  {member.profile?.display_name || member.profile?.username || t('tripTravelers.unnamed')}
                 </Text>
                 {eu ? <Text style={styles.you}>(você)</Text> : null}
               </View>
 
               {pendente ? (
-                <Text style={styles.pending}>Convite enviado · aguardando</Text>
+                <Text style={styles.pending}>{t('tripTravelers.invitePending')}</Text>
               ) : dono ? (
                 // Organizador: papel escrito em dourado, sem ponto. O selo no
                 // avatar ja e o sinal forte.
-                <Text style={styles.ownerRole}>{ROLE_LABEL.owner}</Text>
+                <Text style={styles.ownerRole}>{t(ROLE_LABEL_KEY.owner)}</Text>
               ) : (
                 <View style={styles.roleLine}>
                   <View style={[styles.dot, { backgroundColor: ROLE_DOT[member.role] || trip.inkFaint }]} />
-                  <Text style={styles.role}>{ROLE_LABEL[member.role] || ROLE_LABEL.viewer}</Text>
+                  <Text style={styles.role}>{t(ROLE_LABEL_KEY[member.role] || ROLE_LABEL_KEY.viewer)}</Text>
                 </View>
               )}
             </View>
@@ -273,7 +274,9 @@ export default function TripTravelers({
                 onPress={(event) => abrirMenu(member, event)}
                 style={styles.moreButton}
                 accessibilityRole="button"
-                accessibilityLabel={`Ações para ${member.profile?.display_name || 'participante'}`}
+                accessibilityLabel={t('tripTravelers.actionsFor', {
+                  name: member.profile?.display_name || t('tripTravelers.unnamedParticipant'),
+                })}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Ionicons name="ellipsis-vertical" size={16} color={trip.inkDim} />

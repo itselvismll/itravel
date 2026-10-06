@@ -13,6 +13,24 @@ const assert = require('node:assert/strict');
 const React = require('react');
 const TestRenderer = require('react-test-renderer');
 const { loadEsm } = require('./helpers/load-esm.cjs');
+
+// Resolve chave de tradução contra o pt.json do projeto, com interpolação %{var}.
+const ptJson = JSON.parse(require('fs').readFileSync(
+  require('path').join(__dirname, '..', 'src/i18n/locales/pt.json'), 'utf8'
+));
+const tDoPt = (chave, opcoes = {}) => {
+  let valor = String(chave).split('.').reduce((o, k) => (o ?? {})[k], ptJson);
+
+  // Forma plural: a chave aponta para { one, other } e o i18n-js escolhe pelo
+  // `count`. Sem isto, `common.plural.character` chegaria aqui como objeto e o
+  // fake acusaria "chave inexistente" sobre uma chave que existe.
+  if (valor && typeof valor === 'object' && 'other' in valor) {
+    valor = opcoes.count === 1 ? valor.one : valor.other;
+  }
+
+  if (typeof valor !== 'string') throw new Error('chave inexistente no pt.json: ' + chave);
+  return valor.replace(/%\{(\w+)\}/g, (_, nome) => String(opcoes[nome] ?? ''));
+};
 const { makeReactNative, fakeVectorIcons, host } = require('./helpers/fake-react-native.cjs');
 
 const displayName = loadEsm('src/utils/displayName.js');
@@ -87,6 +105,10 @@ const montarTela = (profile) => {
       '../../hooks/useTabBarContentPadding': { __esModule: true, default: () => 0 },
       '../../utils/bio': loadEsm('src/utils/bio.js'),
       '../../utils/instagram': { INSTAGRAM_FEATURE_ENABLED: false, normalizeInstagramUsername: (v) => v },
+      // O `t` resolve contra o pt.json DE VERDADE: estas asserções leem o texto
+      // do aviso de limite na tela, então um `t` que devolvesse a chave crua
+      // faria o teste passar com a chave errada.
+      '../../i18n/LocaleProvider': { useLocale: () => ({ t: tDoPt }) },
     },
     { jsx: true }
   );

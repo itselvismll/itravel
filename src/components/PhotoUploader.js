@@ -15,6 +15,7 @@ import { API_CONFIG, COLORS, SIZES } from '../utils/constants';
 import { uploadPhoto } from '../services/photoService';
 import { getAlpha2, getAlpha3, toStorableCountryCode } from '../utils/countryUtils';
 import { markCountryAsVisited } from '../services/supabase';
+import { useLocale } from '../i18n/LocaleProvider';
 import {
   searchCities as searchCitiesApi,
   formatCityLabel,
@@ -33,6 +34,7 @@ export default function PhotoUploader({
   prefilledCity = null, prefilledCountryName = null, prefilledCountryCode = null,
   prefilledCityLat = null, prefilledCityLng = null,
 }) {
+  const { t } = useLocale();
   const [selectedFile, setSelectedFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [caption, setCaption] = useState('');
@@ -131,7 +133,7 @@ export default function PhotoUploader({
     if (!file) return;
 
     if (file.size > MAX_SIZE_BYTES) {
-      Alert.alert('Arquivo muito grande', 'A imagem deve ter no máximo 5MB.');
+      Alert.alert(t('photoUploader.fileTooBigTitle'), t('photoUploader.fileTooBigMessage'));
       e.target.value = '';
       return;
     }
@@ -150,7 +152,7 @@ export default function PhotoUploader({
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permissão necessária', 'Permita o acesso às fotos para adicionar uma imagem.');
+        Alert.alert(t('photoUploader.permissionTitle'), t('photoUploader.permissionMessage'));
         return;
       }
 
@@ -164,7 +166,7 @@ export default function PhotoUploader({
 
       const asset = result.assets[0];
       if (asset.fileSize && asset.fileSize > MAX_SIZE_BYTES) {
-        Alert.alert('Arquivo muito grande', 'A imagem deve ter no máximo 5MB.');
+        Alert.alert(t('photoUploader.fileTooBigTitle'), t('photoUploader.fileTooBigMessage'));
         return;
       }
 
@@ -172,7 +174,7 @@ export default function PhotoUploader({
       setUploadSuccess(false);
       setPreview(asset.uri);
     } catch {
-      Alert.alert('Erro', 'Não foi possível abrir sua biblioteca de fotos.');
+      Alert.alert(t('photoUploader.libraryFailedTitle'), t('photoUploader.libraryFailedMessage'));
     }
   };
 
@@ -199,7 +201,7 @@ export default function PhotoUploader({
 
     if (!selectedCity) {
       setCityError(true);
-      Alert.alert('Cidade obrigatória', 'Por favor, selecione a cidade onde a foto foi tirada.');
+      Alert.alert(t('photoUploader.cityRequiredTitle'), t('photoUploader.cityRequiredMessage'));
       return;
     }
 
@@ -224,8 +226,8 @@ export default function PhotoUploader({
       setUploading(false);
       setCityError(true);
       Alert.alert(
-        'País não identificado',
-        'Selecione novamente a cidade para identificarmos o país da foto.'
+        t('photoUploader.countryUnknownTitle'),
+        t('photoUploader.countryUnknownMessage')
       );
       return;
     }
@@ -256,8 +258,8 @@ export default function PhotoUploader({
 
       if (!visitResult.success) {
         Alert.alert(
-          'Foto enviada',
-          'A foto foi salva, mas não foi possível atualizar o país visitado agora.'
+          t('photoUploader.uploadedPartialTitle'),
+          t('photoUploader.uploadedPartialMessage')
         );
       }
 
@@ -267,7 +269,7 @@ export default function PhotoUploader({
         handleRemovePreview();
       }, 1500);
     } else {
-      Alert.alert('Erro no upload', result.error || 'Não foi possível enviar a foto.');
+      Alert.alert(t('photoUploader.uploadFailedTitle'), result.error || t('photoUploader.uploadFailedMessage'));
     }
   };
 
@@ -291,7 +293,7 @@ export default function PhotoUploader({
           activeOpacity={0.7}
         >
           <Ionicons name="camera" size={22} color={COLORS.primary} />
-          <Text style={styles.addButtonText}>+ Adicionar Foto</Text>
+          <Text style={styles.addButtonText}>{t('photoUploader.addButton')}</Text>
         </TouchableOpacity>
       ) : (
         <View style={styles.uploadForm}>
@@ -309,7 +311,7 @@ export default function PhotoUploader({
             {uploadSuccess && (
               <View style={styles.successOverlay}>
                 <Ionicons name="checkmark-circle" size={48} color={COLORS.success} />
-                <Text style={styles.successText}>Enviado!</Text>
+                <Text style={styles.successText}>{t('photoUploader.submitted')}</Text>
               </View>
             )}
           </View>
@@ -317,7 +319,7 @@ export default function PhotoUploader({
           {/* Caption */}
           <TextInput
             style={styles.captionInput}
-            placeholder="Adicione uma legenda (opcional)"
+            placeholder={t('photoUploader.captionPlaceholder')}
             placeholderTextColor={COLORS.textSecondary}
             value={caption}
             onChangeText={setCaption}
@@ -332,7 +334,7 @@ export default function PhotoUploader({
             </Text>
             <TextInput
               style={[styles.cityInput, cityError && { borderColor: 'red' }]}
-              placeholder="Digite o nome da cidade..."
+              placeholder={t('photoUploader.cityPlaceholder')}
               placeholderTextColor={COLORS.textSecondary}
               value={citySearch}
               onChangeText={(text) => {
@@ -349,15 +351,15 @@ export default function PhotoUploader({
             {loadingCities && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
                 <ActivityIndicator size="small" color="#6C2BD9" />
-                <Text style={{ fontSize: 11, color: '#999' }}>Buscando cidades...</Text>
+                <Text style={{ fontSize: 11, color: '#999' }}>{t('photoUploader.searchingCities')}</Text>
               </View>
             )}
             {!loadingCities && citySuggestions.length === 0 &&
               citySearch.trim().length >= MIN_CITY_QUERY_LENGTH && !selectedCity && (
               <Text style={{ fontSize: 11, color: '#999', marginTop: 4 }}>
                 {cityLookupFailed
-                  ? 'Não foi possível buscar agora. Verifique sua conexão e tente de novo.'
-                  : 'Nenhuma cidade encontrada. Tente outro nome.'}
+                  ? t('photoUploader.searchFailed')
+                  : t('photoUploader.noCityFound')}
               </Text>
             )}
             {citySuggestions.length > 0 && !selectedCity && (
@@ -399,11 +401,11 @@ export default function PhotoUploader({
 
           {/* Local específico */}
           <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Local específico <Text style={styles.formLabelOptional}>(opcional)</Text></Text>
+            <Text style={styles.formLabel}>{t('photoUploader.specificPlaceLabel')} <Text style={styles.formLabelOptional}>{t('photoUploader.optional')}</Text></Text>
             {IS_WEB || !GOOGLE_PLACES_KEY ? (
               <TextInput
                 style={styles.formInput}
-                placeholder="Ex: Cristo Redentor, Pelourinho..."
+                placeholder={t('photoUploader.placePlaceholder')}
                 placeholderTextColor="#bbb"
                 value={locationName}
                 onChangeText={setLocationName}
@@ -412,7 +414,7 @@ export default function PhotoUploader({
               />
             ) : (
               <GooglePlacesAutocomplete
-                placeholder="Ex: Cristo Redentor, Pelourinho..."
+                placeholder={t('photoUploader.placePlaceholder')}
                 minLength={2}
                 fetchDetails={false}
                 onPress={(data) => setLocationName(data.description)}
@@ -448,7 +450,7 @@ export default function PhotoUploader({
 
           {/* Avaliação com estrelas */}
           <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Avaliação <Text style={styles.formLabelOptional}>(opcional)</Text></Text>
+            <Text style={styles.formLabel}>{t('photoUploader.ratingLabel')} <Text style={styles.formLabelOptional}>{t('photoUploader.optional')}</Text></Text>
             <View style={styles.starPicker}>
               {[1,2,3,4,5].map(star => (
                 <TouchableOpacity key={star} onPress={() => setRating(star)} disabled={uploading}>
@@ -458,7 +460,7 @@ export default function PhotoUploader({
             </View>
             {rating > 0 && (
               <Text style={styles.ratingLabel}>
-                {['', 'Ruim', 'Regular', 'Bom', 'Ótimo', 'Excelente'][rating]}
+                {rating > 0 ? t('photoUploader.ratingLevels.' + rating) : ''}
               </Text>
             )}
           </View>
@@ -466,10 +468,10 @@ export default function PhotoUploader({
           {/* Review — só aparece se tiver rating */}
           {rating > 0 && (
             <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>O que você achou?</Text>
+              <Text style={styles.formLabel}>{t('photoUploader.ratingQuestion')}</Text>
               <TextInput
                 style={[styles.formInput, { height: 80, textAlignVertical: 'top', paddingTop: 8 }]}
-                placeholder="Conta um pouco sobre sua experiência..."
+                placeholder={t('photoUploader.reviewPlaceholder')}
                 placeholderTextColor="#bbb"
                 value={review}
                 onChangeText={setReview}
@@ -491,10 +493,10 @@ export default function PhotoUploader({
               />
               <View>
                 <Text style={styles.privacyLabel}>
-                  {isPublic ? 'Foto pública' : 'Foto privada'}
+                  {isPublic ? t('photoUploader.public') : t('photoUploader.private')}
                 </Text>
                 <Text style={styles.privacySubLabel}>
-                  {isPublic ? 'Aparece no Explorar' : 'Só você vê'}
+                  {isPublic ? t('photoUploader.publicHint') : t('photoUploader.privateHint')}
                 </Text>
               </View>
             </View>
@@ -516,17 +518,17 @@ export default function PhotoUploader({
             {uploading ? (
               <View style={styles.uploadingRow}>
                 <ActivityIndicator size="small" color="#FFFFFF" />
-                <Text style={styles.uploadButtonText}>Enviando...</Text>
+                <Text style={styles.uploadButtonText}>{t('photoUploader.submitting')}</Text>
               </View>
             ) : uploadSuccess ? (
               <View style={styles.uploadingRow}>
                 <Ionicons name="checkmark" size={18} color="#FFFFFF" />
-                <Text style={styles.uploadButtonText}>Enviado!</Text>
+                <Text style={styles.uploadButtonText}>{t('photoUploader.submitted')}</Text>
               </View>
             ) : (
               <View style={styles.uploadingRow}>
                 <Ionicons name="cloud-upload-outline" size={18} color="#FFFFFF" />
-                <Text style={styles.uploadButtonText}>Enviar Foto</Text>
+                <Text style={styles.uploadButtonText}>{t('photoUploader.submit')}</Text>
               </View>
             )}
           </TouchableOpacity>

@@ -5,6 +5,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { COLORS } from '../../utils/constants';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 // Mesma assinatura de props do GlobeMap.web.js (o TS resolve este arquivo).
 export default function GlobeMap({
@@ -13,9 +14,10 @@ export default function GlobeMap({
   showGlobeControl = true,
   style = undefined,
 }) {
+  const { t } = useLocale();
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>O globo 3D está disponível apenas na versão web.</Text>
+      <Text style={styles.text}>{t('globe.webOnly')}</Text>
     </View>
   );
 }

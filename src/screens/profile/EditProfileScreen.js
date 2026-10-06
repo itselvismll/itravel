@@ -21,6 +21,7 @@ import {
 } from '../../services/profileService';
 import { getCurrentUser, signOut } from '../../services/supabase';
 import { confirm, notify } from '../../utils/dialogs';
+import { useLocale } from '../../i18n/LocaleProvider';
 import { USERNAME_MAX_LENGTH, normalizeUsername, validateUsername } from '../../utils/username';
 import {
   DISPLAY_NAME_MAX_LENGTH,
@@ -67,6 +68,7 @@ const contemPalavraProibida = (texto) => {
 };
 
 export default function EditProfileScreen({ navigation, route }) {
+  const { t } = useLocale();
   // Esta tela vive dentro do ProfileStack, que fica sob as tabs: a barra flutua
   // sobre o formulário e cobriria o último campo.
   const tabBarPadding = useTabBarContentPadding();
@@ -248,15 +250,12 @@ export default function EditProfileScreen({ navigation, route }) {
   const confirmarExclusao = async () => {
     // O texto diz exatamente o que acontece, porque é a última tela antes de uma
     // ação que apaga fotos e histórico. "Tem certeza?" sozinho não informa nada.
+    // As quebras de linha dobradas são parte do texto e foram para a chave como
+    // `\n\n`: elas separam os três parágrafos do aviso, e o que importa aqui é
+    // que o tradutor as veja junto da frase que elas dividem.
     const aceitou = await confirm(
-      'Excluir minha conta',
-      `Sua conta sai do ar agora e ninguém mais consegue ver seu perfil, suas fotos ou seus comentários.
-
-`
-      + `Você tem ${ACCOUNT_DELETION_GRACE_DAYS} dias para mudar de ideia: é só entrar de novo com o mesmo e-mail e senha que tudo volta.
-
-`
-      + `Depois desse prazo, seus dados e suas fotos são apagados em definitivo, sem como recuperar.`
+      t('editProfile.account.confirmTitle'),
+      t('editProfile.account.confirmMessage', { count: ACCOUNT_DELETION_GRACE_DAYS })
     );
     if (!aceitou) return;
 
@@ -265,7 +264,7 @@ export default function EditProfileScreen({ navigation, route }) {
 
     if (!resultado.success) {
       setExcluindo(false);
-      notify('Não foi possível excluir', resultado.error || 'Tente novamente em instantes.');
+      notify(t('editProfile.account.deleteFailedTitle'), resultado.error || t('editProfile.account.deleteFailedMessage'));
       return;
     }
 
@@ -275,8 +274,8 @@ export default function EditProfileScreen({ navigation, route }) {
     setExcluindo(false);
 
     notify(
-      'Conta excluída',
-      `Sentiremos sua falta. Se mudar de ideia, entre de novo em até ${ACCOUNT_DELETION_GRACE_DAYS} dias e sua conta volta como estava.`
+      t('editProfile.account.deletedTitle'),
+      t('editProfile.account.deletedMessage', { count: ACCOUNT_DELETION_GRACE_DAYS })
     );
   };
 
@@ -289,11 +288,11 @@ export default function EditProfileScreen({ navigation, route }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color="white" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Editar perfil</Text>
+        <Text style={styles.headerTitle}>{t('editProfile.title')}</Text>
         <TouchableOpacity onPress={handleSave} style={styles.saveBtn} disabled={saving}>
           {saving
             ? <ActivityIndicator size="small" color="white" />
-            : <Text style={styles.saveBtnText}>Salvar</Text>
+            : <Text style={styles.saveBtnText}>{t('common.actions.save')}</Text>
           }
         </TouchableOpacity>
       </View>
@@ -318,11 +317,11 @@ export default function EditProfileScreen({ navigation, route }) {
               <Ionicons name="camera" size={12} color="white" />
             </View>
           </TouchableOpacity>
-          <Text style={styles.avatarHint}>Toque para alterar a foto</Text>
+          <Text style={styles.avatarHint}>{t('editProfile.changePhoto')}</Text>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.label}>Nome</Text>
+          <Text style={styles.label}>{t('editProfile.fields.name')}</Text>
           <TextInput
             style={[
               styles.input,
@@ -338,16 +337,20 @@ export default function EditProfileScreen({ navigation, route }) {
                 setErrorMessage('');
               }
             }}
-            placeholder="Como quer ser chamado"
+            placeholder={t('editProfile.fields.namePlaceholder')}
             placeholderTextColor="#bbb"
           />
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
             {nameState === 'over' && (
               <Text style={{ fontSize: 10, color: '#ef4444' }}>
-                {`Apague ${displayName.length - DISPLAY_NAME_MAX_LENGTH} caractere${displayName.length - DISPLAY_NAME_MAX_LENGTH === 1 ? '' : 's'} para salvar`}
+                {t('editProfile.trimToSave', {
+                  characters: t('common.plural.character', {
+                    count: displayName.length - DISPLAY_NAME_MAX_LENGTH,
+                  }),
+                })}
               </Text>
             )}
-            {nameState === 'full' && <Text style={{ fontSize: 10, color: '#6C2BD9' }}>Limite máximo atingido</Text>}
+            {nameState === 'full' && <Text style={{ fontSize: 10, color: '#6C2BD9' }}>{t('editProfile.limitReached')}</Text>}
             {nameState === 'ok' && <Text style={{ fontSize: 10, color: '#bbb' }}>{`Máximo ${DISPLAY_NAME_MAX_LENGTH} caracteres`}</Text>}
             <Text
               style={{
@@ -361,7 +364,7 @@ export default function EditProfileScreen({ navigation, route }) {
 
           <View style={styles.divider} />
 
-          <Text style={styles.label}>Username</Text>
+          <Text style={styles.label}>{t('editProfile.fields.username')}</Text>
           <View style={styles.usernameRow}>
             <Text style={styles.atSign}>@</Text>
             <TextInput
@@ -382,16 +385,16 @@ export default function EditProfileScreen({ navigation, route }) {
                   });
                 }
               }}
-              placeholder="seuusername"
+              placeholder={t('editProfile.fields.usernamePlaceholder')}
               placeholderTextColor="#bbb"
               autoCapitalize="none"
             />
             {checkingUsername && <ActivityIndicator size="small" color="#6C2BD9" />}
           </View>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
-            {usernameAvailable === true && <Text style={{ fontSize: 10, color: '#22c55e' }}>✓ Disponível</Text>}
-            {usernameAvailable === false && <Text style={{ fontSize: 10, color: '#ef4444' }}>✗ Já em uso</Text>}
-            {!usernameAvailable && username.length >= USERNAME_MAX_LENGTH && <Text style={{ fontSize: 10, color: '#6C2BD9' }}>Limite máximo atingido</Text>}
+            {usernameAvailable === true && <Text style={{ fontSize: 10, color: '#22c55e' }}>{t('editProfile.usernameAvailable')}</Text>}
+            {usernameAvailable === false && <Text style={{ fontSize: 10, color: '#ef4444' }}>{t('editProfile.usernameTaken')}</Text>}
+            {!usernameAvailable && username.length >= USERNAME_MAX_LENGTH && <Text style={{ fontSize: 10, color: '#6C2BD9' }}>{t('editProfile.limitReached')}</Text>}
             {!usernameAvailable && username.length < USERNAME_MAX_LENGTH && <Text style={{ fontSize: 10, color: '#bbb' }}>{`Máximo ${USERNAME_MAX_LENGTH} caracteres`}</Text>}
             <Text style={{ fontSize: 10, color: username.length >= USERNAME_MAX_LENGTH - 1 ? '#6C2BD9' : '#bbb' }}>
               {username.length}/{USERNAME_MAX_LENGTH}
@@ -400,7 +403,7 @@ export default function EditProfileScreen({ navigation, route }) {
 
           <View style={styles.divider} />
 
-          <Text style={styles.label}>Bio</Text>
+          <Text style={styles.label}>{t('editProfile.fields.bio')}</Text>
           <TextInput
             style={[styles.input, styles.bioInput, bioInvalid && { borderBottomColor: '#ef4444' }]}
             value={bio}
@@ -412,14 +415,14 @@ export default function EditProfileScreen({ navigation, route }) {
               setBio(text);
               setErrorMessage('');
             }}
-            placeholder="Conte algo sobre suas viagens"
+            placeholder={t('editProfile.fields.bioPlaceholder')}
             placeholderTextColor="#bbb"
             multiline
             // A bio aceita quebra de linha, então o teclado precisa oferecer o
             // Enter em vez de um "OK" que fecha o campo.
             textAlignVertical="top"
             maxLength={BIO_HARD_INPUT_LIMIT}
-            accessibilityLabel="Bio do perfil"
+            accessibilityLabel={t('editProfile.fields.bioLabel')}
           />
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
             <Text
@@ -445,7 +448,7 @@ export default function EditProfileScreen({ navigation, route }) {
             <>
             <View style={styles.divider} />
 
-            <Text style={styles.label}>Instagram</Text>
+            <Text style={styles.label}>{t('editProfile.fields.instagram')}</Text>
             <View style={styles.instagramRow}>
               {/* O @ é desenhado FORA do campo, como prefixo fixo. Dentro do valor
                   ele seria salvo junto e teria de ser retirado depois; como rótulo
@@ -460,14 +463,14 @@ export default function EditProfileScreen({ navigation, route }) {
                   setInstagram(text);
                   setErrorMessage('');
                 }}
-                placeholder="seu.usuario"
+                placeholder={t('editProfile.fields.instagramPlaceholder')}
                 placeholderTextColor="#bbb"
                 autoCapitalize="none"
                 autoCorrect={false}
                 // Sem `keyboardType="url"`: o teclado de URL esconde o underline,
                 // que é caractere válido de username no Instagram.
                 maxLength={90}
-                accessibilityLabel="Nome de usuário no Instagram"
+                accessibilityLabel={t('editProfile.fields.instagramLabel')}
               />
             </View>
             <Text
@@ -492,20 +495,20 @@ export default function EditProfileScreen({ navigation, route }) {
             rótulo: o olho precisa registrar que aqui não se edita nada, se
             encerra. */}
         <View style={styles.dangerDivider} />
-        <Text style={styles.dangerLabel}>Conta</Text>
+        <Text style={styles.dangerLabel}>{t('editProfile.account.section')}</Text>
 
         <TouchableOpacity
           style={styles.dangerButton}
           onPress={confirmarExclusao}
           disabled={excluindo}
           accessibilityRole="button"
-          accessibilityLabel="Excluir minha conta"
+          accessibilityLabel={t('editProfile.account.deleteAccount')}
         >
           {excluindo
             ? <ActivityIndicator size="small" color="#ef4444" />
             : <Ionicons name="trash-outline" size={18} color="#ef4444" />}
           <View style={{ flex: 1 }}>
-            <Text style={styles.dangerButtonText}>Excluir minha conta</Text>
+            <Text style={styles.dangerButtonText}>{t('editProfile.account.deleteAccount')}</Text>
             <Text style={styles.dangerButtonHint}>
               Reversível por {ACCOUNT_DELETION_GRACE_DAYS} dias
             </Text>

@@ -4,8 +4,11 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import ShareCard from '../../components/ShareCard';
 import { getPassportShare } from '../../services/messageService';
+import { useLocale } from '../../i18n/LocaleProvider';
+import { formatDateShort } from '../../utils/formatDate';
 
 export default function PassportDetailScreen({ route, navigation }) {
+  const { t, tag } = useLocale();
   const { passportShareId, passportShare: initialShare } = route.params || {};
   const [share, setShare] = useState(initialShare || null);
   const [loading, setLoading] = useState(!initialShare);
@@ -31,14 +34,14 @@ export default function PassportDetailScreen({ route, navigation }) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityLabel="Voltar" onPress={() => navigation.goBack()} style={styles.back}>
+        <TouchableOpacity accessibilityLabel={t('common.actions.back')} onPress={() => navigation.goBack()} style={styles.back}>
           <Ionicons name="arrow-back" size={22} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.title}>Passaporte recebido</Text>
+        <Text style={styles.title}>{t('passportDetail.title')}</Text>
         <View style={styles.spacer} />
       </View>
       {loading ? <ActivityIndicator color="#A78BFA" style={{ marginTop: 60 }} /> : !share ? (
-        <View style={styles.empty}><Ionicons name="book-outline" size={48} color="#465070" /><Text style={styles.emptyTitle}>Passaporte indisponível</Text></View>
+        <View style={styles.empty}><Ionicons name="book-outline" size={48} color="#465070" /><Text style={styles.emptyTitle}>{t('passportDetail.unavailable')}</Text></View>
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.passportWrap}>
@@ -49,7 +52,11 @@ export default function PassportDetailScreen({ route, navigation }) {
               wishlistCodes={wishlistCodes}
             />
           </ScrollView>
-          <Text style={styles.date}>Compartilhado em {new Date(share.created_at || Date.now()).toLocaleDateString('pt-BR')}</Text>
+          <Text style={styles.date}>
+            {t('passportDetail.sharedOn', {
+              date: formatDateShort(share.created_at || Date.now(), tag),
+            })}
+          </Text>
         </ScrollView>
       )}
     </View>

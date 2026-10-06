@@ -3,6 +3,7 @@ import { View, Text, Image, StyleSheet, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getLevelInfo } from '../utils/travelerLevels';
 import CountryFlag from './CountryFlag';
+import { useLocale } from '../i18n/LocaleProvider';
 
 // Mesma correção usada no autocomplete de países do mapa: bandeiras via imagem
 // (através do CountryFlag compartilhado) em vez de emoji Unicode.
@@ -84,7 +85,8 @@ const ShareCard = forwardRef(
     { profile, avatarUrl, visitedCountryCodes, wishlistCodes },
     ref
   ) {
-    const username = profile?.username || 'viajante';
+    const { t } = useLocale();
+    const username = profile?.username || t('shareCard.defaultUsername');
     const initial = username[0]?.toUpperCase() || 'V';
     const avatarSrc = profile?.avatar_url || avatarUrl;
 
@@ -115,7 +117,7 @@ const ShareCard = forwardRef(
               style={styles.logoIcon}
               resizeMode="contain"
             />
-            <Text style={styles.tagline}>PASSAPORTE</Text>
+            <Text style={styles.tagline}>{t('shareCard.tagline')}</Text>
           </View>
 
           <View style={styles.avatarRingOuter}>
@@ -161,7 +163,7 @@ const ShareCard = forwardRef(
         {/* 4. Card — países visitados (todos, em grid, até 3 linhas) */}
         <View style={styles.gridCard}>
           {visitedGrid.visible.length === 0 ? (
-            <Text style={styles.emptyText}>Sua jornada está só começando</Text>
+            <Text style={styles.emptyText}>{t('shareCard.emptyVisited')}</Text>
           ) : (
             <View style={styles.visitedGrid}>
               {visitedGrid.visible.map((code, i) => (
@@ -181,9 +183,9 @@ const ShareCard = forwardRef(
 
         {/* 5. Card — wishlist "sonhando com" (todos, em grid, até 3 linhas) */}
         <View style={styles.wishlistSection}>
-          <Text style={styles.wishlistTitle}>sonhando com</Text>
+          <Text style={styles.wishlistTitle}>{t('shareCard.wishlistTitle')}</Text>
           {wishlistGrid.visible.length === 0 ? (
-            <Text style={styles.emptyText}>Nenhum destino na lista ainda</Text>
+            <Text style={styles.emptyText}>{t('shareCard.emptyWishlist')}</Text>
           ) : (
             <View style={styles.wishlistGrid}>
               {wishlistGrid.visible.map((code, i) => (
@@ -204,7 +206,7 @@ const ShareCard = forwardRef(
         {/* 6. Rodapé */}
         <View style={styles.footerDivider} />
         <View style={styles.footer}>
-          <Text style={styles.footerText}>journi.app</Text>
+          <Text style={styles.footerText}>{t('shareCard.domain')}</Text>
         </View>
       </View>
     );

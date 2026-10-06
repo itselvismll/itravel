@@ -8,24 +8,33 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase, getCurrentUser } from '../services/supabase';
 import { COLORS } from '../utils/constants';
 import Avatar from '../components/Avatar';
-import { getNotificationDestination } from '../utils/notificationRouting';
+import { getBadge, getNotificationDestination, getPredicate } from '../utils/notificationRouting';
 import { NOTIFICATION_TYPES } from '../utils/socialNotifications';
+import { useLocale } from '../i18n/LocaleProvider';
 
-const TYPE_ICON = {
-  follow:  { name: 'person-add',    color: '#6C2BD9' },
-  comment: { name: 'chatbubble',     color: '#0ea5e9' },
-  like:    { name: 'heart',          color: '#ef4444' },
+// O TYPE_ICON local saiu daqui.
+//
+// Ele tinha TRÊS tipos (follow, comment, like) enquanto o app tem dez, então
+// convite de viagem, tarefa, mensagem e passaporte caíam todos no mesmo sininho
+// roxo genérico — e o banner, que sempre usou `getBadge`, mostrava o ícone certo
+// para os mesmos avisos. Duas tabelas de ícone para a mesma coisa é como se
+// chega nisso: a segunda não acompanha quando um tipo novo nasce.
+//
+// Agora as duas telas leem `getBadge`, que cobre os dez e tem o `DEFAULT_BADGE`
+// para o décimo primeiro.
+
+// O tempo relativo. As unidades vêm de chave porque "min"/"h"/"d" não são
+// universais — em inglês o padrão é "m"/"h"/"d", e "agora" é "now".
+const timeAgo = (dateStr, t) => {
+  const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
+  if (diff < 60) return t('common.time.now');
+  if (diff < 3600) return t('common.time.minutesShort', { count: Math.floor(diff / 60) });
+  if (diff < 86400) return t('common.time.hoursShort', { count: Math.floor(diff / 3600) });
+  return t('common.time.daysShort', { count: Math.floor(diff / 86400) });
 };
 
-function timeAgo(dateStr) {
-  const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
-  if (diff < 60) return 'agora';
-  if (diff < 3600) return `${Math.floor(diff / 60)}min`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-  return `${Math.floor(diff / 86400)}d`;
-}
-
 export default function NotificationsScreen({ navigation }) {
+  const { t } = useLocale();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -66,14 +75,27 @@ export default function NotificationsScreen({ navigation }) {
 
     if (loadError) {
       setNotifications([]);
-      setError('Não foi possível carregar as notificações.');
+      setError(t('notifications.loadFailed'));
       setLoading(false);
       return;
     }
 
+    // A deduplicação da TELA, que é diferente do agrupamento do banco: ela existe
+    // para esconder linhas repetidas que sobraram de triggers antigos.
+    //
+    // O ALVO É O MAIS ESPECÍFICO QUE A LINHA TIVER, e a ordem importa:
+    //
+    //   `photo_id`           comentário e curtida;
+    //   `passport_share_id`  cada passaporte é um aviso próprio — dois do mesmo
+    //                        remetente na mesma conversa têm tipo, ator, texto e
+    //                        `conversation_id` iguais, e o segundo sumiria;
+    //   `conversation_id`    mensagem direta, agrupada por conversa — sem ele,
+    //                        duas conversas da MESMA PESSOA colapsariam numa só.
+    //
+    // Começar pelo menos específico apagaria linhas distintas da tela.
     const unique = new Map();
     (data || []).forEach(item => {
-      const target = item.photo_id || '';
+      const target = item.photo_id || item.passport_share_id || item.conversation_id || '';
       const key = `${item.type}:${item.actor_id || ''}:${target}:${item.message}`;
       if (!unique.has(key)) unique.set(key, item);
     });
@@ -96,7 +118,7 @@ export default function NotificationsScreen({ navigation }) {
   );
 
   const renderItem = ({ item }) => {
-    const icon = TYPE_ICON[item.type] || { name: 'notifications', color: '#6C2BD9' };
+    const icon = getBadge(item.type);
     const actor = Array.isArray(item.actor) ? item.actor[0] : item.actor;
     const destination = getNotificationDestination(item, actor);
     const handlePress = () => {
@@ -112,16 +134,20 @@ export default function NotificationsScreen({ navigation }) {
         <View style={styles.avatarWrap}>
           <Avatar profile={actor} size={44} />
           <View style={[styles.badge, { backgroundColor: icon.color }]}>
-            <Ionicons name={icon.name} size={11} color="white" />
+            <Ionicons name={icon.icon} size={11} color="white" />
           </View>
         </View>
         <View style={styles.textWrap}>
+          {/* O PREDICADO vem do app, não do `item.message` do banco.
+              O nome fica em negrito e o predicado em peso normal, que é por que
+              a chave guarda só o predicado — ver NOTIFICATION_PREDICATE_KEY em
+              utils/notificationRouting. */}
           <Text style={styles.message}>
-            <Text style={styles.bold}>{actor?.display_name || actor?.username || 'Alguém'}</Text>
-            {' '}{item.message}
+            <Text style={styles.bold}>{actor?.display_name || actor?.username || t('common.someone')}</Text>
+            {' '}{getPredicate(item, t)}
           </Text>
           {!!item.preview && <Text style={styles.preview} numberOfLines={1}>{item.preview}</Text>}
-          <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
+          <Text style={styles.time}>{timeAgo(item.created_at, t)}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -131,13 +157,13 @@ export default function NotificationsScreen({ navigation }) {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity
-          accessibilityLabel="Voltar"
+          accessibilityLabel={t('common.actions.back')}
           onPress={() => navigation.goBack()}
           style={styles.backButton}
         >
           <Ionicons name="arrow-back" size={22} color="#0D1326" />
         </TouchableOpacity>
-        <Text style={styles.title}>Notificações</Text>
+        <Text style={styles.title}>{t('notifications.title')}</Text>
         <View style={styles.headerSpacer} />
       </View>
       {loading ? (
@@ -146,13 +172,13 @@ export default function NotificationsScreen({ navigation }) {
         <View style={styles.empty}>
           <Text style={styles.emptyText}>{error}</Text>
           <TouchableOpacity onPress={loadNotifications} style={styles.retryButton}>
-            <Text style={styles.retryText}>Tentar novamente</Text>
+            <Text style={styles.retryText}>{t('notifications.retry')}</Text>
           </TouchableOpacity>
         </View>
       ) : notifications.length === 0 ? (
         <View style={styles.empty}>
           <Ionicons name="notifications-outline" size={48} color="#ccc" />
-          <Text style={styles.emptyText}>Nenhuma notificação ainda</Text>
+          <Text style={styles.emptyText}>{t('notifications.empty')}</Text>
         </View>
       ) : (
         <FlatList

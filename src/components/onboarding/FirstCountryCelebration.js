@@ -9,6 +9,7 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, View, Text, StyleSheet, Platform, Easing } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../utils/constants';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 // Tempo em tela antes do fade de saída.
 const HOLD_MS = 2600;
@@ -22,6 +23,7 @@ const GLOBE_ICON_SIZE = 30;
  * @param {{ countryName?: string | null, onDone: () => void }} props
  */
 export default function FirstCountryCelebration({ countryName = null, onDone }) {
+  const { t } = useLocale();
   const enter = useRef(new Animated.Value(0)).current;
   const ring = useRef(new Animated.Value(0)).current;
   const exit = useRef(new Animated.Value(1)).current;
@@ -93,9 +95,9 @@ export default function FirstCountryCelebration({ countryName = null, onDone }) 
         </View>
 
         <View style={styles.banner}>
-          <Text style={styles.title}>Seu mapa começou!</Text>
+          <Text style={styles.title}>{t('onboarding.firstCountryDone')}</Text>
           {countryName ? (
-            <Text style={styles.subtitle}>{countryName} agora é seu.</Text>
+            <Text style={styles.subtitle}>{t('onboarding.firstCountryIsYours', { country: countryName })}</Text>
           ) : null}
         </View>
       </Animated.View>

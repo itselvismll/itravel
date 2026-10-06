@@ -14,11 +14,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { getCurrentUser } from '../../services/supabase';
 import { createSupportTicket, SUPPORT_CATEGORIES } from '../../services/supportService';
+import { useLocale } from '../../i18n/LocaleProvider';
+import { isValidEmail } from '../../utils/authValidation';
 import useTabBarContentPadding from '../../hooks/useTabBarContentPadding';
 
-const validateEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
 export default function SupportScreen({ navigation }) {
+  const { t } = useLocale();
   // Esta tela aparece nos dois fluxos: dentro do ProfileStack (sob as tabs) e no
   // AuthStack (sem barra). O hook devolve 0 no segundo caso.
   const tabBarPadding = useTabBarContentPadding();
@@ -44,19 +46,19 @@ export default function SupportScreen({ navigation }) {
 
   const handleSubmit = async () => {
     if (!email.trim()) {
-      setError('Informe seu email.');
+      setError(t('support.validation.emailRequired'));
       return;
     }
-    if (!validateEmail(email.trim())) {
-      setError('Email inválido.');
+    if (!isValidEmail(email.trim())) {
+      setError(t('support.validation.emailInvalid'));
       return;
     }
     if (!category) {
-      setError('Escolha um assunto.');
+      setError(t('support.validation.subjectRequired'));
       return;
     }
     if (!description.trim()) {
-      setError('Descreva o que aconteceu.');
+      setError(t('support.validation.descriptionRequired'));
       return;
     }
 
@@ -73,7 +75,7 @@ export default function SupportScreen({ navigation }) {
     if (result.success) {
       setSubmitted(true);
     } else {
-      setError('Não foi possível enviar sua mensagem agora. Tente novamente.');
+      setError(t('support.submitFailed'));
     }
   };
 
@@ -91,9 +93,9 @@ export default function SupportScreen({ navigation }) {
               <Ionicons name="checkmark" size={48} color="#FFFFFF" />
             </LinearGradient>
           </View>
-          <Text style={styles.successTitle}>Recebemos sua mensagem, obrigado!</Text>
+          <Text style={styles.successTitle}>{t('support.successTitle')}</Text>
           <Text style={styles.successText}>
-            Nossa equipe vai analisar e, se precisar, responde pelo email {email.trim()}.
+            {t('support.successMessage', { email: email.trim() })}
           </Text>
           <TouchableOpacity
             style={[styles.generateButton, { width: '100%' }]}
@@ -101,7 +103,7 @@ export default function SupportScreen({ navigation }) {
             activeOpacity={0.85}
           >
             <Ionicons name="arrow-back" size={18} color="#fff" />
-            <Text style={styles.generateText}>Voltar</Text>
+            <Text style={styles.generateText}>{t('support.successBack')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -118,8 +120,8 @@ export default function SupportScreen({ navigation }) {
           <Ionicons name="arrow-back" size={22} color="#F7F7F2" />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Ajuda e suporte</Text>
-          <Text style={styles.headerSubtitle}>Conte pra gente o que aconteceu</Text>
+          <Text style={styles.headerTitle}>{t('support.title')}</Text>
+          <Text style={styles.headerSubtitle}>{t('support.subtitle')}</Text>
         </View>
         <Ionicons name="help-buoy-outline" size={24} color="#8B5CF6" />
       </View>
@@ -144,7 +146,7 @@ export default function SupportScreen({ navigation }) {
               <View style={styles.sectionIcon}>
                 <Ionicons name="mail-outline" size={17} color="#A78BFA" />
               </View>
-              <Text style={styles.sectionTitle}>Seu email</Text>
+              <Text style={styles.sectionTitle}>{t('support.emailSection')}</Text>
             </View>
             {isLoggedIn ? (
               <View style={styles.readonlyField}>
@@ -155,7 +157,7 @@ export default function SupportScreen({ navigation }) {
               <TextInput
                 value={email}
                 onChangeText={(text) => { setEmail(text); setError(''); }}
-                placeholder="seuemail@exemplo.com"
+                placeholder={t('support.emailPlaceholder')}
                 placeholderTextColor="#626987"
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -170,10 +172,10 @@ export default function SupportScreen({ navigation }) {
               <View style={styles.sectionIcon}>
                 <Ionicons name="pricetag-outline" size={17} color="#A78BFA" />
               </View>
-              <Text style={styles.sectionTitle}>Assunto</Text>
+              <Text style={styles.sectionTitle}>{t('support.subjectSection')}</Text>
             </View>
             <View style={styles.chips}>
-              {SUPPORT_CATEGORIES.map(({ id, label }) => {
+              {SUPPORT_CATEGORIES.map(({ id, labelKey }) => {
                 const active = category === id;
                 return (
                   <TouchableOpacity
@@ -181,7 +183,7 @@ export default function SupportScreen({ navigation }) {
                     onPress={() => { setCategory(id); setError(''); }}
                     style={[styles.chip, active && styles.chipActive]}
                   >
-                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{t(labelKey)}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -193,12 +195,12 @@ export default function SupportScreen({ navigation }) {
               <View style={styles.sectionIcon}>
                 <Ionicons name="chatbubble-ellipses-outline" size={17} color="#A78BFA" />
               </View>
-              <Text style={styles.sectionTitle}>Descreva o que aconteceu</Text>
+              <Text style={styles.sectionTitle}>{t('support.descriptionSection')}</Text>
             </View>
             <TextInput
               value={description}
               onChangeText={(text) => { setDescription(text); setError(''); }}
-              placeholder="Quanto mais detalhes, mais rápido conseguimos ajudar..."
+              placeholder={t('support.descriptionPlaceholder')}
               placeholderTextColor="#626987"
               multiline
               style={[styles.input, styles.multiline]}
@@ -218,7 +220,7 @@ export default function SupportScreen({ navigation }) {
             disabled={submitting}
           >
             {submitting ? <ActivityIndicator color="#fff" /> : <Ionicons name="send-outline" size={18} color="#fff" />}
-            <Text style={styles.generateText}>{submitting ? 'Enviando...' : 'Enviar'}</Text>
+            <Text style={styles.generateText}>{submitting ? t('support.submitting') : t('support.submit')}</Text>
           </TouchableOpacity>
         </ScrollView>
       )}

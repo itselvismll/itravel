@@ -9,39 +9,18 @@ import { COLORS, SIZES } from '../../utils/constants';
 import { signIn, signInWithGoogle } from '../../services/supabase';
 import { notify } from '../../utils/dialogs';
 import HCaptchaWidget from '../../components/auth/HCaptchaWidget';
-import { HCAPTCHA_ENABLED, HCAPTCHA_ERROR_MESSAGE } from '../../components/auth/hcaptchaConfig';
+import { HCAPTCHA_ENABLED } from '../../components/auth/hcaptchaConfig';
+import { useLocale } from '../../i18n/LocaleProvider';
+import { authErrorMessage } from '../../utils/authErrors';
+import { isValidEmail } from '../../utils/authValidation';
 
-const formatLoginError = (/** @type {{ error?: unknown, code?: unknown, status?: unknown }} */ result = {}) => {
-  const { error, code, status } = result;
-  const message = String(error || '');
-  const normalizedCode = String(code || '').toLowerCase();
-
-  if (normalizedCode === 'invalid_credentials' || /invalid login credentials/i.test(message)) {
-    return 'Email ou senha incorretos';
-  }
-  if (normalizedCode === 'email_not_confirmed' || /email not confirmed/i.test(message)) {
-    return 'Por favor, confirme seu email antes de fazer login';
-  }
-  if (/rate.limit|too many|429/i.test(`${normalizedCode} ${message} ${status || ''}`)) {
-    return 'Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente.';
-  }
-  if (normalizedCode === 'user_banned') {
-    return 'Esta conta está temporariamente indisponível. Entre em contato com o suporte.';
-  }
-  if (/failed to fetch|network request failed|load failed/i.test(message)) {
-    return 'Não foi possível conectar ao login. Verifique sua internet e tente novamente.';
-  }
-  if (/captcha/i.test(`${normalizedCode} ${message}`)) {
-    return HCAPTCHA_ERROR_MESSAGE;
-  }
-
-  const safeCode = String(code || (status ? `HTTP_${status}` : 'AUTH_LOGIN_FAILED'))
-    .replace(/[^a-zA-Z0-9_-]/g, '')
-    .toUpperCase();
-  return `Não foi possível entrar agora. Código: ${safeCode}`;
-};
+// O `formatLoginError` local saiu daqui: a mesma tradução de erro do GoTrue
+// virou `utils/authErrors.js`, que as quatro telas de conta usam. Ele já não
+// vazava texto do backend — mas era o único que não vazava, e o cadastro vazava.
+// Ver o cabeçalho daquele módulo.
 
 export default function LoginScreen({ navigation, onLoginSuccess }) {
+  const { t } = useLocale();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -53,23 +32,21 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
     /** @type {Record<string, string | null>} */ ({})
   );
 
-  const validateEmail = (email) => {
-    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return re.test(email);
-  };
-
+  // O `validateEmail` local saiu daqui: o MESMO regex estava copiado no
+  // RegisterScreen e no SupportScreen. Agora é `isValidEmail`, em
+  // `utils/authValidation.js`, junto da regra de senha.
   const handleLogin = async () => {
     setErrors({});
     const newErrors = /** @type {Record<string, string>} */ ({});
     
     if (!email) {
-      newErrors.email = 'Email é obrigatório';
-    } else if (!validateEmail(email)) {
-      newErrors.email = 'Email inválido';
+      newErrors.email = t('auth.fields.emailRequired');
+    } else if (!isValidEmail(email)) {
+      newErrors.email = t('auth.fields.emailInvalid');
     }
 
     if (!password) {
-      newErrors.password = 'Senha é obrigatória';
+      newErrors.password = t('auth.fields.passwordRequired');
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -94,11 +71,16 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
       // Mesmo uma autenticação recusada consome o token; gere outro desafio.
       captchaRef.current?.reset();
       setCaptchaToken(null);
-      notify('Erro no Login', formatLoginError(result));
+      notify(t('auth.login.errorTitle'), authErrorMessage(result, t));
     } catch {
       captchaRef.current?.reset();
       setCaptchaToken(null);
-      notify('Erro no Login', 'Não foi possível entrar agora. Código: AUTH_UNEXPECTED_ERROR');
+      // Exceção lançada antes de haver resposta: não há `code` do GoTrue, então o
+      // código vem daqui para o relato no suporte continuar possível.
+      notify(
+        t('auth.login.errorTitle'),
+        t('auth.errors.unknown', { code: 'AUTH_UNEXPECTED_ERROR' })
+      );
     } finally {
       setLoading(false);
     }
@@ -113,10 +95,11 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
     if (!result.success && !result.cancelled) {
       const providerDisabled = result.error?.toLowerCase().includes('provider is not enabled');
       notify(
-        'Erro no login com Google',
+        t('auth.login.googleErrorTitle'),
         providerDisabled
           ? 'O acesso pelo Google ainda precisa ser habilitado no servidor.'
-          : result.error || 'Não foi possível entrar com Google.'
+          // Mesmo no caminho do Google, texto do backend não vai para a tela.
+          : authErrorMessage(result, t)
       );
     }
 
@@ -184,15 +167,15 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
                 style={{ width: 220, height: 98, alignSelf: 'center', marginBottom: 8 }}
                 resizeMode="contain"
               />
-              <Text style={styles.tagline}>Suas viagens. Suas histórias. Suas conexões.</Text>
+              <Text style={styles.tagline}>{t('auth.login.tagline')}</Text>
             </View>
           </View>
         </View>
 
         {/* Card de Login */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Bem-vindo de volta!</Text>
-          <Text style={styles.cardSubtitle}>Entre para continuar sua jornada</Text>
+          <Text style={styles.cardTitle}>{t('auth.login.welcome')}</Text>
+          <Text style={styles.cardSubtitle}>{t('auth.login.subtitle')}</Text>
 
           {/* Email */}
           <View style={styles.inputContainer}>
@@ -200,7 +183,7 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
               <Ionicons name="mail-outline" size={20} color={COLORS.gray} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="Email"
+                placeholder={t('auth.login.emailPlaceholder')}
                 placeholderTextColor={COLORS.textSecondary}
                 value={email}
                 onChangeText={(text) => {
@@ -221,7 +204,7 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
               <Ionicons name="lock-closed-outline" size={20} color={COLORS.gray} style={styles.inputIcon} />
               <TextInput
                 style={[styles.input, styles.inputWithIcon]}
-                placeholder="Senha"
+                placeholder={t('auth.login.passwordPlaceholder')}
                 placeholderTextColor={COLORS.textSecondary}
                 value={password}
                 onChangeText={(text) => {
@@ -249,14 +232,14 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
             style={styles.forgotPassword}
             onPress={() => navigation.navigate('ForgotPassword')}
           >
-            <Text style={styles.forgotPasswordText}>Esqueceu sua senha?</Text>
+            <Text style={styles.forgotPasswordText}>{t('auth.login.forgotPassword')}</Text>
           </TouchableOpacity>
 
           {/* Verificação anti-bot (hCaptcha) */}
           <HCaptchaWidget
             ref={captchaRef}
             onVerify={setCaptchaToken}
-            onError={() => notify('Verificação de segurança', HCAPTCHA_ERROR_MESSAGE)}
+            onError={() => notify(t('auth.captchaTitle'), t('auth.errors.captcha'))}
           />
 
           {/* Botão de Login */}
@@ -272,10 +255,10 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
               end={{ x: 1, y: 0 }}
             >
               {loading ? (
-                <Text style={styles.buttonText}>Entrando...</Text>
+                <Text style={styles.buttonText}>{t('auth.login.submitting')}</Text>
               ) : (
                 <>
-                  <Text style={styles.buttonText}>Entrar</Text>
+                  <Text style={styles.buttonText}>{t('auth.login.submit')}</Text>
                   <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
                 </>
               )}
@@ -285,7 +268,7 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
           {/* Divider */}
           <View style={styles.divider}>
             <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>ou</Text>
+            <Text style={styles.dividerText}>{t('auth.login.orDivider')}</Text>
             <View style={styles.dividerLine} />
           </View>
 
@@ -311,7 +294,7 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
             onPress={() => navigation.navigate('Register')}
           >
             <Text style={styles.linkText}>
-              Não tem conta? <Text style={styles.linkTextBold}>Cadastre-se grátis</Text>
+              Não tem conta? <Text style={styles.linkTextBold}>{t('auth.login.signUpCta')}</Text>
             </Text>
           </TouchableOpacity>
 
@@ -320,7 +303,7 @@ export default function LoginScreen({ navigation, onLoginSuccess }) {
             style={styles.helpLink}
             onPress={() => navigation.navigate('Support')}
           >
-            <Text style={styles.helpLinkText}>Precisa de ajuda?</Text>
+            <Text style={styles.helpLinkText}>{t('auth.login.needHelp')}</Text>
           </TouchableOpacity>
         </View>
       </View>

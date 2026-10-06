@@ -250,8 +250,20 @@ test('os dois tipos são aceitos pelo check da tabela de notificações', () => 
 
 test('o app sabe o título e o destino dos dois avisos', () => {
   const { getTitle, getRoute, getBadge } = loadEsm('src/utils/notificationRouting.js');
-  assert.equal(getTitle({ type: 'trip_task_created' }, 'Elvis'), 'Elvis criou uma tarefa');
-  assert.equal(getTitle({ type: 'trip_task_done' }, 'Vero'), 'Vero concluiu uma tarefa');
+
+  // O título agora sai de CHAVE de tradução, não de frase fixa no código — ver
+  // NOTIFICATION_PREDICATE_KEY. O `t` daqui resolve contra o pt.json de verdade,
+  // então a asserção continua cobrando o texto em português E passa a cobrar que
+  // a chave existe.
+  const pt = JSON.parse(fs.readFileSync(path.join(root, "src/i18n/locales/pt.json"), "utf8"));
+  const t = (chave, opcoes = {}) => {
+    const valor = String(chave).split(".").reduce((o, k) => (o ?? {})[k], pt);
+    if (typeof valor !== "string") throw new Error("chave inexistente: " + chave);
+    return valor.replace(/%\{(\w+)\}/g, (_, nome) => String(opcoes[nome] ?? ''));
+  };
+
+  assert.equal(getTitle({ type: 'trip_task_created' }, 'Elvis', t), 'Elvis criou uma tarefa');
+  assert.equal(getTitle({ type: 'trip_task_done' }, 'Vero', t), 'Vero concluiu uma tarefa');
 
   assert.notEqual(getBadge('trip_task_done').icon, getBadge('trip_task_created').icon);
 });
@@ -316,7 +328,7 @@ test('as tarefas do grupo vêm ANTES da checklist da viagem', () => {
   // irmãos no mesmo JSX, e mexer num deles troca a ordem sem que nada quebre.
   const tela = fs.readFileSync(path.join(root, 'src/screens/assistant/AssistantResultScreen.js'), 'utf8');
   const tarefas = tela.indexOf('<TripTasksPanel');
-  const checklist = tela.indexOf('Preparação da viagem');
+  const checklist = tela.indexOf("t('assistantResult.preparation')");
 
   assert.ok(tarefas > 0 && checklist > 0, 'um dos dois blocos sumiu da tela');
   assert.ok(tarefas < checklist, 'a checklist voltou para cima das tarefas do grupo');

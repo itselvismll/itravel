@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import CountryTag, { TAG_HEIGHT, TAG_WIDTH } from './CountryTag';
 import CountryListModal from './CountryListModal';
 import { GRID_LIMIT, countryKey, gridSlots, tagRotation } from './countryGridData';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 /**
  * @param {{
@@ -36,6 +37,7 @@ export default function CountryGridSection({
   emptyState = null,
   limit = GRID_LIMIT,
 }) {
+  const { t } = useLocale();
   const [expanded, setExpanded] = useState(false);
   const { visible, remaining, hasMore } = gridSlots(countries, limit);
 
@@ -106,7 +108,7 @@ export default function CountryGridSection({
               <Text style={[styles.moreCount, !!accentColor && { color: accentColor }]}>
                 +{remaining}
               </Text>
-              <Text style={styles.moreLabel}>ver todos</Text>
+              <Text style={styles.moreLabel}>{t('common.actions.seeAll')}</Text>
             </Pressable>
           )}
         </View>

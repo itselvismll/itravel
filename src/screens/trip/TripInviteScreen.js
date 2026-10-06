@@ -42,6 +42,7 @@ import {
 } from '../../services/tripMemberService';
 import { buildInviteUrl, buildInviteShare } from '../../utils/inviteLink';
 import MemberAvatar from '../../components/trip/MemberAvatar';
+import { useLocale } from '../../i18n/LocaleProvider';
 import { notify } from '../../utils/dialogs';
 import { trip, font, shadow, radius } from '../../theme/tripCollab';
 
@@ -51,6 +52,7 @@ const DEBOUNCE_MS = 350;
 const MIN_BUSCA = 2;
 
 export default function TripInviteScreen({ route, navigation }) {
+  const { t } = useLocale();
   const tripId = route?.params?.tripId || null;
   const token = route?.params?.token || null;
   const tripTitle = route?.params?.tripTitle || '';
@@ -205,21 +207,21 @@ export default function TripInviteScreen({ route, navigation }) {
         {redeeming ? (
           <>
             <ActivityIndicator size="large" color={trip.accentSoft} />
-            <Text style={styles.redeemText}>Entrando na viagem…</Text>
+            <Text style={styles.redeemText}>{t('tripInvite.redeeming')}</Text>
           </>
         ) : (
           <>
             <View style={styles.redeemIcon}>
               <Ionicons name="link-outline" size={30} color={trip.accentSoft} />
             </View>
-            <Text style={styles.redeemTitle}>Convite indisponível</Text>
+            <Text style={styles.redeemTitle}>{t('tripInvite.unavailableTitle')}</Text>
             <Text style={styles.redeemText}>{redeemError}</Text>
             <TouchableOpacity
               onPress={() => navigation.replace('Main')}
               style={styles.redeemButton}
               accessibilityRole="button"
             >
-              <Text style={styles.redeemButtonText}>Ir para o início</Text>
+              <Text style={styles.redeemButtonText}>{t('tripInvite.goHome')}</Text>
             </TouchableOpacity>
           </>
         )}
@@ -235,12 +237,12 @@ export default function TripInviteScreen({ route, navigation }) {
           onPress={() => navigation.goBack()}
           style={styles.backButton}
           accessibilityRole="button"
-          accessibilityLabel="Voltar"
+          accessibilityLabel={t('tripInvite.backLabel')}
         >
           <Ionicons name="chevron-back" size={20} color={trip.ink} />
         </TouchableOpacity>
         <View style={styles.headerText}>
-          <Text style={styles.title}>Convidar pessoas</Text>
+          <Text style={styles.title}>{t('tripInvite.invitePeople')}</Text>
           {tripTitle ? (
             <Text style={styles.subtitle} numberOfLines={1}>para {tripTitle}</Text>
           ) : null}
@@ -256,7 +258,7 @@ export default function TripInviteScreen({ route, navigation }) {
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Nome ou usuário do Journi"
+            placeholder={t('tripInvite.searchPlaceholder')}
             placeholderTextColor={trip.inkFaint}
             style={styles.searchInput}
             autoCapitalize="none"
@@ -270,7 +272,7 @@ export default function TripInviteScreen({ route, navigation }) {
 
         {query.trim().length >= MIN_BUSCA ? (
           <View style={styles.results}>
-            <Text style={styles.sectionLabel}>Resultados</Text>
+            <Text style={styles.sectionLabel}>{t('tripInvite.results')}</Text>
 
             {!searching && !results.length ? (
               <Text style={styles.emptyText}>
@@ -289,7 +291,7 @@ export default function TripInviteScreen({ route, navigation }) {
 
                   <View style={styles.resultText}>
                     <Text style={styles.resultName} numberOfLines={1}>
-                      {perfil.display_name || perfil.username || 'Viajante'}
+                      {perfil.display_name || perfil.username || t('tripInvite.unnamed')}
                     </Text>
                     <Text style={styles.resultHandle} numberOfLines={1}>
                       @{perfil.username}
@@ -302,7 +304,7 @@ export default function TripInviteScreen({ route, navigation }) {
                     // a duvida de se o toque falhou.
                     <View style={styles.invitedChip}>
                       <Ionicons name="checkmark" size={12} color={trip.d2} />
-                      <Text style={styles.invitedText}>Convidado</Text>
+                      <Text style={styles.invitedText}>{t('tripInvite.invited')}</Text>
                     </View>
                   ) : (
                     <TouchableOpacity
@@ -315,7 +317,7 @@ export default function TripInviteScreen({ route, navigation }) {
                       {enviando ? (
                         <ActivityIndicator size="small" color="#FFFFFF" />
                       ) : (
-                        <Text style={styles.inviteChipText}>Convidar</Text>
+                        <Text style={styles.inviteChipText}>{t('tripInvite.invite')}</Text>
                       )}
                     </TouchableOpacity>
                   )}
@@ -327,7 +329,7 @@ export default function TripInviteScreen({ route, navigation }) {
 
         <View style={styles.divider}>
           <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>ou compartilhe um link</Text>
+          <Text style={styles.dividerText}>{t('tripInvite.orShareLink')}</Text>
           <View style={styles.dividerLine} />
         </View>
 
@@ -337,7 +339,7 @@ export default function TripInviteScreen({ route, navigation }) {
               <Ionicons name="link" size={17} color={trip.accentSoft} />
             </View>
             <View style={styles.linkHeadText}>
-              <Text style={styles.linkTitle}>Link de convite</Text>
+              <Text style={styles.linkTitle}>{t('tripInvite.linkTitle')}</Text>
               <Text style={styles.linkDescription}>
                 Qualquer pessoa com o link entra como participante. Expira em 30 dias.
               </Text>
@@ -352,7 +354,7 @@ export default function TripInviteScreen({ route, navigation }) {
                   onPress={copiar}
                   style={styles.copyButton}
                   accessibilityRole="button"
-                  accessibilityLabel="Copiar link de convite"
+                  accessibilityLabel={t('tripInvite.copyLinkLabel')}
                 >
                   <Ionicons
                     name={copiado ? 'checkmark' : 'copy-outline'}
@@ -360,14 +362,14 @@ export default function TripInviteScreen({ route, navigation }) {
                     color={copiado ? trip.d2 : trip.ink}
                   />
                   <Text style={[styles.copyText, copiado && { color: trip.d2 }]}>
-                    {copiado ? 'Copiado' : 'Copiar'}
+                    {copiado ? t('tripInvite.copied') : t('tripInvite.copy_')}
                   </Text>
                 </TouchableOpacity>
               </View>
 
               <TouchableOpacity onPress={compartilhar} style={styles.shareRow} accessibilityRole="button">
                 <Ionicons name="share-social-outline" size={14} color={trip.accentSoft} />
-                <Text style={styles.shareText}>Compartilhar em outro app</Text>
+                <Text style={styles.shareText}>{t('tripInvite.shareOtherApp')}</Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -382,7 +384,7 @@ export default function TripInviteScreen({ route, navigation }) {
               ) : (
                 <>
                   <Ionicons name="add" size={16} color="#FFFFFF" />
-                  <Text style={styles.generateText}>Gerar link de convite</Text>
+                  <Text style={styles.generateText}>{t('tripInvite.generateLink')}</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -395,8 +397,8 @@ export default function TripInviteScreen({ route, navigation }) {
         <View style={styles.roleNotice}>
           <Ionicons name="star" size={16} color={trip.gold} />
           <Text style={styles.roleNoticeText}>
-            Quem entrar poderá <Text style={styles.roleNoticeStrong}>editar o roteiro</Text>.
-            Só você pode alterar isso depois.
+            {t('tripInvite.roleNoticePrefix')}<Text style={styles.roleNoticeStrong}>{t('tripInvite.roleNoticeStrong')}</Text>
+            {t('tripInvite.roleNoticeSuffix')}
           </Text>
         </View>
       </ScrollView>

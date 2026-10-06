@@ -34,7 +34,7 @@ import { badgeCountries, planPointCountries } from '../../components/map/planBad
 import { buildDayInfo } from '../../components/map/planDayStrip';
 import CountryDetailModal from '../../components/map/CountryDetailModal';
 import CountryFlag from '../../components/CountryFlag';
-import { getCountryNamePtByCode } from '../../utils/countryUtils';
+import { getCountryName } from '../../utils/countryUtils';
 import GuidedFirstCountryCard from '../../components/onboarding/GuidedFirstCountryCard';
 import FirstCountryCelebration from '../../components/onboarding/FirstCountryCelebration';
 import { useOnboarding } from '../../context/OnboardingContext';
@@ -48,6 +48,7 @@ import {
 } from '../../utils/geoSearch';
 import { planDays } from '../../components/map/planRoute';
 import { walkingDirectionsUrl } from '../../utils/mapsLink';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 // Denominador de partida do pill, usado só enquanto o GeoJSON não chegou. Assim
 // que `countries` carrega, o total passa a ser o tamanho real da lista — é o
@@ -61,6 +62,7 @@ const TOTAL_COUNTRIES = 199;
 const SEARCH_FLY_ZOOM = 4;
 
 export default function GlobeScreen({ navigation }) {
+  const { t, tag } = useLocale();
   const isFocused = useIsFocused();
   const [map, setMap] = useState(null);
   // Dentro das bottom tabs o inset de baixo já é consumido pela própria tab bar
@@ -196,9 +198,9 @@ export default function GlobeScreen({ navigation }) {
     () => buildDayInfo(
       planPoints,
       activePlan?.plan_data,
-      planCountryCodes.map((code) => (code ? getCountryNamePtByCode(code, '') : ''))
+      planCountryCodes.map((code) => (code ? getCountryName(code, '', tag) : ''))
     ),
-    [planPoints, activePlan, planCountryCodes]
+    [planPoints, activePlan, planCountryCodes, tag]
   );
 
   // Com roteiro aplicado, só os países por onde ele passa mantêm bandeira no
@@ -360,7 +362,7 @@ export default function GlobeScreen({ navigation }) {
   }, [handleDismissPlanSelection]);
 
   const handleNativeMapFailure = useCallback(async (message) => {
-    setNativeMapError(message || 'Não foi possível carregar o globo');
+    setNativeMapError(message || t('globe.loadFailed'));
   }, []);
 
   // A lista de países calculada dentro da WebView. Chega uma vez por sessão e
@@ -414,6 +416,7 @@ export default function GlobeScreen({ navigation }) {
       ) : isFocused ? (
         <View style={styles.mapWrapper}>
           <NativeGlobe
+            tag={tag}
             visitedCodes={visitedCodes}
             wishlistCodes={wishlistCodes}
             focusCountry={nativeFocusCountry}
@@ -449,13 +452,13 @@ export default function GlobeScreen({ navigation }) {
               style={styles.assistantBar}
             >
               <Ionicons name="sparkles-outline" size={18} color="#6C2BD9" />
-              <Text style={styles.assistantText}>Planejar viagem com IA...</Text>
+              <Text style={styles.assistantText}>{t('globe.planWithAI')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={() => setShowCountrySearch(true)}
               style={styles.iconBtn}
-              accessibilityLabel="Pesquisar país"
+              accessibilityLabel={t('globe.searchLabel')}
             >
               <Ionicons name="search" size={20} color="#FFFFFF" />
             </TouchableOpacity>
@@ -468,11 +471,11 @@ export default function GlobeScreen({ navigation }) {
                 autoFocus
                 value={countrySearch}
                 onChangeText={setCountrySearch}
-                placeholder="Pesquisar país..."
+                placeholder={t('globe.searchPlaceholder')}
                 placeholderTextColor="#555a78"
                 style={styles.searchInput}
               />
-              <TouchableOpacity onPress={closeCountrySearch} accessibilityLabel="Fechar busca">
+              <TouchableOpacity onPress={closeCountrySearch} accessibilityLabel={t('globe.closeSearchLabel')}>
                 <Ionicons name="close" size={20} color="rgba(255,255,255,0.6)" />
               </TouchableOpacity>
             </View>
@@ -497,7 +500,7 @@ export default function GlobeScreen({ navigation }) {
                   ))
                 ) : (
                   <View style={styles.searchResultItem}>
-                    <Text style={styles.searchResultText}>Nenhum país encontrado</Text>
+                    <Text style={styles.searchResultText}>{t('globe.noCountryFound')}</Text>
                   </View>
                 )}
               </View>
@@ -563,7 +566,7 @@ export default function GlobeScreen({ navigation }) {
       {(loading || error || nativeMapError) && (
         <View style={[styles.notice, planDayList.length > 1 && styles.noticeBelowTabs]}>
           <Text style={error || nativeMapError ? styles.error : styles.statText}>
-            {error || nativeMapError || 'Carregando países…'}
+            {error || nativeMapError || t('globe.loadingCountries')}
           </Text>
         </View>
       )}

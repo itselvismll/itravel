@@ -17,19 +17,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES } from '../utils/constants';
 import { getCountryPhotos, deletePhoto, setCoverPhoto, removeCoverPhoto, getFavoritePhotos, addFavorite, removeFavorite, updatePhotoPrivacy } from '../services/photoService';
 import { confirm, notify } from '../utils/dialogs';
+import { useLocale } from '../i18n/LocaleProvider';
+import { formatDayMonthYear } from '../utils/formatDate';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const COLUMN_GAP = 12;
 const NUM_COLUMNS = 2;
 const PHOTO_SIZE = (SCREEN_WIDTH - SIZES.padding * 2 - COLUMN_GAP) / NUM_COLUMNS;
 
-function formatDate(dateStr) {
-  if (!dateStr) return '';
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
 export default function PhotoGallery({ countryCode, countryName, userId, coverPhotoId: initialCoverPhotoId, onCoverPhotoSet, scrollToCity, onScrollToCityDone, onStatsUpdate }) {
+  const { t, tag } = useLocale();
   const [photos, setPhotos] = useState([]);
   const [photosByCity, setPhotosByCity] = useState({});
   const [loading, setLoading] = useState(true);
@@ -60,7 +57,7 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
 
       const grouped = {};
       result.data.forEach(photo => {
-        const key = photo.city || 'Sem cidade';
+        const key = photo.city || t('photoGallery.noCity');
         if (!grouped[key]) grouped[key] = [];
         grouped[key].push(photo);
       });
@@ -74,7 +71,7 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
         });
       }
     } else {
-      Alert.alert('Erro', 'Não foi possível carregar as fotos.');
+      Alert.alert(t('photoGallery.loadFailedTitle'), t('photoGallery.loadFailed'));
     }
 
     setLoading(false);
@@ -100,7 +97,7 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
   }, [scrollToCity]);
 
   const handleDelete = async (photoId, photoPath) => {
-    const confirmacao = await confirm('Excluir foto', 'Tem certeza que deseja deletar esta foto?');
+    const confirmacao = await confirm(t('photoGallery.deleteConfirmTitle'), t('photoGallery.deleteConfirmMessage'));
     if (!confirmacao) return;
 
     setDeletingPhotoId(photoId);
@@ -108,10 +105,10 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
       const result = await deletePhoto(photoId, photoPath);
       if (result.success) {
         setFullscreenPhoto(null);
-        notify('Foto excluída', 'Foto deletada com sucesso!');
+        notify(t('photoGallery.deleteDoneTitle'), t('photoGallery.deleteDoneMessage'));
         await loadPhotos();
       } else {
-        notify('Erro ao excluir', result.error || 'Não foi possível deletar a foto.');
+        notify(t('photoGallery.deleteFailedTitle'), result.error || t('photoGallery.deleteFailedMessage'));
       }
     } finally {
       setDeletingPhotoId(null);
@@ -120,26 +117,26 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
 
   const handleSetCover = async (photoId, photoUrl) => {
     if (photoId === coverPhotoId) {
-      const confirmacao = await confirm('Remover capa', 'Remover esta foto como capa do país?');
+      const confirmacao = await confirm(t('photoGallery.removeCoverConfirmTitle'), t('photoGallery.removeCoverConfirmMessage'));
       if (!confirmacao) return;
 
       const result = await removeCoverPhoto(userId, countryCode);
       if (result.success) {
-        notify('Capa removida', 'Foto removida como capa!');
+        notify(t('photoGallery.removeCoverDoneTitle'), t('photoGallery.removeCoverDoneMessage'));
         setCoverPhotoId(null);
         if (onCoverPhotoSet) onCoverPhotoSet(null, null);
         loadPhotos();
       } else {
-        Alert.alert('Erro', 'Não foi possível remover a foto de capa.');
+        Alert.alert(t('photoGallery.loadFailedTitle'), t('photoGallery.removeCoverFailed'));
       }
       return;
     }
 
-    const confirmacao = await confirm('Definir capa', 'Definir esta foto como capa do país no mapa?');
+    const confirmacao = await confirm(t('photoGallery.setCoverConfirmTitle'), t('photoGallery.setCoverConfirmMessage'));
     if (!confirmacao) return;
 
     if (coverPhotoId && coverPhotoId !== photoId) {
-      const substituir = await confirm('Substituir capa', 'Já existe uma foto de capa. Deseja substituir pela nova?');
+      const substituir = await confirm(t('photoGallery.replaceCoverConfirmTitle'), t('photoGallery.replaceCoverConfirmMessage'));
       if (!substituir) return;
     }
 
@@ -149,9 +146,9 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
       setCoverPhotoId(photoId);
       if (onCoverPhotoSet) onCoverPhotoSet(photoId, photoUrl);
       loadPhotos();
-      notify('Capa definida', 'Foto definida como capa!');
+      notify(t('photoGallery.setCoverDoneTitle'), t('photoGallery.setCoverDoneMessage'));
     } else {
-      Alert.alert('Erro', 'Não foi possível definir a foto de capa.');
+      Alert.alert(t('photoGallery.loadFailedTitle'), t('photoGallery.setCoverFailed'));
     }
   };
 
@@ -240,7 +237,7 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
         )}
 
         <View style={styles.photoFooter}>
-          <Text style={styles.photoDate}>{formatDate(item.created_at)}</Text>
+          <Text style={styles.photoDate}>{formatDayMonthYear(item.created_at, tag)}</Text>
           <TouchableOpacity
             style={[
               styles.privacyBtn,
@@ -254,7 +251,7 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
               color="white"
             />
             <Text style={styles.privacyBtnText}>
-              {item.is_public ? 'Público' : 'Privado'}
+              {item.is_public ? t('photoGallery.public') : t('photoGallery.private')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -303,7 +300,7 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Carregando fotos...</Text>
+        <Text style={styles.loadingText}>{t('photoGallery.loading')}</Text>
       </View>
     );
   }
@@ -338,7 +335,7 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
         {photos.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Ionicons name="images-outline" size={52} color={COLORS.lightGray} />
-            <Text style={styles.emptyTitle}>Sem fotos ainda</Text>
+            <Text style={styles.emptyTitle}>{t('photoGallery.empty')}</Text>
             <Text style={styles.emptySubtitle}>Adicione fotos da sua visita a {countryName}!</Text>
           </View>
         ) : (
@@ -349,9 +346,9 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
               <View style={styles.citySection}>
                 <View style={styles.citySectionHeader}>
                   <Ionicons name="heart" size={14} color="#FF3366" />
-                  <Text style={styles.citySectionTitle}>Favoritos</Text>
+                  <Text style={styles.citySectionTitle}>{t('photoGallery.favoritesSection')}</Text>
                   <Text style={styles.citySectionCount}>
-                    {favoritesInCountry.length} foto{favoritesInCountry.length > 1 ? 's' : ''}
+                    {t('common.plural.photo', { count: favoritesInCountry.length })}
                   </Text>
                 </View>
                 {chunkArray(favoritesInCountry, NUM_COLUMNS).map((row, i) => (
@@ -372,7 +369,7 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
                   <Text style={styles.cityTitle}>{city}</Text>
                 </View>
                 <Text style={styles.cityPhotoCount}>
-                  {cityPhotos.length} {cityPhotos.length === 1 ? 'foto' : 'fotos'}
+                  {t('common.plural.photo', { count: cityPhotos.length })}
                 </Text>
               </View>
               <ScrollView
@@ -425,7 +422,7 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
                     >
                       <Ionicons name={photo.is_public ? 'earth' : 'lock-closed'} size={9} color="white" />
                       <Text style={{ color: 'white', fontSize: 8, fontWeight: '600' }}>
-                        {photo.is_public ? 'Público' : 'Privado'}
+                        {photo.is_public ? t('photoGallery.public') : t('photoGallery.private')}
                       </Text>
                     </TouchableOpacity>
                   </TouchableOpacity>
@@ -457,7 +454,7 @@ export default function PhotoGallery({ countryCode, countryName, userId, coverPh
               style={styles.fullscreenDelete}
               onPress={() => handleDelete(fullscreenPhoto.id, fullscreenPhoto.photo_path)}
               disabled={deletingPhotoId === fullscreenPhoto.id}
-              accessibilityLabel="Excluir esta foto"
+              accessibilityLabel={t('photoGallery.deleteLabel')}
             >
               {deletingPhotoId === fullscreenPhoto.id ? (
                 <ActivityIndicator size="small" color="white" />

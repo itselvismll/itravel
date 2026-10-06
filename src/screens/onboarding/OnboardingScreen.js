@@ -26,22 +26,23 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import OnboardingGlobe from '../../components/onboarding/OnboardingGlobe';
 import { COLORS } from '../../utils/constants';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 const SLIDES = [
   {
     key: 'mapa',
-    title: 'Seu mundo em um mapa',
-    subtitle: 'Marque os países que já visitou e veja seu globo ganhar cor.',
+    titleKey: 'onboarding.slides.map.title',
+    subtitleKey: 'onboarding.slides.map.subtitle',
   },
   {
     key: 'memorias',
-    title: 'Guarde suas memórias',
-    subtitle: 'Adicione fotos das cidades por onde você passou.',
+    titleKey: 'onboarding.slides.memories.title',
+    subtitleKey: 'onboarding.slides.memories.subtitle',
   },
   {
     key: 'proxima',
-    title: 'Planeje a próxima',
-    subtitle: 'Monte sua wishlist e crie roteiros com ajuda da IA.',
+    titleKey: 'onboarding.slides.next.title',
+    subtitleKey: 'onboarding.slides.next.subtitle',
   },
 ];
 
@@ -54,6 +55,7 @@ const WIDE_LAYOUT_BREAKPOINT = 900;
  * @param {{ onFinish: () => void, onSkip: () => void, saving?: boolean }} props
  */
 export default function OnboardingScreen({ onFinish, onSkip, saving = false }) {
+  const { t } = useLocale();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef(null);
@@ -115,7 +117,7 @@ export default function OnboardingScreen({ onFinish, onSkip, saving = false }) {
       {/* "Pular" discreto, no canto oposto ao avanço. */}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Pular a apresentação"
+        accessibilityLabel={t('onboarding.skipLabel')}
         onPress={onSkip}
         disabled={saving}
         style={({ pressed }) => [
@@ -123,7 +125,7 @@ export default function OnboardingScreen({ onFinish, onSkip, saving = false }) {
           { top: insets.top + 14, right: 20, opacity: pressed ? 0.6 : 1 },
         ]}
       >
-        <Text style={styles.skipLabel}>Pular</Text>
+        <Text style={styles.skipLabel}>{t('common.actions.skip')}</Text>
       </Pressable>
 
       <ScrollView
@@ -164,10 +166,10 @@ export default function OnboardingScreen({ onFinish, onSkip, saving = false }) {
                   },
                 ]}
               >
-                {slide.title}
+                {t(slide.titleKey)}
               </Text>
               <Text style={[styles.subtitle, { fontSize: isWide ? 18 : 16 }]}>
-                {slide.subtitle}
+                {t(slide.subtitleKey)}
               </Text>
             </View>
           </View>
@@ -202,7 +204,7 @@ export default function OnboardingScreen({ onFinish, onSkip, saving = false }) {
 
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={isLast ? 'Começar a usar o Journi' : 'Próximo slide'}
+          accessibilityLabel={isLast ? t('onboarding.startUsingLabel') : t('onboarding.nextSlideLabel')}
           onPress={handleAdvance}
           disabled={saving}
           style={(state) => [
@@ -219,7 +221,7 @@ export default function OnboardingScreen({ onFinish, onSkip, saving = false }) {
             <ActivityIndicator color={COLORS.white} size="small" />
           ) : (
             <>
-              <Text style={styles.ctaLabel}>{isLast ? 'Começar' : 'Continuar'}</Text>
+              <Text style={styles.ctaLabel}>{isLast ? t('onboarding.start') : t('onboarding.continue_')}</Text>
               <Ionicons name="arrow-forward" size={17} color={COLORS.white} />
             </>
           )}

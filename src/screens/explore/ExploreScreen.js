@@ -10,7 +10,7 @@ import { getCurrentUser } from '../../services/supabase';
 import {
   ALPHA3_TO_ALPHA2,
   getAlpha3,
-  getCountryNamePtByCode,
+  getCountryName,
 } from '../../utils/countryUtils';
 import {
   searchCountries,
@@ -27,6 +27,8 @@ import { useUpload } from '../../context/UploadContext';
 import { COUNTRIES_STATIC } from '../../data/countriesStaticData';
 import { confirm, notify } from '../../utils/dialogs';
 import { getTourismImage } from '../../services/tourismImageService';
+import { useLocale } from '../../i18n/LocaleProvider';
+import { formatDayMonthPadded } from '../../utils/formatDate';
 
 const MOCK_USERS = [
   { id: '1', username: 'maria_viaja', display_name: 'Maria', avatar_url: null, countries: 12 },
@@ -60,6 +62,7 @@ const getSeasonalBoost = countryCode => {
 };
 
 export default function ExploreScreen({ navigation }) {
+  const { t, tag } = useLocale();
   // A tab bar flutua SOBRE a lista e não reserva espaço no layout: sem esta
   // folga o botão "Seguir" dos últimos usuários nasce atrás dela, invisível e
   // sem receber toque.
@@ -90,12 +93,19 @@ export default function ExploreScreen({ navigation }) {
     if (refreshTrigger > 0) loadData();
   }, [refreshTrigger]);
 
+  // Separado do loadData: o nome do país depende só do idioma, não de rede, e
+  // reaproveitar o loadData inteiro a cada troca de idioma refaria chamadas
+  // (seguidores, sugestões) que não têm nada a ver com nome de país.
+  useEffect(() => {
+    setAllCountries(buildFallbackCountries());
+  }, [tag]);
+
   const loadData = async () => {
     setLoading(true);
     const user = await getCurrentUser();
     setCurrentUser(user);
 
-    const parallelTasks = [loadPersonalizedExplore(user), loadAllCountries()];
+    const parallelTasks = [loadPersonalizedExplore(user)];
     if (user) {
       parallelTasks.push(
         getFollowing(user.id).then(r => { if (r.success) setFollowing(r.data); }),
@@ -112,13 +122,9 @@ export default function ExploreScreen({ navigation }) {
       .map(([code, country]) => ({
         code,
         nameEn: country.name,
-        name: getCountryNamePtByCode(code, country.name),
+        name: getCountryName(code, country.name, tag),
       }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-  const loadAllCountries = () => {
-    setAllCountries(buildFallbackCountries());
-  };
+      .sort((a, b) => a.name.localeCompare(b.name, tag));
 
   const loadPersonalizedExplore = async (user) => {
     const [photosResult, interactionsResult, wishlistResult, followsResult] = await Promise.all([
@@ -140,7 +146,7 @@ export default function ExploreScreen({ navigation }) {
     photos.forEach(photo => {
       const code = getAlpha3(photo.country_code)?.toUpperCase();
       if (!code) return;
-      if (!countries[code]) countries[code] = { country_code: code, country_name: photo.country_name, count: 0, totalRating: 0, ratingCount: 0, users: new Set(), score: interactionScores[code] || 0, coverUrl: photo.photo_url, imageSource: 'Comunidade Journi' };
+      if (!countries[code]) countries[code] = { country_code: code, country_name: photo.country_name, count: 0, totalRating: 0, ratingCount: 0, users: new Set(), score: interactionScores[code] || 0, coverUrl: photo.photo_url, imageSource: t('explore.communityCredit') };
       const entry = countries[code];
       entry.count += 1;
       entry.users.add(photo.user_id);
@@ -152,7 +158,7 @@ export default function ExploreScreen({ navigation }) {
       if (countries[code]) return;
       countries[code] = {
         country_code: code,
-        country_name: getCountryNamePtByCode(code, COUNTRIES_STATIC[code]?.name || code),
+        country_name: getCountryName(code, COUNTRIES_STATIC[code]?.name || code, tag),
         count: 0,
         totalRating: 0,
         ratingCount: 0,
@@ -241,7 +247,7 @@ export default function ExploreScreen({ navigation }) {
       : await followUser(currentUser.id, userId);
 
     if (!result.success) {
-      Alert.alert('Erro', result.error || 'Não foi possível atualizar este perfil.');
+      Alert.alert(t('explore.updateProfileFailedTitle'), result.error || t('explore.updateProfileFailed'));
       return;
     }
 
@@ -253,8 +259,8 @@ export default function ExploreScreen({ navigation }) {
   const handleDeleteCountryPhoto = async photo => {
     if (!photo || photo.user_id !== currentUser?.id || deletingPhotoId) return;
     const accepted = await confirm(
-      'Excluir publicação',
-      'A foto, a legenda e os comentários serão excluídos permanentemente. Deseja continuar?'
+      t('post.delete.confirmTitle'),
+      t('post.delete.confirmMessage')
     );
     if (!accepted) return;
 
@@ -262,12 +268,12 @@ export default function ExploreScreen({ navigation }) {
     const result = await deletePhoto(photo.id, photo.photo_path);
     setDeletingPhotoId(null);
     if (!result.success) {
-      notify('Erro ao excluir', result.error || 'Não foi possível excluir esta publicação.');
+      notify(t('explore.deletePostFailedTitle'), result.error || t('explore.deletePostFailed'));
       return;
     }
     setCountryPhotos(current => current.filter(item => item.id !== photo.id));
     setFullscreenPhoto(null);
-    notify('Publicação excluída', 'Sua foto foi removida.');
+    notify(t('explore.deletePostDoneTitle'), t('explore.deletePostDoneMessage'));
     loadPersonalizedExplore(currentUser);
   };
 
@@ -317,13 +323,13 @@ export default function ExploreScreen({ navigation }) {
     <View style={styles.container}>
       {/* HEADER FIXO */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Explorar</Text>
-        <Text style={styles.headerSub}>Descubra destinos e viajantes</Text>
+        <Text style={styles.headerTitle}>{t('explore.title')}</Text>
+        <Text style={styles.headerSub}>{t('explore.subtitle')}</Text>
         <View style={styles.searchBox}>
           <Ionicons name="search-outline" size={16} color="rgba(255,255,255,0.4)" />
           <TextInput
             style={styles.searchInput}
-            placeholder="Buscar destinos ou pessoas..."
+            placeholder={t('explore.searchPlaceholder')}
             placeholderTextColor="rgba(255,255,255,0.3)"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -350,7 +356,7 @@ export default function ExploreScreen({ navigation }) {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.searchResultText}>{traveler.display_name || traveler.username}</Text>
                   {traveler.matchedCountry && (
-                    <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>Visitou {traveler.matchedCountry}</Text>
+                    <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>{t('explore.visited', { country: traveler.matchedCountry })}</Text>
                   )}
                 </View>
                 <TouchableOpacity
@@ -358,7 +364,7 @@ export default function ExploreScreen({ navigation }) {
                   onPress={() => handleFollowToggle(traveler.id)}
                 >
                   <Text style={[styles.followBtnText, following.includes(traveler.id) && styles.followBtnTextActive]}>
-                    {following.includes(traveler.id) ? 'Seguindo' : 'Seguir'}
+                    {following.includes(traveler.id) ? t('explore.following') : t('explore.follow')}
                   </Text>
                 </TouchableOpacity>
               </TouchableOpacity>
@@ -395,7 +401,7 @@ export default function ExploreScreen({ navigation }) {
             {/* SUGERIDOS PARA VOCÊ */}
             {suggestedTravelers.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>SUGERIDOS PARA VOCÊ</Text>
+                <Text style={styles.sectionTitle}>{t('explore.suggestedSection')}</Text>
                 <FlatList
                   data={suggestedTravelers}
                   horizontal
@@ -418,7 +424,7 @@ export default function ExploreScreen({ navigation }) {
                         onPress={() => handleFollowToggle(item.id)}
                       >
                         <Text style={[styles.followBtnText, following.includes(item.id) && styles.followBtnTextActive]}>
-                          {following.includes(item.id) ? 'Seguindo' : 'Seguir'}
+                          {following.includes(item.id) ? t('explore.following') : t('explore.follow')}
                         </Text>
                       </TouchableOpacity>
                     </TouchableOpacity>
@@ -430,7 +436,7 @@ export default function ExploreScreen({ navigation }) {
             {/* DESTINOS POPULARES */}
             {popularCountries.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>DESTINOS EM ALTA NESTA ÉPOCA</Text>
+                <Text style={styles.sectionTitle}>{t('explore.trendingSection')}</Text>
                 <View style={styles.destGrid}>
                   {popularCountries.map((country, i) => (
                     <TouchableOpacity
@@ -451,13 +457,13 @@ export default function ExploreScreen({ navigation }) {
                         style={styles.destinationFlag}
                       />
                       <Text style={styles.destName} numberOfLines={1}>
-                        {getCountryNamePtByCode(country.country_code, country.country_name)}
+                        {getCountryName(country.country_code, country.country_name, tag)}
                       </Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={styles.destCount}>
                           {country.count
-                            ? `${country.count} ${country.count === 1 ? 'foto' : 'fotos'}`
-                            : 'Tendência sazonal'}
+                            ? t('common.plural.photo', { count: country.count })
+                            : t('explore.seasonalTrend')}
                         </Text>
                         {country.avgRating && (
                           <View style={styles.destRatingRow}>
@@ -475,7 +481,7 @@ export default function ExploreScreen({ navigation }) {
 
             {/* FOTOS PERSONALIZADAS */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>FOTOS RECOMENDADAS PARA VOCÊ</Text>
+              <Text style={styles.sectionTitle}>{t('explore.recommendedPhotosSection')}</Text>
               {recentPhotos.map((photo) => (
                 <TouchableOpacity
                   key={photo.id}
@@ -499,7 +505,7 @@ export default function ExploreScreen({ navigation }) {
                         <Text style={styles.recentAuthorHandle}>@{photo.profiles?.username}</Text>
                       </View>
                       <Text style={styles.recentDate}>
-                        {new Date(photo.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                        {formatDayMonthPadded(photo.created_at, tag)}
                       </Text>
                     </View>
 
@@ -532,7 +538,7 @@ export default function ExploreScreen({ navigation }) {
             {/* VIAJANTES */}
             {(discoverUsers.length > 0 || MOCK_USERS.length > 0) && (
             <View style={styles.card}>
-              <Text style={styles.sectionTitle}>VIAJANTES</Text>
+              <Text style={styles.sectionTitle}>{t('explore.travelersSection')}</Text>
               {(discoverUsers.length > 0 ? discoverUsers : MOCK_USERS).map((user, i) => {
                 const list = discoverUsers.length > 0 ? discoverUsers : MOCK_USERS;
                 return (
@@ -555,7 +561,7 @@ export default function ExploreScreen({ navigation }) {
                     onPress={() => handleFollowToggle(user.id)}
                   >
                     <Text style={[styles.followBtnText, following.includes(user.id) && styles.followBtnTextActive]}>
-                      {following.includes(user.id) ? 'Seguindo' : 'Seguir'}
+                      {following.includes(user.id) ? t('explore.following') : t('explore.follow')}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -589,9 +595,10 @@ export default function ExploreScreen({ navigation }) {
               )}
               <Text style={styles.modalHeaderTitle}>
                 {selectedCountry
-                  ? getCountryNamePtByCode(
+                  ? getCountryName(
                       selectedCountry.country_code,
-                      selectedCountry.country_name
+                      selectedCountry.country_name,
+                      tag
                     )
                   : ''}
               </Text>
@@ -645,7 +652,7 @@ export default function ExploreScreen({ navigation }) {
                       <Avatar profile={photo.profiles} size={28} />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.photoCardName}>
-                          {photo.profiles?.display_name || photo.profiles?.username || 'Viajante'}
+                          {photo.profiles?.display_name || photo.profiles?.username || t('explore.unnamed')}
                         </Text>
                         <Text style={styles.photoCardHandle}>
                           @{photo.profiles?.username || ''}
@@ -653,7 +660,7 @@ export default function ExploreScreen({ navigation }) {
                       </View>
                       <Text style={styles.photoCardDate}>
                         {photo.created_at
-                          ? new Date(photo.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+                          ? formatDayMonthPadded(photo.created_at, tag)
                           : ''}
                       </Text>
                     </View>
@@ -707,7 +714,7 @@ export default function ExploreScreen({ navigation }) {
               style={styles.fullscreenDelete}
               onPress={() => handleDeleteCountryPhoto(fullscreenPhoto)}
               disabled={deletingPhotoId === fullscreenPhoto?.id}
-              accessibilityLabel="Excluir minha publicação"
+              accessibilityLabel={t('explore.deletePostLabel')}
             >
               {deletingPhotoId === fullscreenPhoto?.id
                 ? <ActivityIndicator size="small" color="#fff" />

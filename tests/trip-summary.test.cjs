@@ -350,7 +350,7 @@ test('convite pendente tem como ser aceito, e some o aviso que aponta para o lad
 
   // O banner existe, e é o status do participante que o liga.
   assert.match(tela, /abilities\.status === 'pending'/);
-  assert.match(tela, /Você foi convidado/);
+  assert.match(tela, /assistantResult.invited/);
   // E ele chama a RPC, e não um update direto em trip_members.
   assert.match(tela, /acceptTripInvite\(planId\)/);
   assert.doesNotMatch(tela, /from\('trip_members'\)/);

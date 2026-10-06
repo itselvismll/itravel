@@ -104,6 +104,7 @@ import {
   stepDay,
 } from './planDayStrip';
 import { DAY_PILL_PITCH, stripScrollXForDay } from './planDayFocus';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 /**
  * @param {{
@@ -133,6 +134,7 @@ export default function PlanDayTabs({
   deselectable = true,
   style,
 }) {
+  const { t } = useLocale();
   const step = useCallback(
     (direction) => {
       const next = stepDay(days, selectedDay, direction);
@@ -184,7 +186,7 @@ export default function PlanDayTabs({
     <View style={[styles.container, style]} pointerEvents="box-none">
       <View style={styles.row}>
         {withArrows ? (
-          <Arrow name="chevron-back" label="Dia anterior" onPress={() => step(-1)} />
+          <Arrow name="chevron-back" label={t('planDayTabs.previousDay')} onPress={() => step(-1)} />
         ) : null}
 
         <ScrollView
@@ -258,7 +260,7 @@ export default function PlanDayTabs({
         </ScrollView>
 
         {withArrows ? (
-          <Arrow name="chevron-forward" label="Próximo dia" onPress={() => step(1)} />
+          <Arrow name="chevron-forward" label={t('planDayTabs.nextDay')} onPress={() => step(1)} />
         ) : null}
       </View>
 

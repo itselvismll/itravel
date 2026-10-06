@@ -24,6 +24,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COLORS } from '../../utils/constants';
 import { checkUsernameAvailable } from '../../services/profileService';
+import { useLocale } from '../../i18n/LocaleProvider';
 import {
   USERNAME_MAX_LENGTH,
   normalizeUsername,
@@ -43,6 +44,7 @@ const AVAILABILITY_DEBOUNCE_MS = 400;
  * }} props
  */
 export default function ChooseUsernameScreen({ userId, suggestion = '', saving = false, onConfirm }) {
+  const { t } = useLocale();
   const insets = useSafeAreaInsets();
   const [username, setUsername] = useState(() => normalizeUsername(suggestion));
   const [available, setAvailable] = useState(/** @type {boolean | null} */ (null));
@@ -111,12 +113,12 @@ export default function ChooseUsernameScreen({ userId, suggestion = '', saving =
 
   const hint = (() => {
     if (submitError) return { text: submitError, tone: 'error' };
-    if (!username) return { text: 'De 3 a 10 caracteres', tone: 'muted' };
+    if (!username) return { text: t('chooseUsername.hintDefault'), tone: 'muted' };
     if (!validation.valid) return { text: validation.error, tone: 'error' };
-    if (checking) return { text: 'Verificando...', tone: 'muted' };
-    if (available === true) return { text: 'Disponível', tone: 'ok' };
-    if (available === false) return { text: 'Já está em uso', tone: 'error' };
-    return { text: 'De 3 a 10 caracteres', tone: 'muted' };
+    if (checking) return { text: t('chooseUsername.checking'), tone: 'muted' };
+    if (available === true) return { text: t('chooseUsername.available'), tone: 'ok' };
+    if (available === false) return { text: t('chooseUsername.taken'), tone: 'error' };
+    return { text: t('chooseUsername.hintDefault'), tone: 'muted' };
   })();
 
   return (
@@ -125,7 +127,7 @@ export default function ChooseUsernameScreen({ userId, suggestion = '', saving =
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={[styles.content, { paddingTop: insets.top + 48, paddingBottom: insets.bottom + 32 }]}>
-        <Text style={styles.title}>Escolha seu username</Text>
+        <Text style={styles.title}>{t('chooseUsername.title')}</Text>
         <Text style={styles.subtitle}>
           É como as pessoas vão te encontrar no Journi. Você pode mudar depois no
           seu perfil.
@@ -141,7 +143,7 @@ export default function ChooseUsernameScreen({ userId, suggestion = '', saving =
             autoCorrect={false}
             autoFocus
             maxLength={USERNAME_MAX_LENGTH}
-            placeholder="seuusername"
+            placeholder={t('editProfile.fields.usernamePlaceholder')}
             placeholderTextColor="rgba(247,247,242,0.35)"
             onSubmitEditing={handleConfirm}
             returnKeyType="done"
@@ -180,7 +182,7 @@ export default function ChooseUsernameScreen({ userId, suggestion = '', saving =
           {saving ? (
             <ActivityIndicator size="small" color={COLORS.white} />
           ) : (
-            <Text style={styles.buttonLabel}>Continuar</Text>
+            <Text style={styles.buttonLabel}>{t('chooseUsername.continue_')}</Text>
           )}
         </Pressable>
       </View>

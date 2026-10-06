@@ -50,8 +50,12 @@ test('o cadastro abre a URL de verdade, e não um Alert com texto embutido', () 
   // Os Alert antigos não podem voltar.
   assert.doesNotMatch(register, /const showTerms =/);
   assert.doesNotMatch(register, /const showPrivacy =/);
-  // E o aceite continua obrigatório.
-  assert.match(register, /newErrors\.terms = 'Você deve aceitar os termos de uso'/);
+  // E o aceite continua obrigatório. A mensagem virou chave de tradução no lote
+  // de autenticação, então o que se cobra é a validação e a chave — o texto em
+  // português vive em pt.json, e `tests/i18n.test.cjs` garante que ela existe nos
+  // três idiomas.
+  assert.match(register, /newErrors\.terms = t\('auth\.fields\.termsRequired'\)/);
+  assert.match(register, /if \(!acceptedTerms\)/);
 });
 
 test('a política descreve a exclusão de conta como ela realmente será', () => {

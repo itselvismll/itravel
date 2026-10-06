@@ -38,6 +38,17 @@ const {
 
 const DIAS = Array.from({ length: 21 }, (_, i) => i + 1);
 
+// Resolve chave de tradução contra o pt.json do projeto, com interpolação
+// %{var} — o mínimo do i18n-js de que este componente depende.
+const ptJson = JSON.parse(
+  fs.readFileSync(path.join(root, 'src/i18n/locales/pt.json'), 'utf8')
+);
+const tDoPt = (chave, opcoes = {}) => {
+  const valor = String(chave).split('.').reduce((o, k) => (o ?? {})[k], ptJson);
+  if (typeof valor !== 'string') throw new Error('chave inexistente no pt.json: ' + chave);
+  return valor.replace(/%\{(\w+)\}/g, (_, nome) => String(opcoes[nome] ?? ''));
+};
+
 /** Monta a faixa e devolve o que o teste precisa para tocar nela. */
 const montarFaixa = (props) => {
   const rn = makeReactNative();
@@ -50,6 +61,7 @@ const montarFaixa = (props) => {
       './planRoute': { dayColor: (day) => `#00000${day % 10}` },
       './planDayStrip': planDayStrip,
       './planDayFocus': planDayFocus,
+      '../../i18n/LocaleProvider': { useLocale: () => ({ t: tDoPt }) },
     },
     { jsx: true }
   );
