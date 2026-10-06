@@ -119,13 +119,22 @@ do Supabase e do Mapbox estão lá dentro**, publica, e devolve o `.env.local` n
 lugar mesmo se algo falhar no meio. Faltando qualquer chave, ele aborta e não
 publica nada.
 
-Para conferir o que está no ar sem abrir o navegador:
+**Segundo incidente, 06/10/2026**: o globo voltou a mostrar países
+transparentes — bundle publicado com `EXPO_PUBLIC_MAPBOX_TOKEN` vazio — porque
+algum deploy saiu ao ar sem passar por este script (a checagem acima só vê o
+que o PRÓPRIO script exportou; não tem como pegar um deploy publicado por
+fora). Por isso agora, depois de publicar, `npm run deploy:web` também lê
+journi.expo.app de verdade e confere que o que está no ar tem as chaves — e
+isso também roda isolado, a qualquer hora:
 
 ```bash
-curl -s https://journi.expo.app/ | grep -o '_expo/static/js/web/[^"]*.js'
-# baixe esse arquivo e procure por SUPABASE_URL:
-# "https://..." = build com as chaves   |   void 0 = build sem as chaves
+npm run verify:prod   # lê journi.expo.app agora e confere as chaves no ar
 ```
+
+Um workflow agendado (`.github/workflows/verify-production.yml`) roda o mesmo
+comando a cada 6 horas e falha (com e-mail do GitHub para quem tem acesso ao
+repositório) se a produção ficar sem alguma chave — pega um deploy feito por
+fora deste script mesmo que ninguém rode `verify:prod` na mão.
 
 O rollback de um deploy ruim é feito pelo painel, promovendo o deployment
 anterior: <https://expo.dev/accounts/itselvismll/projects/journi/hosting/deployments>

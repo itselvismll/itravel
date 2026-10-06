@@ -1,0 +1,23 @@
+name: Verify Production Bundle
+
+# Pega o que a checagem pré-deploy (scripts/deploy-web.cjs) não consegue pegar:
+# um deploy publicado por fora dela. Lê https://journi.expo.app de verdade e
+# confere que o bundle no ar tem as chaves do Supabase e do Mapbox — nenhum
+# segredo é necessário, é leitura pública do que já está publicado. Ver
+# scripts/verify-production.cjs e o incidente de 06/10/2026 (globo com países
+# transparentes porque um deploy saiu com EXPO_PUBLIC_MAPBOX_TOKEN vazio).
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # A cada 6 horas
+  workflow_dispatch:          # Permite rodar manualmente também
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Verificar bundle publicado em journi.expo.app
+        run: node scripts/verify-production.cjs

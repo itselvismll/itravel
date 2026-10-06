@@ -25,17 +25,24 @@ que aquelas variáveis são obrigatórias: ele termina com exit 0, imprime
 publicar é o que impede isso de se repetir.
 
 ```bash
-npm run deploy:web           # exporta, verifica e publica em produção
+npm run deploy:web           # exporta, verifica, publica e confere o que ficou no ar
 npm run deploy:web -- --dry  # exporta e verifica, sem publicar
+npm run verify:prod          # só a conferência, contra o que está no ar AGORA
 ```
 
-Para conferir o que está no ar sem abrir o navegador, o bundle publicado é
-público:
+**Segundo incidente, 06/10/2026**: mesmo com o script acima existindo, o globo
+voltou a mostrar países transparentes — bundle publicado com
+`EXPO_PUBLIC_MAPBOX_TOKEN` vazio. A causa mais provável (não 100% provável pelo
+histórico disponível: deploy via `eas-cli` não deixa rastro no `git log`) é um
+deploy publicado por fora deste script — `expo export` + `eas deploy` direto no
+terminal, sem a checagem. A checagem pré-deploy só vê o que o PRÓPRIO script
+exportou; não tem como pegar um deploy feito de outro jeito.
 
-```bash
-curl -s https://journi.expo.app/ | grep -o '_expo/static/js/web/[^"]*\.js'
-# baixe esse arquivo e procure SUPABASE_URL: — `void 0` significa build sem chaves
-```
+Por isso `npm run deploy:web` agora também confere, DEPOIS de publicar, o que
+`journi.expo.app` está servindo de verdade (`scripts/verify-production.cjs`) —
+e isso roda isolado (`npm run verify:prod`) e também num workflow agendado
+(`.github/workflows/verify-production.yml`, a cada 6h), que pega um deploy
+feito por fora mesmo que ninguém rode a conferência na mão.
 
 ## Antes de entregar qualquer mudança
 

@@ -25,12 +25,23 @@
 // Agora há: o passo de verificação abre o bundle gerado e procura os valores. Se
 // não estiverem lá, o deploy NÃO acontece.
 //
+// SEGUNDO INCIDENTE, 06/10/2026: a checagem acima só protege quem passa por
+// ESTE script. O globo voltou a ficar com países transparentes porque algum
+// deploy saiu ao ar sem passar por aqui — publicado manualmente, por fora. A
+// checagem pré-deploy não tem como pegar isso: ela só vê o que o PRÓPRIO script
+// exportou, nunca o que outra pessoa publicou de outro jeito. Por isso agora,
+// depois de publicar, o script também confere o que journi.expo.app está
+// servindo DE VERDADE (scripts/verify-production.cjs) — pega tanto um build
+// que deu errado depois da checagem local quanto, rodado à parte via
+// `npm run verify:prod`, qualquer deploy feito sem passar por aqui.
+//
 // Uso:
-//   npm run deploy:web            (exporta, verifica e publica em produção)
+//   npm run deploy:web            (exporta, verifica, publica e confere o ar)
 //   npm run deploy:web -- --dry   (exporta e verifica, sem publicar)
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { findMissingBundleKeys, REQUIRED_BUNDLE_KEYS } = require('./lib/requiredBundleKeys.cjs');
 
 const root = path.resolve(__dirname, '..');
 const distDir = path.join(root, 'dist');
@@ -41,19 +52,6 @@ const distDir = path.join(root, 'dist');
 // meio, que é o que o `finally` lá embaixo garante.
 const localEnv = path.join(root, '.env.local');
 const parkedEnv = path.join(root, '.env.local.deploy-backup');
-
-/**
- * O que o bundle publicado precisa conter.
- *
- * Não é a lista de tudo que existe: é a lista do que, faltando, quebra o app
- * inteiro ou uma tela inteira. Cada entrada traz como o valor APARECE no bundle
- * minificado, que é o que dá para verificar de fora.
- */
-const REQUIRED = [
-  { name: 'EXPO_PUBLIC_SUPABASE_URL', pattern: /SUPABASE_URL:"https:\/\/[a-z0-9]+\.supabase\.co"/ },
-  { name: 'EXPO_PUBLIC_SUPABASE_ANON_KEY', pattern: /SUPABASE_ANON_KEY:"ey[A-Za-z0-9._-]{20,}"/ },
-  { name: 'EXPO_PUBLIC_MAPBOX_TOKEN', pattern: /MAPBOX_TOKEN:"pk\.[A-Za-z0-9._-]{20,}"/ },
-];
 
 const run = (command, args) => {
   console.log(`\n$ ${command} ${args.join(' ')}`);
@@ -73,10 +71,10 @@ const readBundle = () => {
 
 const verifyBundle = () => {
   const bundle = readBundle();
-  const missing = REQUIRED.filter((entry) => !entry.pattern.test(bundle));
+  const missing = findMissingBundleKeys(bundle);
 
   if (!missing.length) {
-    console.log(`\n✓ bundle verificado: ${REQUIRED.map((entry) => entry.name).join(', ')}`);
+    console.log(`\n✓ bundle verificado: ${REQUIRED_BUNDLE_KEYS.map((entry) => entry.name).join(', ')}`);
     return;
   }
 
@@ -90,7 +88,51 @@ const verifyBundle = () => {
   );
 };
 
-const main = () => {
+/**
+ * Confere o que journi.expo.app está servindo DE VERDADE, depois de publicar.
+ * Dá um tempo para a CDN assentar — um deploy do EAS às vezes demora alguns
+ * segundos para a URL de produção começar a devolver o bundle novo.
+ */
+const verifyLiveProduction = async () => {
+  const SITE_URL = 'https://journi.expo.app';
+  const MAX_ATTEMPTS = 4;
+  const RETRY_DELAY_MS = 5000;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const html = await (await fetch(SITE_URL)).text();
+      const bundlePaths = [...new Set(
+        [...html.matchAll(/_expo\/static\/js\/web\/[^"'\s]+\.js/g)].map((m) => m[0])
+      )];
+      if (!bundlePaths.length) throw new Error('a página publicada não referencia nenhum bundle');
+
+      const bundleSource = (
+        await Promise.all(bundlePaths.map((p) => fetch(`${SITE_URL}/${p}`).then((r) => r.text())))
+      ).join('\n');
+
+      const missing = findMissingBundleKeys(bundleSource);
+      if (missing.length) {
+        throw new Error(`o que está no ar está SEM: ${missing.map((entry) => entry.name).join(', ')}`);
+      }
+
+      console.log(`✓ produção confirmada no ar com as chaves certas (${SITE_URL})`);
+      return;
+    } catch (error) {
+      if (attempt === MAX_ATTEMPTS) {
+        // Não desfaz o deploy — só avisa alto. Nesta hora o publicado já está
+        // no ar; desfazer é decisão de quem está rodando o script, não deste.
+        console.error(
+          `\n⚠ PUBLICADO, mas a conferência pós-deploy falhou: ${error.message}\n`
+          + 'Confira https://journi.expo.app/ na mão antes de considerar isto resolvido.'
+        );
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+    }
+  }
+};
+
+const main = async () => {
   const dryRun = process.argv.includes('--dry');
   const parked = fs.existsSync(localEnv);
 
@@ -110,6 +152,9 @@ const main = () => {
 
     run('npx', ['eas-cli@latest', 'deploy', '--prod']);
     console.log('\n✓ publicado. Confira https://journi.expo.app/');
+
+    console.log('\nConferindo o que está no ar...');
+    await verifyLiveProduction();
   } finally {
     // SEMPRE: uma falha no meio não pode custar os overrides locais de quem
     // rodou o script.
@@ -120,9 +165,7 @@ const main = () => {
   }
 };
 
-try {
-  main();
-} catch (error) {
+main().catch((error) => {
   console.error(`\n✗ ${error.message}`);
   process.exit(1);
-}
+});
