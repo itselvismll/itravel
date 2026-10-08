@@ -20,6 +20,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../utils/constants';
@@ -34,6 +35,7 @@ import PhotoGallery from '../PhotoGallery';
 import PhotoUploader from '../PhotoUploader';
 import CountryFlag from '../CountryFlag';
 import CountryRequirementsCard from '../CountryRequirementsCard';
+import { buildGetYourGuideSearchUrl } from '../../utils/getYourGuideLink';
 
 const EMPTY_PHOTO_STATS = { photoCount: 0, cityCount: 0, favoriteCount: 0 };
 
@@ -392,6 +394,30 @@ export default function CountryDetailModal({
                   <View style={styles.requirementsSection}>
                     <CountryRequirementsCard countryCode={country?.code} light />
                   </View>
+
+                  {/* Passeios (afiliado GetYourGuide) — a cidade vem do mesmo
+                      dado de "Top lugares por cidade" abaixo (fotos de quem já
+                      visitou), e só cai na capital do país quando ainda não há
+                      nenhuma foto com cidade própria. */}
+                  {(() => {
+                    const tourCity = Object.keys(topPlaces)[0] || details?.capital || '';
+                    const tourUrl = buildGetYourGuideSearchUrl(tourCity);
+                    if (!tourUrl) return null;
+                    return (
+                      <View style={{ marginHorizontal: 12, marginTop: 10 }}>
+                        <SectionTitle icon="compass-outline">
+                          {t('countryDetail.toursSection', { city: tourCity })}
+                        </SectionTitle>
+                        <TouchableOpacity
+                          style={styles.addPhotoBtn}
+                          onPress={() => Linking.openURL(tourUrl)}
+                        >
+                          <Ionicons name="pricetag-outline" size={18} color="#6C2BD9" />
+                          <Text style={styles.addPhotoBtnText}>{t('countryDetail.toursCta')}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })()}
 
                   {/* Top Lugares por cidade */}
                   {Object.keys(topPlaces).length > 0 && (

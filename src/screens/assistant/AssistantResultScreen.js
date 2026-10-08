@@ -2,14 +2,18 @@ import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } 
 import {
   ActivityIndicator,
   Animated,
+  Dimensions,
   Linking,
+  Modal,
   Platform,
+  Pressable,
   ScrollView,
   Share,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -60,6 +64,7 @@ import {
   measureContentOffset,
 } from '../../components/map/planDayFocus';
 import { formatAssistantError } from '../../utils/assistantErrors';
+import { buildGetYourGuideSearchUrl } from '../../utils/getYourGuideLink';
 import {
   countPlanStops,
   coverSearchTerm,
@@ -73,7 +78,7 @@ const TABS = [
   { id: 'budget', labelKey: 'assistantResult.tabs.budget', icon: 'wallet-outline' },
   { id: 'checklist', labelKey: 'assistantResult.tabs.checklist', icon: 'checkbox-outline' },
   { id: 'tips', labelKey: 'assistantResult.tabs.tips', icon: 'bulb-outline' },
-  { id: 'chat', label: 'Ajustar', icon: 'chatbubble-ellipses-outline' },
+  { id: 'chat', labelKey: 'assistantResult.tabs.chat', icon: 'chatbubble-ellipses-outline' },
 ];
 
 const formatMoney = (value, currency = 'BRL', tag) => {
@@ -104,6 +109,13 @@ export default function AssistantResultScreen({ route, navigation }) {
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState('');
   const [editing, setEditing] = useState(null);
+  // Editar e Trocar com IA saíram da linha de ações e foram para este menu —
+  // ver o comentário de `openMoreMenu` mais abaixo. Guarda o retângulo medido
+  // do botão "⋯", não só a chave da atividade: é o que ancora o menu perto de
+  // onde o dedo tocou, mesmo padrão de TripTravelers.js/MemberActionsMenu.js.
+  const [moreMenu, setMoreMenu] = useState(
+    /** @type {{ dayIndex: number, activityIndex: number, activity: any, anchor: any } | null} */ (null)
+  );
   const [chatText, setChatText] = useState('');
   const [adjusting, setAdjusting] = useState(false);
   const [adjustments, setAdjustments] = useState([]);
@@ -763,6 +775,25 @@ export default function AssistantResultScreen({ route, navigation }) {
     }
   };
 
+  // O termo principal é o NOME DA ATRAÇÃO (`activity.title`, o mesmo que já
+  // aparece no card — "Coliseu e Fórum Romano"), não a cidade: a busca
+  // "Itália" devolve qualquer coisa do país, mas "Coliseu e Fórum Romano,
+  // Roma" cai na atração certa. A cidade entra como segundo termo, só para
+  // desambiguar — ver buildGetYourGuideSearchUrl.
+  //
+  // A parada não tem campo de cidade próprio (o schema do roteiro não guarda
+  // isso por atividade — só `location`, que é endereço livre, não cidade
+  // limpa). `coverSearchTerm` já resolve esse mesmo caso para a capa da
+  // viagem: primeiro destino da lista, ou o pedaço antes da vírgula de
+  // `request.destination` ("Paris, França" -> "Paris"). Reaproveitada aqui
+  // porque é a mesma pergunta — "qual é a cidade desta viagem" — e o pedido
+  // foi não criar uma extração nova.
+  const openGetYourGuide = async (activity) => {
+    const city = coverSearchTerm(request.destinations, request.destination);
+    const url = buildGetYourGuideSearchUrl(activity?.title, city);
+    if (url) await Linking.openURL(url);
+  };
+
   const regenerateActivity = async (dayIndex, activityIndex) => {
     const key = `${dayIndex}-${activityIndex}`;
     setRegenerating(key);
@@ -782,6 +813,26 @@ export default function AssistantResultScreen({ route, navigation }) {
 
   const startEditing = (dayIndex, activityIndex, activity) => {
     setEditing({ dayIndex, activityIndex, draft: { ...activity } });
+  };
+
+  // Mapa + Reservar continuam na linha (são LEITURA, disponíveis até para quem
+  // só visualiza — mesma regra que já valia para Mapa/Site oficial). Editar e
+  // Trocar com IA (ESCRITA, já ocultas para quem só visualiza) saíram da linha
+  // e foram para este menu: com os quatro juntos, a linha quebrava de forma
+  // feia num card estreito — ver `ActivityMoreMenu` mais abaixo.
+  //
+  // `measureInWindow` em vez de `measure`: devolve a posição na JANELA, que é
+  // o sistema de coordenadas do Modal do menu. `measure` é relativo ao pai, e
+  // dentro do ScrollView da tela o menu abriria no lugar errado.
+  const openMoreMenu = (dayIndex, activityIndex, activity, event) => {
+    const target = event?.currentTarget;
+    if (!target?.measureInWindow) {
+      setMoreMenu({ dayIndex, activityIndex, activity, anchor: null });
+      return;
+    }
+    target.measureInWindow((x, y, width, height) => {
+      setMoreMenu({ dayIndex, activityIndex, activity, anchor: { x, y, width, height } });
+    });
   };
 
   // "APLICAR" GRAVA. Antes ele só mudava a tela, e gravar dependia de descer até
@@ -1144,19 +1195,31 @@ export default function AssistantResultScreen({ route, navigation }) {
                               {!!activity.officialUrl && (
                                 <SmallButton icon="ticket-outline" label={t('assistantResult.openOfficialSite')} onPress={() => openOfficialUrl(activity)} />
                               )}
+                              {/* Só em parada que FAZ SENTIDO reservar: atração
+                                  paga, museu, tour, ingresso — o mesmo
+                                  `category` que já decide o ícone do pino no
+                                  mapa. Refeição, deslocamento e passeio livre
+                                  (restaurante/transporte/natureza/compras/
+                                  hotel/vida_noturna/outro) não mostram o
+                                  botão. */}
+                              {activity.category === 'atracao' && (
+                                <SmallButton icon="pricetag-outline" label={t('assistantResult.bookTour')} onPress={() => openGetYourGuide(activity)} />
+                              )}
                               {/* Editar e trocar com IA escrevem no roteiro: só
-                                  para quem pode editar. "Mapa" e "Site oficial"
-                                  continuam para todos — são leitura. */}
+                                  para quem pode editar. "Mapa" e "Reservar"
+                                  continuam para todos — são leitura. As duas
+                                  de escrita ficam atrás do "⋯" — ver
+                                  `ActivityMoreMenu` e o comentário de
+                                  `openMoreMenu`. */}
                               {!readOnly && (
-                                <>
-                                  <SmallButton icon="pencil-outline" label={t('assistantResult.editActivity')} onPress={() => startEditing(dayIndex, activityIndex, activity)} />
-                                  <SmallButton
-                                    icon="refresh-outline"
-                                    label={regenerating === key ? t('assistantResult.swapping') : t('assistantResult.swapWithAI')}
-                                    loading={regenerating === key}
-                                    onPress={() => regenerateActivity(dayIndex, activityIndex)}
-                                  />
-                                </>
+                                <TouchableOpacity
+                                  style={styles.smallButton}
+                                  onPress={(event) => openMoreMenu(dayIndex, activityIndex, activity, event)}
+                                  accessibilityRole="button"
+                                  accessibilityLabel={t('assistantResult.moreActions')}
+                                >
+                                  <Text style={styles.smallButtonText}>⋯</Text>
+                                </TouchableOpacity>
                               )}
                             </View>
                             <View style={styles.purchaseNoteBox}>
@@ -1389,6 +1452,21 @@ export default function AssistantResultScreen({ route, navigation }) {
         resource={{ plan: { request, plan } }}
         onExternalShare={handleShare}
       />
+      <ActivityMoreMenu
+        visible={!!moreMenu}
+        anchor={moreMenu?.anchor}
+        t={t}
+        regenerating={regenerating === `${moreMenu?.dayIndex}-${moreMenu?.activityIndex}`}
+        onClose={() => setMoreMenu(null)}
+        onEdit={() => {
+          if (!moreMenu) return;
+          startEditing(moreMenu.dayIndex, moreMenu.activityIndex, moreMenu.activity);
+        }}
+        onSwap={() => {
+          if (!moreMenu) return;
+          regenerateActivity(moreMenu.dayIndex, moreMenu.activityIndex);
+        }}
+      />
     </View>
   );
 }
@@ -1403,6 +1481,49 @@ function SmallButton({ icon, label, onPress, primary = false, loading = false })
       {loading ? <ActivityIndicator size="small" color="#A78BFA" /> : <Ionicons name={/** @type {any} */ (icon)} size={14} color={primary ? '#fff' : '#A78BFA'} />}
       <Text style={[styles.smallButtonText, primary && { color: '#fff' }]}>{label}</Text>
     </TouchableOpacity>
+  );
+}
+
+// Menu "⋯" para Editar e Trocar com IA — mesmo padrão ancorado de
+// MemberActionsMenu.js/TripTravelers.js: Modal transparente, overlay que
+// fecha ao tocar fora, caixa posicionada a partir do retângulo medido do
+// botão (`anchor`, de `measureInWindow`). Abre para cima quando não há
+// espaço embaixo antes da borda inferior da tela.
+function ActivityMoreMenu({ visible, anchor, t, regenerating, onClose, onEdit, onSwap }) {
+  const { height: screenHeight } = useWindowDimensions();
+  if (!visible || !anchor) return null;
+
+  const MENU_WIDTH = 190;
+  const MENU_HEIGHT = 96;
+  const fitsBelow = anchor.y + anchor.height + MENU_HEIGHT < screenHeight - 24;
+  const top = fitsBelow ? anchor.y + anchor.height + 6 : anchor.y - MENU_HEIGHT - 6;
+  const right = Math.max(12, Dimensions.get('window').width - (anchor.x + anchor.width));
+
+  return (
+    <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <View style={[styles.moreMenuBox, shadow.card, { top, right, width: MENU_WIDTH }]}>
+        <TouchableOpacity
+          style={styles.moreMenuItem}
+          onPress={() => { onClose(); onEdit(); }}
+        >
+          <Ionicons name="pencil-outline" size={16} color={trip.ink} />
+          <Text style={styles.moreMenuItemText}>{t('assistantResult.editActivity')}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.moreMenuItem}
+          disabled={regenerating}
+          onPress={() => { onClose(); onSwap(); }}
+        >
+          {regenerating
+            ? <ActivityIndicator size="small" color={trip.ink} />
+            : <Ionicons name="refresh-outline" size={16} color={trip.ink} />}
+          <Text style={styles.moreMenuItemText}>
+            {regenerating ? t('assistantResult.swapping') : t('assistantResult.swapWithAI')}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </Modal>
   );
 }
 
@@ -1551,6 +1672,18 @@ const styles = StyleSheet.create({
   smallButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 7, borderRadius: 9, borderWidth: 1, borderColor: 'rgba(167,139,250,0.25)', backgroundColor: 'rgba(139,92,246,0.07)' },
   smallButtonPrimary: { backgroundColor: '#6C2BD9', borderColor: '#6C2BD9' },
   smallButtonText: { color: '#BBA8FA', fontSize: 10, fontWeight: '700' },
+  // Mesma superfície do botão "voltar ao topo" (trip.card2/trip.line2) — já é
+  // a paleta usada nesta tela para elementos flutuantes sobre o card escuro.
+  moreMenuBox: {
+    position: 'absolute',
+    borderRadius: 12,
+    backgroundColor: trip.card2,
+    borderWidth: 1,
+    borderColor: trip.line2,
+    paddingVertical: 4,
+  },
+  moreMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
+  moreMenuItemText: { color: trip.ink, fontSize: 13, fontWeight: '600' },
   editBox: { gap: 8 },
   editInput: { color: '#fff', backgroundColor: '#202744', borderRadius: 10, padding: 10, fontSize: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
   editMultiline: { minHeight: 74, textAlignVertical: 'top' },

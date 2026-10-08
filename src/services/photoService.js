@@ -354,8 +354,11 @@ export const getTopPlacesByCountry = async (countryCode) => {
 
     if (error) return { success: false, error: error.message };
 
-    // Agrupa por cidade → location_name
+    // Agrupa por cidade → location_name. `cityPhotoCount` conta toda foto da
+    // cidade (não só as de lugares com 3+ avaliações) — é o volume real de
+    // fotos que define qual cidade é mais relevante no país, não a nota.
     const groups = {};
+    const cityPhotoCount = {};
     data.forEach(({ city, location_name, rating }) => {
       const cityKey = city || 'Outras';
       const placeKey = location_name.trim();
@@ -363,18 +366,24 @@ export const getTopPlacesByCountry = async (countryCode) => {
       if (!groups[cityKey][placeKey]) groups[cityKey][placeKey] = { sum: 0, count: 0 };
       groups[cityKey][placeKey].sum += rating;
       groups[cityKey][placeKey].count += 1;
+      cityPhotoCount[cityKey] = (cityPhotoCount[cityKey] || 0) + 1;
     });
 
-    // Filtra 3+ avaliações, calcula média, ordena decrescente, top 3 por cidade
+    // Filtra 3+ avaliações, calcula média, ordena decrescente, top 3 por
+    // cidade. As cidades em si saem ordenadas por volume de fotos (desc):
+    // quem usa `Object.keys(result)[0]` (ex: CountryDetailModal.js) pega a
+    // cidade de fato mais popular, não a primeira da ordem bruta da query.
     const result = {};
-    Object.entries(groups).forEach(([city, places]) => {
-      const ranked = Object.entries(places)
-        .filter(([, { count }]) => count >= 3)
-        .map(([name, { sum, count }]) => ({ name, avgRating: sum / count, count }))
-        .sort((a, b) => b.avgRating - a.avgRating)
-        .slice(0, 3);
-      if (ranked.length > 0) result[city] = ranked;
-    });
+    Object.entries(groups)
+      .sort(([cityA], [cityB]) => cityPhotoCount[cityB] - cityPhotoCount[cityA])
+      .forEach(([city, places]) => {
+        const ranked = Object.entries(places)
+          .filter(([, { count }]) => count >= 3)
+          .map(([name, { sum, count }]) => ({ name, avgRating: sum / count, count }))
+          .sort((a, b) => b.avgRating - a.avgRating)
+          .slice(0, 3);
+        if (ranked.length > 0) result[city] = ranked;
+      });
 
     return { success: true, data: result };
   } catch (e) {

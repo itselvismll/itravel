@@ -1,7 +1,7 @@
 ﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Image, TextInput,
-  StyleSheet, ActivityIndicator, Modal, FlatList, Alert, Platform
+  StyleSheet, ActivityIndicator, Modal, FlatList, Alert, Platform, Linking
 } from 'react-native';
 import { Image as CachedImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,6 +29,7 @@ import { confirm, notify } from '../../utils/dialogs';
 import { getTourismImage } from '../../services/tourismImageService';
 import { useLocale } from '../../i18n/LocaleProvider';
 import { formatDayMonthPadded } from '../../utils/formatDate';
+import { buildGetYourGuideSearchUrl } from '../../utils/getYourGuideLink';
 
 const MOCK_USERS = [
   { id: '1', username: 'maria_viaja', display_name: 'Maria', avatar_url: null, countries: 12 },
@@ -612,23 +613,58 @@ export default function ExploreScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {loadingPhotos ? (
-            <ActivityIndicator color="#6C2BD9" style={{ marginTop: 40 }} />
-          ) : countryPhotos.length === 0 ? (
-            <View style={{ alignItems: 'center', marginTop: 60, gap: 12 }}>
-              <Ionicons name="images-outline" size={48} color="#ddd" />
-              <Text style={{ color: '#aaa', fontSize: 14, fontWeight: '500' }}>
-                Nenhuma foto pública neste país ainda
-              </Text>
-              <Text style={{ color: '#ccc', fontSize: 12 }}>
-                Seja o primeiro a compartilhar!
-              </Text>
-            </View>
-          ) : (
+          {/* Passeios (afiliado GetYourGuide) entra como ListHeaderComponent do
+              FlatList abaixo, não como um irmão fixo antes dele: fora da
+              lista, ele fica parado na tela enquanto o feed de fotos rola por
+              baixo — sobreposição visual feia. Como header da lista, rola
+              junto com o resto do conteúdo, como mais um bloco. Nos estados de
+              loading/vazio (sem FlatList) ele entra direto no fluxo normal,
+              que já rola sem esse problema. */}
+          {(() => {
+            const tourCity = selectedCountry
+              ? getCountryName(selectedCountry.country_code, selectedCountry.country_name, tag)
+              : '';
+            const tourUrl = selectedCountry ? buildGetYourGuideSearchUrl(tourCity) : null;
+            const toursSectionBlock = tourUrl ? (
+              <View style={styles.toursSection}>
+                <Text style={styles.toursSectionTitle}>{t('explore.toursSection', { city: tourCity })}</Text>
+                <TouchableOpacity style={styles.toursBtn} onPress={() => Linking.openURL(tourUrl)}>
+                  <Ionicons name="pricetag-outline" size={18} color="#fff" />
+                  <Text style={styles.toursBtnText}>{t('explore.toursCta')}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null;
+
+            if (loadingPhotos) {
+              return (
+                <>
+                  {toursSectionBlock}
+                  <ActivityIndicator color="#6C2BD9" style={{ marginTop: 40 }} />
+                </>
+              );
+            }
+            if (countryPhotos.length === 0) {
+              return (
+                <>
+                  {toursSectionBlock}
+                  <View style={{ alignItems: 'center', marginTop: 60, gap: 12 }}>
+                    <Ionicons name="images-outline" size={48} color="#ddd" />
+                    <Text style={{ color: '#aaa', fontSize: 14, fontWeight: '500' }}>
+                      Nenhuma foto pública neste país ainda
+                    </Text>
+                    <Text style={{ color: '#ccc', fontSize: 12 }}>
+                      Seja o primeiro a compartilhar!
+                    </Text>
+                  </View>
+                </>
+              );
+            }
+            return (
             <FlatList
               data={countryPhotos}
               keyExtractor={photo => photo.id}
               contentContainerStyle={{ padding: 12, gap: 10 }}
+              ListHeaderComponent={toursSectionBlock}
               initialNumToRender={4}
               maxToRenderPerBatch={4}
               windowSize={5}
@@ -694,7 +730,8 @@ export default function ExploreScreen({ navigation }) {
                 </TouchableOpacity>
               )}
             />
-          )}
+            );
+          })()}
         </View>
       </Modal>
 
@@ -817,6 +854,24 @@ const styles = StyleSheet.create({
   userName: { fontSize: 14, fontWeight: '600', color: '#0D1326' },
   userMeta: { fontSize: 11, color: '#aaa', marginTop: 1 },
   followBtn: { backgroundColor: '#6C2BD9', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 6 },
+  toursSection: { padding: 12, paddingBottom: 0 },
+  // Mesma família/peso/letterSpacing do rótulo de seção já usado em
+  // SettingsDrawer.js/AssistantResultScreen.js (`Inter_600SemiBold`) — não o
+  // `sectionTitle` desta tela, que nunca definiu fontFamily e por isso cai na
+  // fonte do sistema, diferente do resto do app.
+  toursSectionTitle: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    fontFamily: 'Inter_600SemiBold',
+    letterSpacing: 1,
+    color: '#999',
+    marginBottom: 10,
+  },
+  toursBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: '#6C2BD9', borderRadius: 10, paddingVertical: 12,
+  },
+  toursBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   followBtnActive: { backgroundColor: '#f0f0f0' },
   followBtnText: { color: 'white', fontSize: 12, fontWeight: '600' },
   followBtnTextActive: { color: '#999' },

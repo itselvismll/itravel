@@ -441,7 +441,8 @@
       "itinerary": "Roteiro",
       "budget": "Orçamento",
       "checklist": "Checklist",
-      "tips": "Dicas"
+      "tips": "Dicas",
+      "chat": "Ajustar"
     },
     "budget": {
       "whatIsIncluded": "O que esse valor inclui?",
@@ -482,7 +483,9 @@
     "cancelEdit": "Cancelar",
     "openMap": "Mapa",
     "openOfficialSite": "Site oficial",
+    "bookTour": "Reservar",
     "editActivity": "Editar",
+    "moreActions": "Mais ações",
     "practicalTips": "Dicas práticas",
     "safetyTips": "Segurança",
     "editPlaceholder": "Ex: troque o museu por um passeio ao ar livre",
@@ -601,6 +604,8 @@
     },
     "foodsSection": "Comidas típicas",
     "attractionsSection": "Pontos turísticos",
+    "toursSection": "Passeios em %{city}",
+    "toursCta": "Ver passeios e ingressos",
     "photosSection": "Suas Fotos",
     "addPhoto": "Adicionar foto",
     "loadFailed": "Não foi possível carregar as informações",
@@ -887,6 +892,8 @@
     "subtitle": "Descubra destinos e viajantes",
     "suggestedSection": "SUGERIDOS PARA VOCÊ",
     "trendingSection": "DESTINOS EM ALTA NESTA ÉPOCA",
+    "toursSection": "PASSEIOS EM %{city}",
+    "toursCta": "Ver passeios e ingressos",
     "recommendedPhotosSection": "FOTOS RECOMENDADAS PARA VOCÊ",
     "travelersSection": "VIAJANTES",
     "searchPlaceholder": "Buscar destinos ou pessoas...",
