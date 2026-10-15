@@ -32,6 +32,8 @@ import {
   isSatelliteTileError,
   preconnectToTileHosts,
   collapseAttributionOnce,
+  STADIA_ORIGIN,
+  STADIA_API_KEY,
 } from './globeConfig';
 import { localizeMapLabels } from './styleLocalization';
 import { TAB_BAR_CLEARANCE } from '../../utils/tabBarLayout';
@@ -242,6 +244,13 @@ export default function GlobeMap({
         fadeDuration: 0,
         // Desligado aqui para adicionar o controle com a atribuição do provedor.
         attributionControl: false,
+        transformRequest: (url, resourceType) => {
+          if (STADIA_API_KEY && url.startsWith(STADIA_ORIGIN) && !url.includes('api_key=')) {
+            const separator = url.includes('?') ? '&' : '?';
+            return { url: `${url}${separator}api_key=${STADIA_API_KEY}` };
+          }
+          return { url };
+        },
       });
       mapRef.current = map;
 

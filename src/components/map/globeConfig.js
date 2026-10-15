@@ -27,6 +27,8 @@ export const GLOBE_STYLE_URL = `https://tiles.stadiamaps.com/styles/${STADIA_STY
   API_CONFIG.STADIA_API_KEY ? `?api_key=${API_CONFIG.STADIA_API_KEY}` : ''
 }`;
 
+export const STADIA_API_KEY = API_CONFIG.STADIA_API_KEY;
+
 export const GLOBE_MAX_ZOOM = 20;
 
 // Hosts dos tiles e da style. Separados das URLs para o preconnect poder usá-los.
