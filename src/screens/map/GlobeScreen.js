@@ -24,6 +24,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import GlobeMap from '../../components/map/GlobeMap';
 import NativeGlobe from '../../components/map/NativeGlobe.dom';
+import GlobeLoadingPlaceholder from '../../components/map/GlobeLoadingPlaceholder';
 import CountryBadgeMarkers from '../../components/map/CountryBadgeMarkers';
 import CountryFillLayer from '../../components/map/CountryFillLayer';
 import PlanRouteLayer from '../../components/map/PlanRouteLayer';
@@ -98,6 +99,12 @@ export default function GlobeScreen({ navigation }) {
   const [showCountrySearch, setShowCountrySearch] = useState(false);
   const [nativeFocusCountry, setNativeFocusCountry] = useState(null);
   const [nativeMapError, setNativeMapError] = useState(null);
+
+  // Sinal do primeiro frame pintado (ver onFirstFrameReady em GlobeMap.web.js):
+  // some uma vez só, não precisa voltar a `false` depois — nenhum dos dois
+  // caminhos (web ou nativo) reconstrói o mapa durante a vida da tela.
+  const [mapFirstFrameReady, setMapFirstFrameReady] = useState(false);
+  const handleMapFirstFrameReady = useCallback(() => setMapFirstFrameReady(true), []);
 
   const handleMapReady = useCallback((instance) => setMap(instance), []);
 
@@ -386,7 +393,7 @@ export default function GlobeScreen({ navigation }) {
     <View style={styles.container}>
       {isWeb ? (
         <View style={styles.mapWrapper}>
-          <GlobeMap onMapReady={handleMapReady} />
+          <GlobeMap onMapReady={handleMapReady} onFirstFrameReady={handleMapFirstFrameReady} />
           <CountryFillLayer
             map={map}
             geoData={geoData}
@@ -432,6 +439,7 @@ export default function GlobeScreen({ navigation }) {
             onDismissPlanSelection={handleNativeDismiss}
             onCountriesResolved={handleNativeCountriesResolved}
             onMapFailure={handleNativeMapFailure}
+            onFirstFrameReady={handleMapFirstFrameReady}
             dom={{
               scrollEnabled: false,
               contentInsetAdjustmentBehavior: 'never',
@@ -455,6 +463,16 @@ export default function GlobeScreen({ navigation }) {
         </View>
       ) : (
         <View style={styles.mapWrapper} />
+      )}
+
+      {/* Só no nativo: no web não há WebView, então não há flash preto para
+          cobrir — e `mapFirstFrameReady` nem é alimentado nesse caminho fora
+          de testes. Soma `!nativeMapError` como rede de segurança: se a busca
+          de países falhar ANTES do MapLibre terminar de montar (ver
+          onMapFailure em NativeGlobe.dom.js), o aviso de erro mais abaixo
+          precisa aparecer, não pode ficar atrás do placeholder para sempre. */}
+      {!isWeb && (
+        <GlobeLoadingPlaceholder visible={!mapFirstFrameReady && !nativeMapError} />
       )}
 
       {/* Barra do assistente de viagem + busca de país */}

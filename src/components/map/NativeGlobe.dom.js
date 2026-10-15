@@ -62,6 +62,7 @@ export default function NativeGlobe({
   onDismissPlanSelection,
   onCountriesResolved,
   onMapFailure,
+  onFirstFrameReady,
   dom: _dom,
 }) {
   const [map, setMap] = useState(null);
@@ -189,6 +190,7 @@ export default function NativeGlobe({
         onError={async (error) => {
           await onMapFailure?.(error?.message || 'Não foi possível carregar o globo');
         }}
+        onFirstFrameReady={onFirstFrameReady}
         performanceMode
         style={undefined}
       />

@@ -11,6 +11,7 @@ import { useLocale } from '../../i18n/LocaleProvider';
 export default function GlobeMap({
   onMapReady = undefined,
   onError = undefined,
+  onFirstFrameReady = undefined,
   showGlobeControl = true,
   style = undefined,
 }) {

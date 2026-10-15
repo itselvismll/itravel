@@ -167,6 +167,7 @@ function GlobeLoadingOverlay() {
 export default function GlobeMap({
   onMapReady,
   onError,
+  onFirstFrameReady,
   showGlobeControl = true,
   performanceMode = false,
   style,
@@ -188,6 +189,19 @@ export default function GlobeMap({
   const onErrorRef = useRef(onError);
   onMapReadyRef.current = onMapReady;
   onErrorRef.current = onError;
+
+  // Sinal de "primeiro frame pronto" para quem hospeda este componente de fora
+  // da WebView (ver GlobeLoadingPlaceholder, usado pelo nativo): dispara assim
+  // que `ready` vira true, por QUALQUER caminho — sucesso, erro tolerado de
+  // tile (ver `isSatelliteTileError` abaixo) ou falha dura. Os três fazem
+  // `setReady(true)` mais abaixo, e é exatamente isso que já desliga o
+  // `GlobeLoadingOverlay` daqui de dentro — o placeholder de fora só acompanha
+  // a mesma decisão, em vez de duplicá-la.
+  const onFirstFrameReadyRef = useRef(onFirstFrameReady);
+  onFirstFrameReadyRef.current = onFirstFrameReady;
+  useEffect(() => {
+    if (ready) onFirstFrameReadyRef.current?.();
+  }, [ready]);
 
   useEffect(() => {
     if (!containerRef.current) return undefined;
