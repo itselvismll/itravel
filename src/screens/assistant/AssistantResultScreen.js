@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } 
 import {
   ActivityIndicator,
   Animated,
-  Dimensions,
   Linking,
   Modal,
   Platform,
@@ -1489,20 +1488,60 @@ function SmallButton({ icon, label, onPress, primary = false, loading = false })
 // fecha ao tocar fora, caixa posicionada a partir do retângulo medido do
 // botão (`anchor`, de `measureInWindow`). Abre para cima quando não há
 // espaço embaixo antes da borda inferior da tela.
+//
+// A altura da caixa é MEDIDA (`onLayout`), não chutada: o texto de um item
+// quebra em duas linhas em inglês/espanhol, e no estado "trocando..." — uma
+// estimativa fixa decidia "cabe embaixo" com base num número que o render
+// real já não respeitava, e o fundo da caixa estourava a borda da tela. O
+// primeiro quadro nasce com `opacity: 0` (ainda sem a medida) só para o
+// `onLayout` disparar; o chute em ESTIMATED_MENU_HEIGHT é só o palpite
+// inicial PARA ESSE quadro invisível — reposiciona no quadro seguinte, rápido
+// demais para virar flicker perceptível.
 function ActivityMoreMenu({ visible, anchor, t, regenerating, onClose, onEdit, onSwap }) {
-  const { height: screenHeight } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const [measuredHeight, setMeasuredHeight] = useState(null);
+
+  // `anchor` é um objeto novo a cada toque no "⋯" (vem de `measureInWindow` em
+  // openMoreMenu) — sem este reset, a altura medida da ÚLTIMA atividade aberta
+  // vazaria para a primeira renderização da PRÓXIMA, que pode ter texto de
+  // tamanho diferente.
+  useEffect(() => {
+    setMeasuredHeight(null);
+  }, [anchor]);
+
   if (!visible || !anchor) return null;
 
   const MENU_WIDTH = 190;
-  const MENU_HEIGHT = 96;
-  const fitsBelow = anchor.y + anchor.height + MENU_HEIGHT < screenHeight - 24;
-  const top = fitsBelow ? anchor.y + anchor.height + 6 : anchor.y - MENU_HEIGHT - 6;
-  const right = Math.max(12, Dimensions.get('window').width - (anchor.x + anchor.width));
+  const MARGIN = 12;
+  const ESTIMATED_MENU_HEIGHT = 112;
+  const menuHeight = measuredHeight ?? ESTIMATED_MENU_HEIGHT;
+
+  const fitsBelow = anchor.y + anchor.height + menuHeight + MARGIN <= screenHeight;
+  const top = fitsBelow
+    ? anchor.y + anchor.height + 6
+    : Math.max(MARGIN, anchor.y - menuHeight - 6);
+
+  // Alinhado pela direita do botão por padrão (a caixa cresce para a
+  // esquerda), igual antes — mas agora clampado nos DOIS lados: se o botão
+  // estiver perto da borda esquerda da tela, a caixa desliza para a direita o
+  // suficiente para caber inteira, em vez de nascer cortada.
+  const idealLeft = anchor.x + anchor.width - MENU_WIDTH;
+  const left = Math.min(
+    Math.max(MARGIN, idealLeft),
+    screenWidth - MENU_WIDTH - MARGIN
+  );
 
   return (
     <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-      <View style={[styles.moreMenuBox, shadow.card, { top, right, width: MENU_WIDTH }]}>
+      <View
+        onLayout={(event) => setMeasuredHeight(event.nativeEvent.layout.height)}
+        style={[
+          styles.moreMenuBox,
+          shadow.card,
+          { top, left, width: MENU_WIDTH, opacity: measuredHeight === null ? 0 : 1 },
+        ]}
+      >
         <TouchableOpacity
           style={styles.moreMenuItem}
           onPress={() => { onClose(); onEdit(); }}
