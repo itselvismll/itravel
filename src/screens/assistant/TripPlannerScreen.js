@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CalendarField from '../../components/CalendarField';
 import DestinationBudgetPlanner from '../../components/DestinationBudgetPlanner';
 import LocationAutocomplete from '../../components/LocationAutocomplete';
@@ -63,6 +64,7 @@ const initialForm = {
 
 export default function TripPlannerScreen({ navigation, route }) {
   const { t } = useLocale();
+  const insets = useSafeAreaInsets();
   const [form, setForm] = useState(() => {
     const initialRequest = route.params?.initialRequest || {};
     return {
@@ -208,7 +210,7 @@ export default function TripPlannerScreen({ navigation, route }) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}>
           <Ionicons name="arrow-back" size={22} color="#F7F7F2" />
         </TouchableOpacity>

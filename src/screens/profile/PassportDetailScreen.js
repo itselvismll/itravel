@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ShareCard from '../../components/ShareCard';
 import { getPassportShare } from '../../services/messageService';
 import { useLocale } from '../../i18n/LocaleProvider';
@@ -9,6 +10,7 @@ import { formatDateShort } from '../../utils/formatDate';
 
 export default function PassportDetailScreen({ route, navigation }) {
   const { t, tag } = useLocale();
+  const insets = useSafeAreaInsets();
   const { passportShareId, passportShare: initialShare } = route.params || {};
   const [share, setShare] = useState(initialShare || null);
   const [loading, setLoading] = useState(!initialShare);
@@ -33,7 +35,7 @@ export default function PassportDetailScreen({ route, navigation }) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity accessibilityLabel={t('common.actions.back')} onPress={() => navigation.goBack()} style={styles.back}>
           <Ionicons name="arrow-back" size={22} color="#fff" />
         </TouchableOpacity>

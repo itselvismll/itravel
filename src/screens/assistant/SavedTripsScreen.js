@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { deleteTripPlan, getSavedTripPlans } from '../../services/tripPlanService';
 import { confirm, notify } from '../../utils/dialogs';
@@ -26,6 +27,7 @@ import {
 
 export default function SavedTripsScreen({ navigation }) {
   const { t } = useLocale();
+  const insets = useSafeAreaInsets();
   // Dentro do ProfileStack, sob as tabs: a barra cobriria o último roteiro.
   const tabBarPadding = useTabBarContentPadding();
   const [plans, setPlans] = useState([]);
@@ -116,7 +118,7 @@ export default function SavedTripsScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}>
           <Ionicons name="arrow-back" size={22} color="#F7F7F2" />
         </TouchableOpacity>

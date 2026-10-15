@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Avatar from '../../components/Avatar';
 import { getCurrentUser } from '../../services/supabase';
 import {
@@ -15,6 +16,7 @@ import { useLocale } from '../../i18n/LocaleProvider';
 
 export default function ConversationScreen({ route, navigation }) {
   const { t } = useLocale();
+  const insets = useSafeAreaInsets();
   const { conversationId, profile } = route.params || {};
   const [messages, setMessages] = useState([]);
   const [userId, setUserId] = useState(null);
@@ -95,7 +97,7 @@ export default function ConversationScreen({ route, navigation }) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.back}><Ionicons name="arrow-back" size={22} color="#fff" /></TouchableOpacity>
         <Avatar profile={profile} size={38} />
         <View style={{ flex: 1 }}><Text style={styles.name}>{profile?.display_name || profile?.username || t('conversation.unnamedTraveler')}</Text><Text style={styles.handle}>@{profile?.username || t('conversation.unnamedUsername')}</Text></View>

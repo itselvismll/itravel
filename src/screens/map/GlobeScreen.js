@@ -444,7 +444,7 @@ export default function GlobeScreen({ navigation }) {
       )}
 
       {/* Barra do assistente de viagem + busca de país */}
-      <View style={styles.topBarRow}>
+      <View style={[styles.topBarRow, { top: 16 + insets.top }]}>
         {!showCountrySearch ? (
           <>
             <TouchableOpacity
@@ -522,7 +522,7 @@ export default function GlobeScreen({ navigation }) {
           selectedDay={selectedDay}
           onSelect={setSelectedDay}
           dayInfo={planDayInfo}
-          style={{ top: PLAN_TABS_TOP }}
+          style={{ top: PLAN_TABS_TOP + insets.top }}
         />
       )}
 

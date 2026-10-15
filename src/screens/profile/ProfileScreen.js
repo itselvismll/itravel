@@ -1,5 +1,6 @@
 ﻿import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 import { toPng } from 'html-to-image';
 import * as Sharing from 'expo-sharing';
@@ -45,6 +46,7 @@ import useTabBarContentPadding from '../../hooks/useTabBarContentPadding';
 
 export default function ProfileScreen({ navigation }) {
   const { t, tag } = useLocale();
+  const insets = useSafeAreaInsets();
   // Folga para o fim do perfil não terminar atrás da tab bar flutuante.
   const tabBarPadding = useTabBarContentPadding();
   const [profile, setProfile] = useState(null);
@@ -276,14 +278,14 @@ export default function ProfileScreen({ navigation }) {
     >
 
       {/* Header escuro */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: 24 + insets.top }]}>
         <Image
           source={require('../../../assets/journi_simbolo.png')}
-          style={{ width: 28, height: 28, position: 'absolute', top: 16, left: 16 }}
+          style={{ width: 28, height: 28, position: 'absolute', top: 16 + insets.top, left: 16 }}
           resizeMode="contain"
         />
         <TouchableOpacity
-          style={styles.editBtn}
+          style={[styles.editBtn, { top: 16 + insets.top }]}
           onPress={() => setSettingsVisible(true)}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           accessibilityRole="button"
@@ -293,7 +295,7 @@ export default function ProfileScreen({ navigation }) {
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => navigation.navigate('Notificações')}
-          style={{ position: 'absolute', top: 16, right: 56 }}
+          style={{ position: 'absolute', top: 16 + insets.top, right: 56 }}
         >
           <Ionicons name="notifications-outline" size={24} color="#F7F7F2" />
           {unreadCount > 0 && (
