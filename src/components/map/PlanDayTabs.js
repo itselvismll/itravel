@@ -295,13 +295,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  // A faixa é o ScrollView. `flex: 1` dá a ela o espaço entre as duas setas, e o
-  // `overflow: visible` deixa a sombra colorida da pílula em foco escapar da
-  // caixa — sem ele o ScrollView recorta a sombra e a pílula perde o vínculo com
-  // o traçado daquele dia no mapa.
+  // A faixa é o ScrollView. `flex: 1` dá a ela o espaço entre as duas setas.
+  //
+  // Havia um `overflow: 'visible'` aqui para deixar a sombra colorida da pílula
+  // em foco escapar da caixa. No Android ele empurrava/sobrepunha a seta ao
+  // lado — e o Android já recorta o conteúdo rolável do ScrollView por conta
+  // própria, independente do `overflow` do próprio componente, então esse
+  // estilo não estava nem cumprindo o papel de liberar a sombra ali (isso só
+  // valia no iOS); só sobrava o efeito colateral no layout. Removido.
+  // Trade-off aceito: a sombra da pílula ativa pode ser cortada nas pontas da
+  // faixa.
   strip: {
     flex: 1,
-    overflow: 'visible',
   },
   // O alinhamento agora é do CONTEÚDO, não da caixa: é ele que cresce com o
   // número de dias e rola por dentro dela.
