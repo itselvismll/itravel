@@ -189,7 +189,6 @@ export default function NativeGlobe({
         onError={async (error) => {
           await onMapFailure?.(error?.message || 'Não foi possível carregar o globo');
         }}
-        showGlobeControl={false}
         performanceMode
         style={undefined}
       />

@@ -436,6 +436,20 @@ export default function GlobeScreen({ navigation }) {
               scrollEnabled: false,
               contentInsetAdjustmentBehavior: 'never',
               style: styles.nativeGlobe,
+              // Tentativa de atenuar o flash preto no Android antes do globo
+              // carregar: `style.backgroundColor` acima já chega no WebView
+              // nativo (react-native-webview aplica a própria `backgroundColor`
+              // do estilo recebido), mas isso não cobre o documento HTML
+              // interno do DOM Component antes do React montar — por padrão ele
+              // herda o fundo em branco do user-agent da WebView. Este script
+              // roda ANTES do bundle, fixando o fundo do <html>/<body> cedo.
+              //
+              // O que isto NÃO resolve: o instante de criação da própria
+              // superfície nativa do android.webkit.WebView, antes do
+              // `onPageFinished` — esse é um comportamento de plataforma fora
+              // do alcance de CSS/JS injetado, e pode continuar aparecendo como
+              // um flash curto mesmo com isto.
+              injectedJavaScriptBeforeContentLoaded: DOM_BACKGROUND_SCRIPT,
             }}
           />
         </View>
@@ -608,6 +622,11 @@ const glass = {
   borderWidth: 1,
   borderColor: 'rgba(108,43,217,0.4)',
 };
+
+// Fixa o fundo do documento do DOM Component (a WebView do globo nativo) antes
+// do React montar lá dentro — ver o comentário em `dom.injectedJavaScriptBeforeContentLoaded`
+// acima, onde isto é usado.
+const DOM_BACKGROUND_SCRIPT = "document.documentElement.style.backgroundColor='#05070F';if(document.body){document.body.style.backgroundColor='#05070F';}true;";
 
 // Abaixo da barra de IA (44px de altura a partir do topo 16) mais uma folga.
 const PLAN_TABS_TOP = 70;
