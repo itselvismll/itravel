@@ -7,7 +7,7 @@ import CountryFillLayer from './CountryFillLayer.web';
 import PlanRouteLayer from './PlanRouteLayer.web';
 import { badgeCountries, planPointCountries } from './planBadges';
 import { getWorldGeoData } from '../../services/geoService';
-import { buildCountryAnchors } from './countryCentroids';
+import { buildCountryAnchorsAsync } from './countryCentroids';
 import { statusOf } from './countryStatus';
 import { getCountryName } from '../../utils/countryUtils';
 import { getGeoCountryAlpha3, getGeoCountryName } from '../../utils/geo-country-utils';
@@ -117,10 +117,14 @@ export default function NativeGlobe({
     let cancelled = false;
 
     getWorldGeoData()
-      .then((data) => {
+      .then(async (data) => {
         if (cancelled) return;
         setGeoData(data);
-        setAnchors(buildCountryAnchors(data));
+        // Em lotes, não de uma vez: ver o comentário de buildCountryAnchorsAsync
+        // em countryCentroids.js — isso é o que evita travar a WebView no
+        // carregamento inicial do globo.
+        const result = await buildCountryAnchorsAsync(data, { isCancelled: () => cancelled });
+        if (!cancelled) setAnchors(result);
       })
       .catch(async (error) => {
         if (!cancelled) {
