@@ -57,6 +57,12 @@ function HCaptchaWidgetImpl({ onVerify, onError, style }, ref) {
     const data = event?.nativeEvent?.data;
     if (!data) return;
 
+    // A lib manda 'open' (desafio apareceu na tela) com success:true — não é
+    // conclusão, é só "abriu". Checar isso ANTES de success é o que evita
+    // tratar essa string como token (ver Hcaptcha.js, onde success vira true
+    // antes do data==='open' ser considerado).
+    if (data === 'open') return;
+
     if (event.success) {
       lastEventRef.current = event;
       captchaRef.current?.hide();
@@ -64,8 +70,6 @@ function HCaptchaWidgetImpl({ onVerify, onError, style }, ref) {
       onVerify?.(data);
       return;
     }
-
-    if (data === 'open') return;
 
     captchaRef.current?.hide();
     clearToken();
