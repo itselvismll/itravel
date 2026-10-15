@@ -8,6 +8,7 @@ import {
   Modal, ScrollView, Text, Platform, useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import * as ExpoLinking from 'expo-linking';
 import { COLORS } from '../utils/constants';
@@ -152,7 +153,13 @@ function TabNavigator() {
   const { openUploader } = useUpload();
   const { t } = useLocale();
   const { width } = useWindowDimensions();
-  const tabBarWidth = Math.min(Math.max(width - 24, 300), 680);
+  const insets = useSafeAreaInsets();
+  // Largura realmente segura: em retrato, `insets.left/right` são quase sempre
+  // 0, então isto não muda nada hoje — mas em aparelhos com recorte lateral
+  // (dobráveis, paisagem) a cápsula centraliza na área navegável de verdade,
+  // não na largura bruta da janela.
+  const safeWidth = width - insets.left - insets.right;
+  const tabBarWidth = Math.min(Math.max(safeWidth - 24, 300), 680);
   return (
     <Tab.Navigator
       id="MainTabs"
@@ -166,8 +173,11 @@ function TabNavigator() {
         tabBarButton: (props) => <TabBarButton {...props} />,
         tabBarStyle: {
           position: 'absolute',
-          left: (width - tabBarWidth) / 2,
-          bottom: TAB_BAR_BOTTOM,
+          left: insets.left + (safeWidth - tabBarWidth) / 2,
+          // Faixa de gestos do Android: sem somar `insets.bottom`, a barra
+          // ficava colada/colidindo nela em aparelhos com faixa maior que os
+          // 18px fixos de TAB_BAR_BOTTOM.
+          bottom: TAB_BAR_BOTTOM + insets.bottom,
           width: tabBarWidth,
           backgroundColor: '#12182B',
           // Só `borderWidth`: com `borderTopWidth` junto, o topo ficava com uma
