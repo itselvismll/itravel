@@ -59,6 +59,48 @@ const isBehindGlobe = (map, lngLat) => {
 };
 
 /**
+ * Vetor unitário 3D de uma coordenada geográfica (esfera de raio 1).
+ *
+ * O produto escalar de dois vetores assim É o cosseno do ângulo entre eles —
+ * a mesma conta que `isBehindGlobe` faz por trigonometria esférica (lei dos
+ * cossenos) quando `isLocationOccluded` não existe. A diferença é o CUSTO: ali
+ * os `sin`/`cos` da coordenada do país são recalculados em TODO quadro de
+ * arrasto, para os ~238 países. Aqui o vetor do país é calculado uma vez, na
+ * criação do marker, e cada quadro só soma três multiplicações por país — o
+ * único `sin`/`cos` por quadro é o do centro da câmera, que é um só, não 238.
+ */
+const toUnitVector = (lat, lng) => {
+  const toRad = Math.PI / 180;
+  const latRad = lat * toRad;
+  const lngRad = lng * toRad;
+  const cosLat = Math.cos(latRad);
+  return {
+    x: cosLat * Math.cos(lngRad),
+    y: cosLat * Math.sin(lngRad),
+    z: Math.sin(latRad),
+  };
+};
+
+const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+
+/**
+ * Pré-filtro barato: o país está no hemisfério virado para a câmera?
+ *
+ * `dot < 0` é EXATAMENTE a condição que `isBehindGlobe` usa no caminho sem
+ * `isLocationOccluded` (cosAngle < 0) — não é uma aproximação nova, é a mesma
+ * fronteira, só que com os vetores já prontos. Contra `isLocationOccluded`
+ * (o caminho real do globo) ela também é segura como filtro de descarte: o
+ * horizonte visível da projeção globe nunca passa de 90° do centro da câmera
+ * (ele encolhe quando o zoom aproxima a câmera da superfície, nunca cresce
+ * além do hemisfério) — então todo país com `dot < 0` está INEVITAVELMENTE
+ * atrás do globo, e só esses são descartados aqui sem chamar `map.project()`
+ * nem `isBehindGlobe()`. Quem passa no teste (hemisfério virado para a
+ * câmera) segue para a checagem completa, que é quem decide de verdade perto
+ * da borda.
+ */
+const isHemisphereVisible = (countryVector, cameraVector) => dot(countryVector, cameraVector) >= 0;
+
+/**
  * Limpa a lista de países antes de virar marker.
  *
  * Duas coisas fazem um país "sumir" do globo antes mesmo de existir badge:
@@ -165,6 +207,7 @@ export default function CountryBadgeMarkers({ map, countries, onSelect }) {
       const existing = markers.get(country.code);
       if (existing) {
         existing.country = country;
+        existing.vector = toUnitVector(country.lat, country.lng);
         existing.marker.setLngLat([country.lng, country.lat]);
         continue;
       }
@@ -184,7 +227,12 @@ export default function CountryBadgeMarkers({ map, countries, onSelect }) {
       // da esfera.
       marker.setOpacity('1', '0');
 
-      markers.set(country.code, { country, element, marker });
+      markers.set(country.code, {
+        country,
+        element,
+        marker,
+        vector: toUnitVector(country.lat, country.lng),
+      });
     }
 
     setEntries(list.map((country) => ({ country, element: markers.get(country.code).element })));
@@ -228,7 +276,34 @@ export default function CountryBadgeMarkers({ map, countries, onSelect }) {
     expandAllRef.current = allowUnmarked;
     const expandOptions = { allowUnmarked };
 
+    // Um só sin/cos por quadro (o do centro da câmera), não 238 — ver
+    // isHemisphereVisible. O vetor de cada país já está pronto desde a criação
+    // do marker.
+    const center = map.getCenter();
+    const cameraVector = toUnitVector(center.lat, center.lng);
+
     for (const [code, entry] of markers) {
+      // Descarta sem projetar nem checar isBehindGlobe: um país do hemisfério
+      // oposto ao da câmera está sempre atrás do globo, e isso é mais barato de
+      // saber do que perguntar ao MapLibre. Ver isHemisphereVisible.
+      if (!isHemisphereVisible(entry.vector, cameraVector)) {
+        const pointerEvents = 'none';
+        if (entry.pointerEvents !== pointerEvents) {
+          entry.pointerEvents = pointerEvents;
+          entry.element.style.pointerEvents = pointerEvents;
+        }
+        candidates.push({
+          key: code,
+          visible: false,
+          x: 0,
+          y: 0,
+          expandedWidth: 0,
+          compactWidth: 0,
+          height: 0,
+        });
+        continue;
+      }
+
       // getLngLat() e não country.lng/lat: o Marker reescreve a longitude para a
       // cópia do mundo mais próxima da câmera (smartWrap) ao cruzar o
       // antimeridiano. Projetar a coordenada original devolveria um ponto fora
