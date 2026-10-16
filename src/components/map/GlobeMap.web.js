@@ -231,8 +231,28 @@ export default function GlobeMap({
         // aparelhos Android (frequentemente 2x ou 3x) multiplica a quantidade de
         // pixels sem trazer diferença perceptível nessa tela. O navegador normal
         // mantém a densidade original.
-        pixelRatio: performanceMode ? 1 : undefined,
-        maxTileCacheSize: performanceMode ? 48 : null,
+        //
+        // 0.75 em vez de 1: um aparelho de entrada (ex.: Redmi) ainda reamostra
+        // menos pixel por quadro que o 1x anterior — a GPU desenha a esfera e os
+        // tiles numa resolução interna 25% menor, e o browser escala o canvas
+        // para o tamanho do elemento. TROCA: o contorno das fronteiras e o texto
+        // dos rótulos saem levemente mais suaves/borrados que em 1x, mais
+        // perceptível em telas de densidade baixa. Em telas de alta densidade (a
+        // maioria dos Android atuais) o canvas em 0.75x físico ainda sai mais
+        // nítido que um canvas nativo em 1x de um aparelho de baixa densidade, e
+        // o custo por quadro cai ~44% (0.75² contra 1²) em vez de continuar igual
+        // ao que já causava a travada. Validar a nitidez num aparelho real antes
+        // de confirmar — reverter para 1 se ficar ruim demais.
+        pixelRatio: performanceMode ? 0.75 : undefined,
+        // 32 em vez de 48: o cache de tiles ocupa textura de GPU e memória; um
+        // valor menor libera essa memória mais cedo, ao custo de recarregar um
+        // tile que saiu do cache e voltou à tela (ex.: girar o globo, voltar).
+        // Em aparelho de entrada o gargalo normalmente é CPU/GPU por quadro, não
+        // memória — então o ganho esperado aqui é menor que o do pixelRatio
+        // acima; TROCA real é mais recarregamento de tile se a rotação for ampla.
+        // Validar num aparelho real: se não notar diferença e os tiles
+        // recarregarem demais, volte para 48.
+        maxTileCacheSize: performanceMode ? 32 : null,
         // A style da Stadia tem 26 symbol layers. Com o default de 300ms, cada
         // uma mantém interpolação de opacidade e re-upload de buffer de símbolo
         // durante TODO o movimento da câmera — trabalho por quadro pago no

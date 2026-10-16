@@ -1052,8 +1052,8 @@ test('mobile performance safeguards keep heavy content bounded', () => {
   assert.match(globe, /useIsFocused/);
   assert.match(globe, /isFocused \? \(/);
   assert.match(nativeGlobe, /performanceMode/);
-  assert.match(globeMap, /pixelRatio: performanceMode \? 1 : undefined/);
-  assert.match(globeMap, /maxTileCacheSize: performanceMode \? 48 : null/);
+  assert.match(globeMap, /pixelRatio: performanceMode \? 0\.75 : undefined/);
+  assert.match(globeMap, /maxTileCacheSize: performanceMode \? 32 : null/);
 });
 
 test('the itinerary layer is optional, isolated and drawn by GL layers', () => {
