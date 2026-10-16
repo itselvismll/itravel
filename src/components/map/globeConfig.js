@@ -300,6 +300,18 @@ export const GLOBE_SKY = {
   'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 7, 0],
 };
 
+// Mesmo céu, sem o halo da atmosfera. Usado só ENQUANTO um gesto de arrasto/
+// zoom/rotação está rolando (ver GlobeMap.web.js) — o halo é puramente
+// cosmético e o MapLibre recalcula o blend dele a cada quadro junto com o
+// resto da cena. Em aparelho fraco é um efeito a menos para desenhar bem na
+// hora em que o quadro já está caro; ao soltar o gesto, `map.setSky(GLOBE_SKY)`
+// devolve o valor normal.
+/** @type {import('@maplibre/maplibre-gl-style-spec').SkySpecification} */
+export const GLOBE_SKY_DURING_GESTURE = {
+  ...GLOBE_SKY,
+  'atmosphere-blend': 0,
+};
+
 // Classes do controle de atribuição do MapLibre. Elas fazem parte do CSS público
 // da lib (maplibre-gl.css), então mexer nelas é mais estável do que tocar nos
 // campos privados do controle.

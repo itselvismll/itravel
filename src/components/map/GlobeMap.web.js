@@ -28,6 +28,7 @@ import {
   GLOBE_INITIAL_VIEW,
   GLOBE_SPACE_BACKGROUND,
   GLOBE_SKY,
+  GLOBE_SKY_DURING_GESTURE,
   SATELLITE_IMAGERY_ATTRIBUTION,
   isSatelliteTileError,
   preconnectToTileHosts,
@@ -56,6 +57,21 @@ preconnectToTileHosts();
 // Duração do fade do globo entrando em cena. Curto o bastante para não parecer
 // lentidão, longo o bastante para não ler como "piscada".
 const FADE_MS = 450;
+
+// Início/fim de um gesto de câmera — ver o `map.setSky` logo abaixo de
+// GESTURE_START_EVENTS no efeito de montagem.
+const GESTURE_START_EVENTS = /** @type {const} */ ([
+  'dragstart',
+  'zoomstart',
+  'rotatestart',
+  'pitchstart',
+]);
+const GESTURE_END_EVENTS = /** @type {const} */ ([
+  'dragend',
+  'zoomend',
+  'rotateend',
+  'pitchend',
+]);
 
 // A animação do indicador vive numa tag <style> própria: keyframes não existem
 // em estilo inline, e este é o único lugar do componente que precisa deles.
@@ -298,7 +314,16 @@ export default function GlobeMap({
       map.on('style.load', handleStyleLoad);
       map.on('load', handleLoad);
       map.on('error', handleError);
+
+      // Desliga o halo da atmosfera enquanto o gesto está rolando (um efeito a
+      // menos por quadro no momento mais caro) e devolve ao soltar. Ver
+      // GLOBE_SKY_DURING_GESTURE.
+      GESTURE_START_EVENTS.forEach((event) => map.on(event, dimSkyForGesture));
+      GESTURE_END_EVENTS.forEach((event) => map.on(event, restoreSky));
     };
+
+    const dimSkyForGesture = () => map.setSky(GLOBE_SKY_DURING_GESTURE);
+    const restoreSky = () => map.setSky(GLOBE_SKY);
 
     const handleStyleLoad = () => {
       // setProjection só pode ser chamado depois que a style carregou.
@@ -353,6 +378,8 @@ export default function GlobeMap({
       map.off('style.load', handleStyleLoad);
       map.off('load', handleLoad);
       map.off('error', handleError);
+      GESTURE_START_EVENTS.forEach((event) => map.off(event, dimSkyForGesture));
+      GESTURE_END_EVENTS.forEach((event) => map.off(event, restoreSky));
       releaseAttribution();
       map.remove();
       map = null;
