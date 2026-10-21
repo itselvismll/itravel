@@ -43,9 +43,9 @@ export const TRAVEL_INTERESTS = [
 ];
 
 export const TRAVEL_PACES = [
-  { id: 'calm', label: 'Tranquilo' },
-  { id: 'balanced', label: 'Equilibrado' },
-  { id: 'intense', label: 'Intenso' },
+  { id: 'calm', label: 'Tranquilo', stopsPerDay: 4 },
+  { id: 'balanced', label: 'Equilibrado', stopsPerDay: 5 },
+  { id: 'intense', label: 'Intenso', stopsPerDay: 6 },
 ];
 
 const executeAssistantRequest = async (payload) => {

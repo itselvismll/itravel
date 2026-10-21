@@ -87,6 +87,23 @@ test('edge function: coordenada válida da IA é preservada e a ordem é reescri
   assert.equal(second.category, 'natureza');
 });
 
+test('edge function: lugares verificados são agrupados por proximidade e destino', () => {
+  const { buildNearbyPlaceGroups } = loadEdgeFunction();
+  const places = [
+    { name: 'MASP', requestedDestination: 'São Paulo', category: 'passeio', latitude: -23.5614, longitude: -46.6559, rating: 4.7, reviewCount: 120000 },
+    { name: 'Parque Trianon', requestedDestination: 'São Paulo', category: 'passeio', latitude: -23.5626, longitude: -46.6572, rating: 4.6, reviewCount: 35000 },
+    { name: 'Japan House', requestedDestination: 'São Paulo', category: 'passeio', latitude: -23.5748, longitude: -46.6459, rating: 4.7, reviewCount: 19000 },
+    { name: 'Museu do Ipiranga', requestedDestination: 'São Paulo', category: 'passeio', latitude: -23.5856, longitude: -46.6097, rating: 4.8, reviewCount: 42000 },
+    { name: 'Cristo Redentor', requestedDestination: 'Rio de Janeiro', category: 'passeio', latitude: -22.9519, longitude: -43.2105, rating: 4.8, reviewCount: 130000 },
+  ];
+
+  const groups = buildNearbyPlaceGroups(places, 2);
+  assert.ok(groups.length >= 3);
+  assert.ok(groups.some(group => group.destination === 'São Paulo' && group.places.some(place => place.name === 'MASP')));
+  assert.ok(groups.some(group => group.destination === 'Rio de Janeiro' && group.places.some(place => place.name === 'Cristo Redentor')));
+  assert.ok(groups.every(group => group.places.every(place => Number.isFinite(place.distanceFromAnchorKm))));
+});
+
 test('edge function: coordenada ausente, nula ou absurda cai no realPlaces sem rede', async () => {
   const { normalizePlanGeography } = loadEdgeFunction();
   const plan = buildPlan([

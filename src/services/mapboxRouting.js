@@ -31,6 +31,40 @@ const MIN_COORDINATES = 2;
 // perfil a pé recusa pares muito distantes — a rota voltaria vazia justamente
 // nos trechos em que a linha reta engana mais.
 export const DEFAULT_ROUTING_PROFILE = 'driving';
+export const WALKING_ROUTING_PROFILE = 'walking';
+
+const degreesToRadians = value => value * Math.PI / 180;
+
+export const straightLineDistanceKm = (from, to) => {
+  const lat1 = Number(from?.latitude);
+  const lon1 = Number(from?.longitude);
+  const lat2 = Number(to?.latitude);
+  const lon2 = Number(to?.longitude);
+  if (![lat1, lon1, lat2, lon2].every(Number.isFinite)) return Infinity;
+
+  const deltaLat = degreesToRadians(lat2 - lat1);
+  const deltaLon = degreesToRadians(lon2 - lon1);
+  const a = Math.sin(deltaLat / 2) ** 2
+    + Math.cos(degreesToRadians(lat1)) * Math.cos(degreesToRadians(lat2))
+    * Math.sin(deltaLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+/**
+ * Um roteiro concentrado em um bairro deve seguir calçadas, não vias para carro.
+ * Para dias espalhados, driving continua sendo o fallback mais confiável.
+ */
+export const chooseRoutingProfile = points => {
+  const legs = (points || []).slice(1).map((point, index) => (
+    straightLineDistanceKm(points[index], point)
+  ));
+  if (!legs.length || legs.some(distance => !Number.isFinite(distance))) return DEFAULT_ROUTING_PROFILE;
+  const totalDistance = legs.reduce((sum, distance) => sum + distance, 0);
+  const longestLeg = Math.max(...legs);
+  return longestLeg <= 3 && totalDistance <= 10
+    ? WALKING_ROUTING_PROFILE
+    : DEFAULT_ROUTING_PROFILE;
+};
 
 // Teto de espera por requisição. O roteiro já está na tela quando estas chamadas
 // saem; passado esse tempo, o refinamento não vale mais a pena e o fallback
@@ -195,17 +229,24 @@ export const groupPointsByDay = (points) => {
  *   optimized: boolean, routed: boolean }>>}
  */
 export const buildPlanRoutes = async (points, options = {}) => {
-  const { signal, profile = DEFAULT_ROUTING_PROFILE, onDay } = options;
+  const { signal, profile, onDay } = options;
   const byDay = groupPointsByDay(points);
   const routes = new Map();
 
   for (const [day, dayPoints] of byDay) {
     if (signal?.aborted) break;
 
-    const { points: ordered, optimized } = await optimizePointOrder(dayPoints, { signal, profile });
-    const coordinates = await fetchRouteGeometry(ordered, { signal, profile });
+    const dayProfile = profile || chooseRoutingProfile(dayPoints);
+    const { points: ordered, optimized } = await optimizePointOrder(dayPoints, { signal, profile: dayProfile });
+    const coordinates = await fetchRouteGeometry(ordered, { signal, profile: dayProfile });
 
-    const result = { points: ordered, coordinates, optimized, routed: Boolean(coordinates) };
+    const result = {
+      points: ordered,
+      coordinates,
+      profile: dayProfile,
+      optimized,
+      routed: Boolean(coordinates),
+    };
     routes.set(day, result);
     onDay?.(day, result);
   }

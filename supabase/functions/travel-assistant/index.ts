@@ -151,6 +151,55 @@ const fetchJson = async (url: string, init: RequestInit = {}, timeoutMs = 7000) 
 
 const isIsoDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value)
 
+const parseClockMinutes = (value: unknown) => {
+  const match = String(value || '').trim().match(/^([01]\d|2[0-3]):([0-5]\d)$/)
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null
+}
+
+const formatClockMinutes = (value: number) => {
+  const safe = Math.max(0, Math.min(23 * 60 + 59, Math.round(value)))
+  return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`
+}
+
+const parseActivityDurationMinutes = (value: unknown) => {
+  const normalized = String(value || '').toLowerCase().replace(',', '.').trim()
+  const hours = normalized.match(/(\d+(?:\.\d+)?)\s*(?:h|hora)/)?.[1]
+  const minutes = normalized.match(/(\d+)\s*(?:min|m\b)/)?.[1]
+  const compactMinutes = normalized.match(/\d+\s*h\s*(\d{1,2})\b/)?.[1]
+  const total = (Number(hours) || 0) * 60 + (Number(minutes || compactMinutes) || 0)
+  return total > 0 ? Math.max(30, Math.min(360, Math.round(total))) : 120
+}
+
+const preferredActivityStart = (period: unknown) => {
+  const normalized = String(period || '').toLowerCase()
+  if (normalized.includes('noite')) return 19 * 60
+  if (normalized.includes('tarde')) return 14 * 60
+  return 9 * 60
+}
+
+export const normalizePlanTimeline = (plan: any) => {
+  for (const day of plan?.days || []) {
+    let previousEnd = 8 * 60 + 30
+    const activities = Array.isArray(day?.activities) ? day.activities : []
+    activities.forEach((activity: any, index: number) => {
+      const minimumStart = previousEnd + (index ? 30 : 0)
+      const requestedStart = parseClockMinutes(activity?.startTime)
+      const start = requestedStart !== null && requestedStart >= minimumStart
+        ? requestedStart
+        : Math.max(preferredActivityStart(activity?.period), minimumStart)
+      const requestedEnd = parseClockMinutes(activity?.endTime)
+      const end = requestedEnd !== null && requestedEnd > start
+        ? requestedEnd
+        : Math.min(23 * 60 + 59, start + parseActivityDurationMinutes(activity?.duration))
+
+      activity.startTime = formatClockMinutes(start)
+      activity.endTime = formatClockMinutes(end)
+      previousEnd = end
+    })
+  }
+  return plan
+}
+
 // ─── Geografia do roteiro ────────────────────────────────────────────────────
 //
 // Cada atividade precisa sair daqui com latitude/longitude válidas, categoria dentro do
@@ -597,6 +646,75 @@ const getJourneyLiveContext = async (
   }
 }
 
+const placeQualityScore = (place: any) => {
+  const rating = Number(place?.rating) || 0
+  const reviews = Math.max(0, Number(place?.reviewCount) || 0)
+  const categoryBonus = place?.category === 'passeio' ? 18 : place?.category === 'restaurante' ? 8 : 0
+  return rating * 20 + Math.log10(reviews + 1) * 12 + categoryBonus
+}
+
+/**
+ * Transforma a lista plana de lugares verificados em pequenos eixos caminháveis.
+ * A IA recebe estes grupos antes de montar o dia, portanto escolhe bairros coerentes
+ * em vez de pontos famosos espalhados em extremos diferentes da cidade.
+ */
+export const buildNearbyPlaceGroups = (places: any[], requestedGroupCount = 3) => {
+  const validPlaces = (Array.isArray(places) ? places : [])
+    .filter(place => isValidCoordinate(Number(place?.latitude), Number(place?.longitude)))
+  const byDestination = new Map<string, any[]>()
+
+  for (const place of validPlaces) {
+    const destination = cleanText(place?.requestedDestination, 100) || 'Destino'
+    if (!byDestination.has(destination)) byDestination.set(destination, [])
+    byDestination.get(destination)?.push(place)
+  }
+
+  return [...byDestination.entries()].flatMap(([destination, destinationPlaces]) => {
+    const ranked = [...destinationPlaces].sort((left, right) => placeQualityScore(right) - placeQualityScore(left))
+    const anchors: any[] = []
+    const groupCount = Math.max(1, Math.min(Number(requestedGroupCount) || 1, ranked.length, 6))
+
+    for (const candidate of ranked) {
+      const isDistinctArea = anchors.every(anchor => haversineKm(
+        Number(anchor.latitude), Number(anchor.longitude),
+        Number(candidate.latitude), Number(candidate.longitude),
+      ) >= 2.5)
+      if (isDistinctArea || !anchors.length) anchors.push(candidate)
+      if (anchors.length >= groupCount) break
+    }
+    for (const candidate of ranked) {
+      if (anchors.length >= groupCount) break
+      if (!anchors.includes(candidate)) anchors.push(candidate)
+    }
+
+    return anchors.map((anchor, index) => {
+      const nearby = ranked.map(place => ({
+        place,
+        distanceKm: haversineKm(
+          Number(anchor.latitude), Number(anchor.longitude),
+          Number(place.latitude), Number(place.longitude),
+        ),
+      })).sort((left, right) => left.distanceKm - right.distanceKm)
+      const closePlaces = nearby.filter(item => item.distanceKm <= 6)
+      const selected = (closePlaces.length >= 3 ? closePlaces : nearby).slice(0, 8)
+
+      return {
+        destination,
+        group: index + 1,
+        anchor: anchor.name,
+        center: { latitude: anchor.latitude, longitude: anchor.longitude },
+        places: selected.map(item => ({
+          name: item.place.name,
+          category: item.place.category,
+          distanceFromAnchorKm: Number(item.distanceKm.toFixed(1)),
+          rating: item.place.rating || null,
+          reviewCount: item.place.reviewCount || null,
+        })),
+      }
+    })
+  })
+}
+
 const planSchema = {
   type: 'OBJECT',
   required: ['title', 'summary', 'destinationCountry', 'localCurrency', 'budgetStatus', 'weatherNote', 'days', 'budget', 'checklist', 'safetyTips', 'practicalTips', 'sources'],
@@ -618,13 +736,15 @@ const planSchema = {
           theme: { type: 'STRING' },
             activities: {
               type: 'ARRAY',
-              minItems: 3,
-              maxItems: 3,
+              minItems: 4,
+              maxItems: 6,
               items: {
               type: 'OBJECT',
-              required: ['period', 'title', 'description', 'location', 'duration', 'estimatedCost', 'mapQuery', 'indoor', 'purchaseNote', 'latitude', 'longitude', 'category', 'order'],
+              required: ['period', 'startTime', 'endTime', 'title', 'description', 'location', 'duration', 'estimatedCost', 'mapQuery', 'indoor', 'purchaseNote', 'latitude', 'longitude', 'category', 'order'],
               properties: {
                 period: { type: 'STRING' },
+                startTime: { type: 'STRING' },
+                endTime: { type: 'STRING' },
                 title: { type: 'STRING' },
                 description: { type: 'STRING' },
                 location: { type: 'STRING' },
@@ -1018,6 +1138,12 @@ serve(async (req) => {
       wishlistCountries: cleanList(context.wishlistCountries, 195),
       level: cleanText(context.level, 40) || 'Iniciante',
     }
+    const itineraryDensity = safeRequest.pace === 'calm'
+      ? { activitiesPerDay: 4, sightseeingMinimum: 3, distribution: '1 pela manhã, 2 à tarde e 1 à noite' }
+      : safeRequest.pace === 'intense'
+        ? { activitiesPerDay: 6, sightseeingMinimum: 5, distribution: '2 pela manhã, 3 à tarde e 1 à noite' }
+        : { activitiesPerDay: 5, sightseeingMinimum: 4, distribution: '2 pela manhã, 2 à tarde e 1 à noite' }
+    const { activitiesPerDay, sightseeingMinimum, distribution: dailyDistribution } = itineraryDensity
 
     const configuredModel = Deno.env.get('GEMINI_MODEL') || 'gemini-3.6-flash'
     const models = [...new Set([
@@ -1180,10 +1306,14 @@ serve(async (req) => {
       const chunkAiContext = {
         ...aiContext,
         realPlaces: rotatedPlaces.slice(0, placeWindowSize),
+        nearbyPlaceGroups: buildNearbyPlaceGroups(
+          availablePlaces,
+          Math.min(spec.days, 6),
+        ),
       }
       const outputShape = includePlanDetails
-        ? `{"title":"...","summary":"...","destinationCountry":"...","localCurrency":"BRL","budgetStatus":"...","weatherNote":"...","days":[{"day":${spec.startDay},"date":"YYYY-MM-DD","theme":"...","activities":[{"period":"manhã","title":"...","description":"...","location":"...","duration":"...","estimatedCost":0,"mapQuery":"...","indoor":false,"purchaseNote":"...","latitude":0.0,"longitude":0.0,"category":"atracao","order":1}]}],"budget":{"total":0,"currency":"${currency}","items":[{"category":"Alimentação","amount":0,"note":"..."}],"shoppingIncluded":false,"scopeNote":"..."},"checklist":[{"category":"Documentos","item":"...","done":false}],"safetyTips":["..."],"practicalTips":["..."],"sources":[]}`
-        : `{"days":[{"day":${spec.startDay},"date":"YYYY-MM-DD","theme":"...","activities":[{"period":"manhã","title":"...","description":"...","location":"...","duration":"...","estimatedCost":0,"mapQuery":"...","indoor":false,"purchaseNote":"...","latitude":0.0,"longitude":0.0,"category":"atracao","order":1}]}]}`
+        ? `{"title":"...","summary":"...","destinationCountry":"...","localCurrency":"BRL","budgetStatus":"...","weatherNote":"...","days":[{"day":${spec.startDay},"date":"YYYY-MM-DD","theme":"...","activities":[{"period":"manhã","startTime":"09:00","endTime":"11:00","title":"...","description":"...","location":"...","duration":"2 horas","estimatedCost":0,"mapQuery":"...","indoor":false,"purchaseNote":"...","latitude":0.0,"longitude":0.0,"category":"atracao","order":1}]}],"budget":{"total":0,"currency":"${currency}","items":[{"category":"Alimentação","amount":0,"note":"..."}],"shoppingIncluded":false,"scopeNote":"..."},"checklist":[{"category":"Documentos","item":"...","done":false}],"safetyTips":["..."],"practicalTips":["..."],"sources":[]}`
+        : `{"days":[{"day":${spec.startDay},"date":"YYYY-MM-DD","theme":"...","activities":[{"period":"manhã","startTime":"09:00","endTime":"11:00","title":"...","description":"...","location":"...","duration":"2 horas","estimatedCost":0,"mapQuery":"...","indoor":false,"purchaseNote":"...","latitude":0.0,"longitude":0.0,"category":"atracao","order":1}]}]}`
       const prompt = `Você é o planejador de viagens do Journi. Responda em português brasileiro e apenas no JSON solicitado.
 
 Pedido deste bloco: ${JSON.stringify(chunkRequest)}
@@ -1196,13 +1326,22 @@ Formato obrigatório da resposta (repita atividades e dias conforme solicitado):
 
 Regras:
 - Crie exatamente ${spec.days} dias neste bloco, numerados de ${spec.startDay} a ${chunkEndDay}, respeitando datas, ritmo, interesses, alimentação, acessibilidade e todos os países selecionados em destinations.
-- Crie exatamente 3 atividades objetivas por dia (manhã, tarde e noite). Mantenha title, description e purchaseNote concisos.
+- Crie exatamente ${activitiesPerDay} experiências por dia (${dailyDistribution}), distribuídas cronologicamente. Mantenha title, description e purchaseNote concisos.
+- Pelo menos ${sightseeingMinimum} experiências do dia devem fazer a pessoa conhecer de fato o destino: atrações, bairros, museus, mercados, parques, mirantes ou experiências culturais. Não preencha a agenda apenas com refeições, hotel, deslocamento ou tempo livre.
+- Uma refeição pode aparecer como experiência quando o estabelecimento for relevante e real. As demais refeições e pausas devem caber naturalmente nos intervalos entre os horários, sem substituir passeios.
 - O perfil de orçamento escolhido é ${safeRequest.budgetLevel} e deve mudar decisões concretas do roteiro, não apenas o texto da resposta.
 - Em economy, priorize hospedagem simples e bem avaliada, transporte público, refeições acessíveis e atividades gratuitas ou de baixo custo.
 - Em balanced, combine bom custo-benefício, localização prática, atrações pagas essenciais e refeições de faixa intermediária.
 - Em premium, priorize conforto, localização, deslocamentos convenientes, experiências especiais e restaurantes melhores, sem inventar luxo desnecessário.
 - Não existe teto informado pelo usuário. Calcule o custo provável da viagem de acordo com o perfil escolhido e mostre o valor que ela realmente tende a custar.
 - Distribua manhã, tarde e noite sem deslocamentos impossíveis; agrupe locais próximos.
+- Use nearbyPlaceGroups como a estrutura geográfica do dia: escolha um grupo principal por dia e monte a sequência com os locais desse mesmo eixo. Não faça zigue-zague pela cidade.
+- Um ponto turístico essencial fora do grupo merece outro dia ou outro eixo; não o encaixe entre lugares distantes apenas por ser famoso.
+- Dentro de cada dia, ordene as paradas para reduzir retornos e deslocamentos. Preserve refeições em horários naturais e encerre o dia perto do último passeio ou da região de hospedagem.
+- Para deslocamentos urbanos normais, prefira atividades consecutivas a até 6 km uma da outra. Ultrapasse isso somente para uma atração essencial e explique o deslocamento em description.
+- Toda atividade deve ter startTime e endTime no formato 24 horas HH:mm. Monte uma agenda cronológica real, começando normalmente entre 08:00 e 10:00, com horários específicos para cada passeio, refeição e deslocamento.
+- Calcule endTime a partir da duração realista da visita. Reserve intervalos coerentes entre atividades para caminhada, transporte, descanso e refeições; nunca sobreponha horários.
+- Considere openingHours dos locais verificados quando estiver disponível. Não agende atrações fora do horário conhecido e não invente um horário oficial quando o dado não estiver disponível.
 - Cada atividade deve citar pelo nome um lugar real e identificável: atração, monumento, museu, parque, bairro, mercado ou restaurante. Não use títulos genéricos como "caminhada pelo centro", "experiência cultural", "tempo livre" ou "restaurante local".
 - Faça o viajante realmente conhecer o destino: priorize os pontos turísticos essenciais, alterne ícones conhecidos com experiências locais e explique em description o que será visto ou vivido ali.
 - Organize cada dia por uma região ou eixo geográfico. Quando houver mais de um destino, distribua os dias proporcionalmente e não misture países ou cidades distantes no mesmo dia.
@@ -1227,9 +1366,25 @@ Regras:
 - Checklist deve incluir documentos, saúde, dinheiro, conectividade e bagagem.
 - Inclua alertas de segurança objetivos, sem alarmismo.
 - ${includePlanDetails ? 'Inclua todos os campos gerais do roteiro.' : 'Este é um bloco complementar: retorne somente o campo days.'}`
-      const chunkDaysSchema = spec.days <= strictDaySchemaLimit
-        ? { ...planSchema.properties.days, minItems: spec.days, maxItems: spec.days }
-        : planSchema.properties.days
+      const activitiesSchema = {
+        ...planSchema.properties.days.items.properties.activities,
+        minItems: activitiesPerDay,
+        maxItems: activitiesPerDay,
+      }
+      const dayItemSchema = {
+        ...planSchema.properties.days.items,
+        properties: {
+          ...planSchema.properties.days.items.properties,
+          activities: activitiesSchema,
+        },
+      }
+      const chunkDaysSchema = {
+        ...planSchema.properties.days,
+        items: dayItemSchema,
+        ...(spec.days <= strictDaySchemaLimit
+          ? { minItems: spec.days, maxItems: spec.days }
+          : {}),
+      }
       const responseJsonSchema = toJsonSchema(includePlanDetails
         ? {
           ...planSchema,
@@ -1240,7 +1395,7 @@ Regras:
           required: ['days'],
           properties: { days: chunkDaysSchema },
         })
-      const maxOutputTokens = Math.min(65535, Math.max(8192, spec.days * 1100))
+      const maxOutputTokens = Math.min(65535, Math.max(8192, spec.days * activitiesPerDay * 380))
       let lastStatus = 502
       let lastProviderStatus = ''
       let lastProviderReason = ''
@@ -1365,7 +1520,7 @@ Regras:
                 && candidatePlan.days.every((day: any) => (
                   Number.isFinite(Number(day?.day))
                   && Array.isArray(day?.activities)
-                  && day.activities.length === 3
+                  && day.activities.length === activitiesPerDay
                 ))
               const hasPlanDetails = !includePlanDetails || (
                 cleanText(candidatePlan?.title, 200)
@@ -1564,6 +1719,7 @@ Regras:
       updatedAt: liveContext.retrievedAt,
     }])).values()]
 
+    normalizePlanTimeline(plan)
     addExactMapLinks(plan, destination)
     // Um roteiro multi-país espalha pontos legitimamente por milhares de km, então o raio
     // de sanidade só vale quando há um destino único para servir de âncora.

@@ -20,6 +20,10 @@ import {
   clearTripPlannerDraft,
   saveTripPlannerResultDraft,
 } from '../../services/tripPlannerDraftService';
+import {
+  formatActivitySchedule,
+  normalizeTravelPlanTimeline,
+} from '../../services/itineraryTimeService';
 
 const TABS = [
   { id: 'itinerary', label: 'Roteiro', icon: 'map-outline' },
@@ -47,7 +51,9 @@ const formatMoney = (value, currency = 'BRL') => {
 
 export default function AssistantResultScreen({ route, navigation }) {
   const request = route.params?.request || route.params?.request_data || {};
-  const [plan, setPlan] = useState(route.params?.plan || route.params?.plan_data || {});
+  const [plan, setPlan] = useState(() => normalizeTravelPlanTimeline(
+    route.params?.plan || route.params?.plan_data || {},
+  ));
   const [planId, setPlanId] = useState(route.params?.planId || route.params?.id || null);
   const userContext = route.params?.userContext || {};
   const [activeTab, setActiveTab] = useState(route.params?.initialTab || 'itinerary');
@@ -90,7 +96,7 @@ export default function AssistantResultScreen({ route, navigation }) {
 
   const handleShare = async () => {
     const daySummary = (plan.days || []).map(day => (
-      `Dia ${day.day} — ${day.theme}\n${(day.activities || []).map(item => `• ${item.period}: ${item.title}`).join('\n')}`
+      `Dia ${day.day} — ${day.theme}\n${(day.activities || []).map(item => `• ${formatActivitySchedule(item) || item.period}: ${item.title}`).join('\n')}`
     )).join('\n\n');
     await Share.share({
       title: plan.title || 'Meu roteiro Journi',
@@ -163,7 +169,7 @@ export default function AssistantResultScreen({ route, navigation }) {
         notify('Não foi possível trocar a atividade', result?.error || 'Tente novamente.');
         return;
       }
-      setPlan(result.plan);
+      setPlan(normalizeTravelPlanTimeline(result.plan));
     } catch {
       notify('Não foi possível trocar a atividade', 'Verifique sua conexão e tente novamente.');
     } finally {
@@ -177,7 +183,7 @@ export default function AssistantResultScreen({ route, navigation }) {
 
   const saveActivityEdit = () => {
     if (!editing) return;
-    setPlan(current => ({
+    setPlan(current => normalizeTravelPlanTimeline({
       ...current,
       days: current.days.map((day, dayIndex) => (
         dayIndex !== editing.dayIndex ? day : {
@@ -208,7 +214,7 @@ export default function AssistantResultScreen({ route, navigation }) {
         return;
       }
 
-      setPlan(result.plan);
+      setPlan(normalizeTravelPlanTimeline(result.plan));
       setChatText('');
       setAdjustments(current => [
         ...current,
@@ -313,6 +319,7 @@ export default function AssistantResultScreen({ route, navigation }) {
                 {(day.activities || []).map((activity, activityIndex) => {
                   const key = `${dayIndex}-${activityIndex}`;
                   const isEditing = editing?.dayIndex === dayIndex && editing?.activityIndex === activityIndex;
+                  const schedule = formatActivitySchedule(activity);
                   return (
                     <View key={key} style={styles.activity}>
                       <View style={styles.timelineIcon}><Ionicons name={periodIcon(activity.period)} size={16} color="#A78BFA" /></View>
@@ -328,6 +335,7 @@ export default function AssistantResultScreen({ route, navigation }) {
                           </View>
                         ) : (
                           <>
+                            {!!schedule && <Text style={styles.schedule}>{schedule}</Text>}
                             <Text style={styles.period}>{activity.period} · {activity.duration}</Text>
                             <Text style={styles.activityTitle}>{activity.title}</Text>
                             <Text style={styles.activityDescription}>{activity.description}</Text>
@@ -595,6 +603,7 @@ const styles = StyleSheet.create({
   dayDate: { color: '#777F9E', fontSize: 10, marginTop: 2 },
   activity: { flexDirection: 'row', gap: 11, paddingTop: 15, marginTop: 11, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.055)' },
   timelineIcon: { width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(139,92,246,0.13)', alignItems: 'center', justifyContent: 'center' },
+  schedule: { color: '#F0E9FF', fontSize: 14, fontWeight: '900', fontVariant: ['tabular-nums'] },
   period: { color: '#A78BFA', fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
   activityTitle: { color: '#F0F1F7', fontSize: 14, fontWeight: '800', marginTop: 3 },
   activityDescription: { color: '#9BA2BF', fontSize: 12, lineHeight: 18, marginTop: 5 },

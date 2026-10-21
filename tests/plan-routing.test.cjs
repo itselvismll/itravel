@@ -22,6 +22,7 @@ const {
   fetchRouteGeometry,
   buildPlanRoutes,
   groupPointsByDay,
+  chooseRoutingProfile,
   OPTIMIZATION_MAX_COORDINATES,
   DIRECTIONS_MAX_COORDINATES,
 } = routing;
@@ -151,6 +152,18 @@ test('menos de dois pontos não é trajeto', async () => {
   assert.equal(um.optimized, false);
   assert.equal(nenhum.optimized, false);
   assert.equal(fake.calls.length, 0);
+});
+
+test('um dia concentrado vira rota a pé e um dia espalhado continua de carro', () => {
+  const nearby = [
+    point(1, 1, -46.6559, -23.5614),
+    point(1, 2, -46.6520, -23.5593),
+    point(1, 3, -46.6476, -23.5587),
+  ];
+  const farAway = [nearby[0], point(1, 2, -46.5062, -23.5505)];
+
+  assert.equal(chooseRoutingProfile(nearby), 'walking');
+  assert.equal(chooseRoutingProfile(farAway), 'driving');
 });
 
 test('sem token nenhuma requisição sai', async () => {

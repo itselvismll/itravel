@@ -381,6 +381,9 @@ export default function TripPlannerScreen({ navigation, route }) {
         </FormSection>
 
         <FormSection icon="speedometer-outline" title="Ritmo da viagem">
+          <Text style={styles.helperText}>
+            {`${TRAVEL_PACES.find(item => item.id === form.pace)?.stopsPerDay || 5} experiências por dia, organizadas por proximidade.`}
+          </Text>
           <ChipGroup
             values={TRAVEL_PACES.map(item => item.label)}
             selected={[TRAVEL_PACES.find(item => item.id === form.pace)?.label]}
