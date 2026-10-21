@@ -76,7 +76,31 @@ test('travel planner is personalized, structured, cancellable, and editable', ()
   assert.match(result, /openMap/);
   assert.match(result, /startEditing/);
   assert.match(result, /assistantResult.adjust.title/);
+  assert.match(result, /finally\s*\{\s*setRegenerating\(''\)/);
+  assert.match(assistant, /awaitWithDeadline/);
+  assert.match(assistant, /ACTIVITY_REGENERATION_TIMEOUT_MS/);
   assert.match(map, /navigation\.navigate\('TripPlanner'\)/);
+});
+
+test('activity regeneration changes only the selected activity', () => {
+  const edgeFunction = read('supabase/functions/travel-assistant/index.ts');
+  assert.match(edgeFunction, /action === 'regenerate_activity'[\s\S]*days: 1/);
+  assert.match(edgeFunction, /plan\.days\[regenerationDayIndex\]\.activities\[regenerationActivityIndex\] = replacementActivity/);
+  assert.match(edgeFunction, /INVALID_ACTIVITY_BLOCK/);
+});
+
+test('unfinished travel planning can be resumed and saved from the header', () => {
+  const planner = read('src/screens/assistant/TripPlannerScreen.js');
+  const result = read('src/screens/assistant/AssistantResultScreen.js');
+  const drafts = read('src/services/tripPlannerDraftService.js');
+  assert.match(planner, /tripPlanner\.resumeDraftTitle/);
+  assert.match(planner, /getTripPlannerDraft/);
+  assert.match(planner, /saveTripPlannerFormDraft/);
+  assert.match(result, /styles\.saveButton/);
+  assert.match(result, /saveTripPlannerResultDraft/);
+  assert.match(result, /clearTripPlannerDraft/);
+  assert.match(drafts, /type: 'form'/);
+  assert.match(drafts, /type: 'result'/);
 });
 
 test('AI planner enriches plans with dated weather, verified places, currency, and sources', () => {
@@ -109,6 +133,8 @@ test('travel planner uses a calendar, blocks past dates, and sends ISO dates', (
   assert.match(planner, /A data de ida não pode estar no passado/);
   assert.match(planner, /startDate: form\.useDates \? toIsoDate\(form\.startDate\)/);
   assert.match(calendar, /disabled = startOfDay\(date\) < minimum/);
+  assert.match(calendar, /setMonth\(selected \|\| minimum\);[\s\S]*?setVisible\(true\)/);
+  assert.match(calendar, /onPress=\{openCalendar\}/);
   assert.match(dateUtils, /parseBrazilianDate/);
   // A data da viagem é mostrada em formato brasileiro. Ela saía no subtítulo do
   // cabeçalho compacto da tela de resultado; desde o refino da capa, sai no chip
@@ -160,13 +186,22 @@ test('email/password auth sends an hCaptcha token to Supabase', () => {
 
   // Um widget por plataforma: inline na web, WebView em modal no nativo.
   assert.match(read('src/components/auth/HCaptchaWidget.web.js'), /@hcaptcha\/react-hcaptcha/);
-  assert.match(read('src/components/auth/HCaptchaWidget.js'), /@hcaptcha\/react-native-hcaptcha/);
+  const nativeCaptcha = read('src/components/auth/HCaptchaWidget.js');
+  assert.match(nativeCaptcha, /@hcaptcha\/react-native-hcaptcha/);
+  assert.match(nativeCaptcha, /Hcaptcha/);
+  assert.match(nativeCaptcha, /size="normal"/);
+  assert.match(nativeCaptcha, /useWindowDimensions/);
+  assert.match(nativeCaptcha, /challengeOpen \? challengeHeight : 118/);
+  assert.match(nativeCaptcha, /data === 'open'/);
   assert.match(read('src/utils/constants.js'), /EXPO_PUBLIC_HCAPTCHA_SITE_KEY/);
+  assert.match(read('src/components/auth/hcaptchaConfig.js'), /HCAPTCHA_BASE_URL = API_CONFIG\.WEB_APP_URL/);
+  assert.match(nativeCaptcha, /url=\{HCAPTCHA_BASE_URL\}/);
 
-  // Token e de uso unico: submit bloqueado sem ele e widget resetado no erro.
+  // Token e de uso unico: sem token o submit abre o desafio, e erro reseta.
   for (const screen of ['src/screens/auth/LoginScreen.js', 'src/screens/auth/RegisterScreen.js']) {
     const source = read(screen);
-    assert.match(source, /const submitDisabled = loading \|\| \(HCAPTCHA_ENABLED && !captchaToken\);/);
+    assert.match(source, /if \(HCAPTCHA_ENABLED && !captchaToken\) \{[\s\S]*?captchaRef\.current\?\.open\(\);[\s\S]*?return;/);
+    assert.match(source, /const submitDisabled = loading;/);
     assert.match(source, /captchaRef\.current\?\.reset\(\);/);
     assert.match(source, /disabled=\{submitDisabled\}/);
   }
@@ -298,7 +333,8 @@ test('planning, messaging, passport, and explore improvements stay integrated', 
   assert.match(planner, /DestinationBudgetPlanner/);
   assert.match(planner, /LocationAutocomplete/);
   assert.match(planner, /MultiDestinationSelector/);
-  assert.match(planner, /formatMoneyInput/);
+  const budgetPlanner = read('src/components/DestinationBudgetPlanner.js');
+  assert.match(budgetPlanner, /formatMoneyInput/);
   assert.match(planner, /form\.travelerType === 'Casal'/);
   assert.match(result, /assistantResult.openSaved/);
   assert.match(navigation, /name="Messages"/);
@@ -495,7 +531,7 @@ test('planner converts currencies, keeps free activities at zero, and exposes ve
   const explore = read('src/screens/explore/ExploreScreen.js');
 
   assert.match(currency, /api\.frankfurter\.dev\/v2\/rate/);
-  assert.match(planner, /destinationBudgets/);
+  assert.match(planner, /budgetLevel/);
   assert.match(planner, /destinations\.map/);
   assert.match(result, /Number\(value\) === 0/);
   assert.match(result, /Site oficial/);
@@ -533,22 +569,24 @@ test('long AI plans must contain exactly the requested duration and explain ever
   assert.match(assistant, /Math\.min\(65535, Math\.max\(8192, spec\.days \* 1100\)\)/);
   assert.match(assistant, /candidatePlan\.days\.length === spec\.days/);
   assert.match(assistant, /retorne somente o campo days/);
-  assert.match(assistant, /const chunkConcurrency = 1/);
+  assert.match(assistant, /const chunkConcurrency = 2/);
   assert.match(assistant, /Promise\.all\(/);
   assert.match(assistant, /gemini-3\.5-flash-lite/);
-  assert.match(assistant, /AbortSignal\.timeout\(28000\)/);
+  assert.match(assistant, /REQUEST_BUDGET_MS = 110000/);
+  assert.match(assistant, /Math\.min\(24000, Math\.max\(5000, remainingMs - 2000\)\)/);
   assert.match(assistant, /const aiContext =/);
   assert.match(assistant, /placeNames:/);
   assert.match(assistant, /dayDestinations:/);
   assert.match(assistant, /Siga dayDestinations exatamente/);
   assert.match(assistant, /const maxProviderAttempts = 2/);
-  assert.match(service, /MAX_DAYS_PER_ASSISTANT_REQUEST = 12/);
-  assert.match(service, /buildPlanSegments/);
-  assert.match(service, /mergeSegmentResults/);
+  assert.match(service, /ASSISTANT_PLANNER_VERSION = 2/);
+  assert.match(service, /requiredPlannerVersion: ASSISTANT_PLANNER_VERSION/);
+  assert.doesNotMatch(service, /buildPlanSegments/);
+  assert.doesNotMatch(service, /mergeSegmentResults/);
   assert.match(assistant, /getProviderRetryDelayMs/);
   assert.match(assistant, /geminiResponse\.status === 429/);
   assert.match(assistant, /model !== models\[models\.length - 1\]/);
-  assert.match(assistant, /await sleep\(400\)/);
+  assert.match(assistant, /const firstChunk = await generateChunk/);
   assert.match(assistant, /placeWindowSize/);
   assert.match(service, /activeAssistantRequests/);
   assert.match(assistant, /const usedActivityTitles = new Set/);
@@ -557,41 +595,59 @@ test('long AI plans must contain exactly the requested duration and explain ever
   assert.match(assistant, /Não use títulos genéricos/);
   assert.match(service, /requestedDuration \* 10000/);
   assert.match(assistant, /shoppingIncluded/);
-  assert.match(assistant, /passagens, hospedagem, alimentação, transporte local, passeios e ingressos, compras e reserva/);
+  assert.match(assistant, /Passagens, Hospedagem, Alimentação, Transporte local, Passeios e ingressos, Compras e Reserva/);
   assert.match(result, /assistantResult.budget.whatIsIncluded/);
   assert.match(result, /purchaseNote/);
 });
 
-test('trip budget is allocated per destination and consolidated in BRL', () => {
+test('trip budget uses a travel style, a free currency converter, and grounded prices', () => {
   const planner = read('src/screens/assistant/TripPlannerScreen.js');
   const destinationBudget = read('src/components/DestinationBudgetPlanner.js');
   const currencyPicker = read('src/components/CurrencyPicker.js');
   const currency = read('src/services/currencyService.js');
+  const assistantService = read('src/services/assistantService.js');
   const assistant = read('supabase/functions/travel-assistant/index.ts');
   assert.match(planner, /<DestinationBudgetPlanner/);
-  assert.match(planner, /destinationBudgets/);
+  assert.match(planner, /converterBaseCurrency/);
   assert.match(destinationBudget, /destinationBudgetPlanner\.title/);
-  assert.match(destinationBudget, /destinationBudgetPlanner\.compareCurrencyLabel/);
+  assert.match(destinationBudget, /destinationBudgetPlanner\.converterTitle/);
   assert.match(destinationBudget, /onDisplayCurrencyChange/);
   assert.match(destinationBudget, /destinationBudgetPlanner\.styleHint/);
   assert.match(destinationBudget, /Econômico/);
   assert.match(destinationBudget, /Equilibrado/);
   assert.match(destinationBudget, /Confortável/);
-  assert.match(destinationBudget, /destinationBudgetPlanner\.totalSection/);
-  assert.match(destinationBudget, /Inverter conversão de/);
-  assert.match(destinationBudget, /BASE_TO_LOCAL/);
-  assert.match(destinationBudget, /destinationCurrency/);
-  assert.match(destinationBudget, /comparisonCurrency/);
-  assert.doesNotMatch(destinationBudget, /currency: displayCurrency/);
+  assert.match(destinationBudget, /Inverter \$\{converterBaseCurrency\} e \$\{displayCurrency\}/);
+  assert.match(destinationBudget, /onConverterBaseCurrencyChange/);
+  assert.doesNotMatch(destinationBudget, /LIMITE POR DESTINO/);
+  assert.doesNotMatch(destinationBudget, /TOTAL ESTIMADO/);
   assert.match(currencyPicker, /getAvailableCurrencies/);
   assert.match(currencyPicker, /currencyPicker\.searchPlaceholder/);
+  assert.match(currencyPicker, /inline/);
+  assert.match(currencyPicker, /style=\{styles\.dismissBackdrop\}/);
+  assert.match(currencyPicker, /dismissBackdrop: \{ \.\.\.StyleSheet\.absoluteFillObject \}/);
+  assert.doesNotMatch(currencyPicker, /<TouchableOpacity style=\{styles\.overlay\}[^>]*onPress=/);
   assert.match(currency, /world-countries@latest\/dist\/countries\.json/);
   assert.match(currency, /currencyCatalogMemoryCache/);
   assert.match(currency, /'Argentine peso': 'ARS'/);
+  assert.match(currency, /\{ code: 'EUR', name: 'Euro', country: 'EU', symbol: '€' \}/);
+  assert.match(currency, /EUR: 'EU'/);
   assert.match(currency, /open\.er-api\.com\/v6\/latest/);
-  assert.match(assistant, /amountInBRL/);
+  assert.match(assistant, /googleSearch/);
+  assert.match(assistant, /const researchTravelPrices/);
+  assert.match(assistant, /Nunca use zero para Passagens ou Hospedagem/);
+  assert.match(assistant, /researchedBudget/);
+  assert.match(assistant, /AI_PRICE_ESTIMATE_OK/);
+  assert.match(assistant, /pricingMode: useGrounding \? 'live' : 'estimated'/);
+  assert.match(assistant, /Estimativa de mercado sem cotação ao vivo/);
+  assert.match(assistant, /useGrounding && \(response\.status === 429 \|\| response\.status === 403\)/);
+  assert.match(assistant, /plannerVersion: PLANNER_CONTRACT_VERSION/);
+  assert.match(assistant, /AI_INCOMPLETE_BUDGET/);
+  assert.match(assistant, /getGroundingSources/);
+  assert.match(assistant, /INVALID_ORIGIN/);
   assert.match(assistant, /Em economy, priorize hospedagem simples/);
   assert.match(assistant, /Em premium, priorize conforto/);
+  assert.match(assistantService, /validateGeneratedBudget/);
+  assert.match(assistantService, /AI_INCOMPLETE_BUDGET/);
 });
 
 test('password login preserves the Supabase error code and never hides an unknown failure', () => {
@@ -1028,7 +1084,8 @@ test('AI planner searches specific cities and airports with country flags', () =
   assert.match(geoSearch, /Promise\.allSettled/);
   assert.ok(municipalities.length >= 5570);
   assert.ok(municipalities.some(([name, state]) => name === 'Jundiaí' && state === 'SP'));
-  assert.match(budget, /destinationId/);
+  assert.doesNotMatch(budget, /destinationId/);
+  assert.match(budget, /destinationBudgetPlanner\.converterTitle/);
 });
 
 test('mobile performance safeguards keep heavy content bounded', () => {
@@ -1292,4 +1349,35 @@ test('nenhum emoji pictográfico é usado como ícone de interface', () => {
   walk(path.join(root, 'src'));
 
   assert.deepEqual(offenders, [], `emoji usado como ícone:\n${offenders.join('\n')}`);
+});
+
+test('excluir uma viagem permite a cascata do último proprietário', () => {
+  const migration = read(
+    'supabase/migrations/20260930120000_allow_trip_delete_with_last_owner.sql'
+  );
+
+  // A exceção só deve ser contornada quando o pai já foi removido pela mesma
+  // exclusão. A remoção direta do último owner de uma viagem viva segue abaixo
+  // e continua chegando à validação de `remaining = 0`.
+  const cascadeGuard = migration.indexOf("if tg_op = 'DELETE' and not exists (");
+  const parentLookup = migration.indexOf('from public.travel_plans', cascadeGuard);
+  const lastOwnerGuard = migration.indexOf('if remaining = 0 then', parentLookup);
+
+  assert.ok(cascadeGuard >= 0, 'a migração precisa reconhecer a cascata de DELETE');
+  assert.ok(parentLookup > cascadeGuard, 'a cascata deve confirmar que a viagem pai não existe');
+  assert.ok(lastOwnerGuard > parentLookup, 'a proteção do último owner deve continuar ativa');
+});
+
+test('excluir uma viagem não grava auditoria para itens removidos em cascata', () => {
+  const migration = read(
+    'supabase/migrations/20260930123000_skip_edit_log_during_trip_delete.sql'
+  );
+
+  const parentLookup = migration.indexOf('from public.travel_plans');
+  const missingParentGuard = migration.indexOf('if not found then return; end if;', parentLookup);
+  const logInsert = migration.indexOf('insert into public.trip_edit_log', missingParentGuard);
+
+  assert.ok(parentLookup >= 0, 'a auditoria precisa consultar a viagem pai');
+  assert.ok(missingParentGuard > parentLookup, 'a cascata precisa parar quando a viagem já não existe');
+  assert.ok(logInsert > missingParentGuard, 'a FK só pode ser escrita depois de confirmar a viagem pai');
 });

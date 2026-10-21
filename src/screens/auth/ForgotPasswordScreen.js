@@ -17,16 +17,21 @@ export default function ForgotPasswordScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [captchaToken, setCaptchaToken] = useState(/** @type {string | null} */ (null));
-  const captchaRef = useRef(/** @type {{ reset: () => void, markUsed: () => void } | null} */ (null));
+  const captchaRef = useRef(/** @type {{ reset: () => void, markUsed: () => void, open: () => void } | null} */ (null));
 
   // Sem site key configurada o desafio não aparece, então não travamos o
   // formulário — o Supabase continua recusando pelo lado do servidor.
-  const submitDisabled = loading || (HCAPTCHA_ENABLED && !captchaToken);
+  const submitDisabled = loading;
 
   const handleSubmit = async () => {
     const normalizedEmail = email.trim().toLowerCase();
     if (!isValidEmail(normalizedEmail)) {
       notify(t('auth.forgot.invalidEmailTitle'), t('auth.forgot.invalidEmailMessage'));
+      return;
+    }
+
+    if (HCAPTCHA_ENABLED && !captchaToken) {
+      captchaRef.current?.open();
       return;
     }
 

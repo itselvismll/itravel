@@ -3,7 +3,7 @@ import {
   View, Text, FlatList, TouchableOpacity, Image as NativeImage,
   StyleSheet, ActivityIndicator, Modal, TextInput, Share, Platform,
 } from 'react-native';
-import { Image } from 'expo-image';
+import Image from '../../components/CompatibleImage';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { getCurrentUser, supabase } from '../../services/supabase';

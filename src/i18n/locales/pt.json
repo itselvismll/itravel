@@ -206,8 +206,17 @@
       "unknown": "Não foi possível concluir agora. Código: %{code}"
     },
     "captchaTitle": "Verificação de segurança",
-    "captchaVerified": "Verificação concluída",
-    "captchaPrompt": "Toque para verificar que não é um robô"
+    "captchaWidget": {
+      "initial": "Conclua a verificação para continuar.",
+      "openPrompt": "Resolva a verificação acima antes de continuar.",
+      "success": "Verificação concluída.",
+      "selectImages": "Selecione as imagens solicitadas e confirme a verificação.",
+      "retry": "Toque na caixa de verificação para tentar novamente.",
+      "expired": "A verificação expirou. Tente novamente.",
+      "loadingTimeout": "Ainda carregando a verificação. Aguarde alguns segundos.",
+      "loadError": "Não foi possível carregar a verificação: %{detail}",
+      "disabled": "Verificação de segurança indisponível: defina EXPO_PUBLIC_HCAPTCHA_SITE_KEY."
+    }
   },
   "drawer": {
     "closeLabel": "Fechar configurações",
@@ -414,6 +423,10 @@
     "routeSection": "Trajeto",
     "originPlaceholder": "Saindo de (opcional)",
     "destinationPlaceholder": "Cidade, país ou aeroporto (ex: GRU)",
+    "resumeDraftTitle": "Retornar de onde parou",
+    "resumeDraftResult": "Seu roteiro para %{destination} continua disponível.",
+    "resumeDraftResultFallback": "a próxima viagem",
+    "resumeDraftForm": "Continue preenchendo seu planejamento sem perder as informações.",
     "destinationsSection": "Destinos e paradas",
     "datesSection": "Datas",
     "departure": "Ida",
@@ -458,7 +471,9 @@
       "subtitle": "Peça mudanças sem preencher tudo novamente.",
       "cta": "Alterar viagem",
       "failedTitle": "Não foi possível ajustar o roteiro",
-      "swapFailedTitle": "Não foi possível trocar a atividade"
+      "swapFailedTitle": "Não foi possível trocar a atividade",
+      "swapFailedNetwork": "Verifique sua conexão e tente novamente.",
+      "done": "Pronto! Ajustei o roteiro mantendo os demais detalhes da viagem."
     },
     "openSaved": "Abrir meus roteiros salvos",
     "estimatesDisclaimer": "Valores são estimativas. Confirme preços, horários, documentos e alertas em fontes oficiais.",
@@ -537,17 +552,13 @@
   },
   "destinationBudgetPlanner": {
     "title": "Orçamento da viagem",
-    "subtitle": "Defina o estilo da viagem e compare seus limites em qualquer moeda.",
-    "styleSection": "ESTILO DE ORÇAMENTO",
-    "styleHint": "A IA usa esta escolha para decidir hospedagem, alimentação, transporte e passeios.",
-    "limitSection": "LIMITE POR DESTINO",
-    "selectDestinationsHint": "Selecione os países em “Destinos da viagem” para montar o orçamento.",
-    "addDestination": "Adicionar destino",
-    "totalSection": "TOTAL ESTIMADO",
-    "convertedToBRL": "Soma convertida para reais",
-    "rateComparison": "Comparação %{base} → %{comparison} • Cotação de %{date}",
-    "rateSourcePrefix": " • Fonte: ",
-    "compareCurrencyLabel": "Moeda para comparar"
+    "subtitle": "Escolha seu estilo. A IA pesquisa os custos e estima quanto a viagem realmente deve custar.",
+    "styleSection": "COMO VOCÊ QUER VIAJAR?",
+    "styleHint": "Não existe limite por destino: o roteiro mostrará a estimativa encontrada para passagem, hospedagem, alimentação, transporte e passeios.",
+    "converterTitle": "Conversor de moedas",
+    "converterSubtitle": "Compare qualquer moeda sem alterar a moeda usada no roteiro.",
+    "rateQuoteDate": "Cotação de %{date}",
+    "rateSourcePrefix": " • Fonte: "
   },
   "legalSheet": {
     "title": "Política e Privacidade",

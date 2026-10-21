@@ -12,10 +12,11 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import CalendarField from '../../components/CalendarField';
 import DestinationBudgetPlanner from '../../components/DestinationBudgetPlanner';
 import LocationAutocomplete from '../../components/LocationAutocomplete';
-import MultiDestinationSelector, { getTravelDestinationKey } from '../../components/MultiDestinationSelector';
+import MultiDestinationSelector from '../../components/MultiDestinationSelector';
 import { getCurrentUser, getVisitedCountries } from '../../services/supabase';
 import { getWishlist } from '../../services/socialService';
 import {
@@ -33,6 +34,10 @@ import {
 } from '../../utils/dateUtils';
 import { formatAssistantError } from '../../utils/assistantErrors';
 import { formatMoneyInput, parseMoneyInput } from '../../services/currencyService';
+import {
+  getTripPlannerDraft,
+  saveTripPlannerFormDraft,
+} from '../../services/tripPlannerDraftService';
 
 const TRAVELER_TYPES = ['Solo', 'Casal', 'Família', 'Amigos', 'Trabalho'];
 const initialForm = {
@@ -48,12 +53,12 @@ const initialForm = {
   duration: '3',
   travelers: '1',
   travelerType: 'Solo',
-  budget: '',
-  destinationBudgets: [],
   budgetLevel: 'balanced',
-  budgetCurrency: 'BRL',
-  displayCurrency: 'BRL',
-  convertedBudget: 0,
+  converterAmount: 1,
+  converterBaseCurrency: 'BRL',
+  displayCurrency: 'USD',
+  converterResult: 0,
+  converterRate: 0,
   exchangeDate: '',
   pace: 'balanced',
   interests: [],
@@ -74,10 +79,9 @@ export default function TripPlannerScreen({ navigation, route }) {
       endDate: toBrazilianDate(initialRequest.endDate),
       travelers: String(initialRequest.travelers || initialForm.travelers),
       duration: String(initialRequest.duration || initialForm.duration),
-      budget: initialRequest.budget ? formatMoneyInput(initialRequest.budget) : '',
-      budgetCurrency: initialRequest.budgetCurrency || initialRequest.currency || 'BRL',
-      displayCurrency: initialRequest.displayCurrency || 'BRL',
-      destinationBudgets: initialRequest.destinationBudgets || [],
+      converterAmount: initialRequest.converterAmount || 1,
+      converterBaseCurrency: initialRequest.converterBaseCurrency || 'BRL',
+      displayCurrency: initialRequest.displayCurrency || 'USD',
       destinations: Array.isArray(initialRequest.destinations) && initialRequest.destinations.length
         ? initialRequest.destinations.map(item => typeof item === 'string' ? { code: '', name: item } : item)
         : initialRequest.destination
@@ -87,7 +91,9 @@ export default function TripPlannerScreen({ navigation, route }) {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [resumableDraft, setResumableDraft] = useState(null);
   const scrollRef = useRef(null);
+  const formTouched = useRef(false);
 
   const duration = useMemo(() => {
     if (!form.useDates) return Math.max(1, Number(form.duration) || 0) || null;
@@ -103,7 +109,39 @@ export default function TripPlannerScreen({ navigation, route }) {
     }
   }, [form.travelerType]);
 
+  useFocusEffect(React.useCallback(() => {
+    setResumableDraft(getTripPlannerDraft());
+  }, []));
+
+  useEffect(() => {
+    if (!formTouched.current) return;
+    saveTripPlannerFormDraft(form);
+    setResumableDraft(null);
+  }, [form]);
+
+  const resumeDraft = () => {
+    const draft = getTripPlannerDraft();
+    if (!draft) return;
+    if (draft.type === 'result') {
+      navigation.replace('AssistantResult', {
+        request: draft.request,
+        plan: draft.plan,
+        userContext: draft.userContext,
+        initialTab: draft.activeTab,
+      });
+      return;
+    }
+    if (draft.type === 'form' && draft.form) {
+      formTouched.current = true;
+      setForm({ ...initialForm, ...draft.form });
+      setResumableDraft(null);
+      setError('');
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    }
+  };
+
   const update = (field, value) => {
+    formTouched.current = true;
     setForm(current => ({ ...current, [field]: value }));
     setError('');
   };
@@ -118,6 +156,7 @@ export default function TripPlannerScreen({ navigation, route }) {
   };
 
   const validate = () => {
+    if (!form.origin.trim()) return 'Informe a cidade ou o aeroporto de saída para pesquisarmos passagens reais.';
     if (!form.destinations.length) return 'Selecione pelo menos um destino para a viagem.';
     if (form.useDates) {
       const start = parseBrazilianDate(form.startDate);
@@ -172,13 +211,13 @@ export default function TripPlannerScreen({ navigation, route }) {
       endDate: form.useDates ? toIsoDate(form.endDate) : '',
       duration,
       travelers: Number(form.travelers),
-      budget: parseMoneyInput(form.budget),
+      budget: 0,
       currency: 'BRL',
       budgetCurrency: 'BRL',
       displayCurrency: form.displayCurrency,
-      convertedBudget: form.convertedBudget,
+      convertedBudget: 0,
       exchangeDate: form.exchangeDate,
-      destinationBudgets: form.destinationBudgets,
+      destinationBudgets: [],
     };
 
     try {
@@ -235,26 +274,51 @@ export default function TripPlannerScreen({ navigation, route }) {
           </Text>
         </View>
 
+        {!!resumableDraft && (
+          <TouchableOpacity style={styles.resumeCard} onPress={resumeDraft} activeOpacity={0.86}>
+            <View style={styles.resumeIcon}>
+              <Ionicons name="return-up-forward" size={21} color="#C4B5FD" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.resumeTitle}>{t('tripPlanner.resumeDraftTitle')}</Text>
+              <Text style={styles.resumeText} numberOfLines={2}>
+                {resumableDraft.type === 'result'
+                  ? t('tripPlanner.resumeDraftResult', {
+                    destination: resumableDraft.request?.destination || t('tripPlanner.resumeDraftResultFallback'),
+                  })
+                  : t('tripPlanner.resumeDraftForm')}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={19} color="#A78BFA" />
+          </TouchableOpacity>
+        )}
+
         <FormSection icon="location-outline" title={t('tripPlanner.routeSection')}>
           <LocationAutocomplete
             label={t('tripPlanner.originPlaceholder')}
             value={form.origin}
-            onChange={(name, location) => setForm(current => ({
-              ...current,
-              origin: name,
-              originDetails: location,
-            }))}
+            onChange={(name, location) => {
+              formTouched.current = true;
+              setForm(current => ({
+                ...current,
+                origin: name,
+                originDetails: location,
+              }));
+            }}
             placeholder={t('tripPlanner.destinationPlaceholder')}
           />
           <MultiDestinationSelector
             label={t('tripPlanner.destinationsSection')}
             selected={form.destinations}
-            onChange={destinations => setForm(current => ({
-              ...current,
-              destinations,
-              destination: destinations.map(item => item.name).join(', '),
-              destinationCode: destinations[0]?.code || '',
-            }))}
+            onChange={destinations => {
+              formTouched.current = true;
+              setForm(current => ({
+                ...current,
+                destinations,
+                destination: destinations.map(item => item.name).join(', '),
+                destinationCode: destinations[0]?.code || '',
+              }));
+            }}
           />
         </FormSection>
 
@@ -301,25 +365,20 @@ export default function TripPlannerScreen({ navigation, route }) {
 
         <FormSection icon="wallet-outline" title={t('tripPlanner.budgetSection')}>
           <DestinationBudgetPlanner
-            destinations={form.destinations}
-            initialBudgets={form.destinationBudgets}
             budgetLevel={form.budgetLevel}
             onBudgetLevelChange={value => update('budgetLevel', value)}
+            converterBaseCurrency={form.converterBaseCurrency}
+            onConverterBaseCurrencyChange={value => update('converterBaseCurrency', value)}
             displayCurrency={form.displayCurrency}
             onDisplayCurrencyChange={value => update('displayCurrency', value)}
-            onChange={(destinationBudgets, total, convertedTotal, exchangeDate) => setForm(current => ({
+            initialAmount={form.converterAmount}
+            onConversionChange={conversion => setForm(current => ({
               ...current,
-              destinationBudgets,
-              budget: formatMoneyInput(Math.round(total)),
-              budgetCurrency: 'BRL',
-              convertedBudget: convertedTotal,
-              exchangeDate,
+              converterAmount: conversion.amount,
+              converterResult: conversion.convertedAmount,
+              converterRate: conversion.rate,
+              exchangeDate: conversion.rateDate,
             }))}
-            onRemoveDestination={destinationId => setForm(current => ({
-              ...current,
-              destinations: current.destinations.filter(item => getTravelDestinationKey(item) !== destinationId),
-            }))}
-            onAddDestination={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
           />
         </FormSection>
 
@@ -414,6 +473,10 @@ const styles = StyleSheet.create({
   heroEyebrow: { color: '#A78BFA', fontSize: 11, fontWeight: '800', letterSpacing: 1.4 },
   heroTitle: { color: '#fff', fontSize: 23, lineHeight: 30, fontWeight: '800', marginTop: 8 },
   heroText: { color: '#9DA4C3', fontSize: 13, lineHeight: 20, marginTop: 8 },
+  resumeCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(139,92,246,0.12)', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: 'rgba(167,139,250,0.38)' },
+  resumeIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(139,92,246,0.22)' },
+  resumeTitle: { color: '#F7F7F2', fontSize: 14, fontWeight: '800' },
+  resumeText: { color: '#9DA4C3', fontSize: 11, lineHeight: 17, marginTop: 3 },
   section: { backgroundColor: '#151B33', borderRadius: 18, padding: 16, gap: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   sectionIcon: { width: 30, height: 30, borderRadius: 10, backgroundColor: 'rgba(139,92,246,0.14)', alignItems: 'center', justifyContent: 'center' },

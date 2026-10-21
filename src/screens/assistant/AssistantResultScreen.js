@@ -71,6 +71,10 @@ import {
   tripChips,
   tripDurationDays,
 } from '../../utils/tripSummary';
+import {
+  clearTripPlannerDraft,
+  saveTripPlannerResultDraft,
+} from '../../services/tripPlannerDraftService';
 
 const TABS = [
   { id: 'itinerary', labelKey: 'assistantResult.tabs.itinerary', icon: 'map-outline' },
@@ -103,7 +107,8 @@ export default function AssistantResultScreen({ route, navigation }) {
   // Quem chega por um aviso de tarefa já abre na aba certa, em vez de ver o
   // roteiro por um quadro e a tela pular sozinha depois.
   const [activeTab, setActiveTab] = useState(
-    route.params?.section === TRIP_SECTION.groupTasks ? 'checklist' : 'itinerary'
+    route.params?.initialTab
+    || (route.params?.section === TRIP_SECTION.groupTasks ? 'checklist' : 'itinerary')
   );
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState('');
@@ -665,6 +670,11 @@ export default function AssistantResultScreen({ route, navigation }) {
     stops: countPlanStops(plan),
   }), [request.startDate, request.endDate, request.travelers, plan, members.length]);
 
+  useEffect(() => {
+    if (planId) return;
+    saveTripPlannerResultDraft({ request, plan, userContext, activeTab });
+  }, [activeTab, plan, planId, request, userContext]);
+
   const checklistProgress = useMemo(() => {
     const items = plan.checklist || [];
     const done = items.filter(item => item.done).length;
@@ -718,6 +728,7 @@ export default function AssistantResultScreen({ route, navigation }) {
       return false;
     }
     setPlanId(result.data.id);
+    clearTripPlannerDraft();
     if (!quiet || result.warning) {
       notify(t('assistantResult.save.doneTitle'), result.warning || t('assistantResult.save.doneMessage'));
     }
@@ -794,20 +805,26 @@ export default function AssistantResultScreen({ route, navigation }) {
   };
 
   const regenerateActivity = async (dayIndex, activityIndex) => {
+    if (regenerating) return;
     const key = `${dayIndex}-${activityIndex}`;
     setRegenerating(key);
-    const result = await regeneratePlanActivity({
-      planRequest: request,
-      userContext,
-      plan,
-      block: { dayIndex, activityIndex },
-    });
-    setRegenerating('');
-    if (!result.success) {
-      notify(t('assistantResult.adjust.swapFailedTitle'), formatAssistantError(result));
-      return;
+    try {
+      const result = await regeneratePlanActivity({
+        planRequest: request,
+        userContext,
+        plan,
+        block: { dayIndex, activityIndex },
+      });
+      if (!result?.success) {
+        notify(t('assistantResult.adjust.swapFailedTitle'), formatAssistantError(result));
+        return;
+      }
+      setPlan(result.plan);
+    } catch {
+      notify(t('assistantResult.adjust.swapFailedTitle'), t('assistantResult.adjust.swapFailedNetwork'));
+    } finally {
+      setRegenerating('');
     }
-    setPlan(result.plan);
   };
 
   const startEditing = (dayIndex, activityIndex, activity) => {
@@ -877,31 +894,36 @@ export default function AssistantResultScreen({ route, navigation }) {
     if (!message || adjusting) return;
 
     setAdjusting(true);
-    const result = await adjustTravelPlan({
-      planRequest: request,
-      userContext,
-      plan,
-      message,
-    });
-    setAdjusting(false);
-    if (!result.success) {
-      // Com o código, a falha deixa de ser um beco sem saída: ele localiza a
-      // requisição no log da Edge Function, onde estão `providerStatus` e
-      // `providerReason` — quem de fato recusou, e por quê.
-      notify(
-        t('assistantResult.adjust.failedTitle'),
-        formatAssistantError(result, t('common.actions.tryAgainSoon'))
-      );
-      return;
-    }
+    try {
+      const result = await adjustTravelPlan({
+        planRequest: request,
+        userContext,
+        plan,
+        message,
+      });
+      if (!result?.success) {
+        // Com o código, a falha deixa de ser um beco sem saída: ele localiza a
+        // requisição no log da Edge Function, onde estão `providerStatus` e
+        // `providerReason` — quem de fato recusou, e por quê.
+        notify(
+          t('assistantResult.adjust.failedTitle'),
+          formatAssistantError(result, t('common.actions.tryAgainSoon'))
+        );
+        return;
+      }
 
-    setPlan(result.plan);
-    setChatText('');
-    setAdjustments(current => [
-      ...current,
-      { role: 'user', text: message },
-      { role: 'assistant', text: 'Pronto! Ajustei o roteiro mantendo os demais detalhes da viagem.' },
-    ].slice(-8));
+      setPlan(result.plan);
+      setChatText('');
+      setAdjustments(current => [
+        ...current,
+        { role: 'user', text: message },
+        { role: 'assistant', text: t('assistantResult.adjust.done') },
+      ].slice(-8));
+    } catch {
+      notify(t('assistantResult.adjust.failedTitle'), t('assistantResult.adjust.swapFailedNetwork'));
+    } finally {
+      setAdjusting(false);
+    }
   };
 
   // A viagem que ainda está vindo, e a que não veio, precisam DIZER isso. Uma

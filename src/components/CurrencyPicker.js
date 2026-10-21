@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View,
+  ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import CountryFlag from './CountryFlag';
@@ -9,7 +9,7 @@ import { useLocale } from '../i18n/LocaleProvider';
 
 export const CURRENCIES = FALLBACK_CURRENCIES;
 
-export default function CurrencyPicker({ label = '', value, onChange, supportingText = '' }) {
+export default function CurrencyPicker({ label = '', value, onChange, supportingText = '', inline = false }) {
   const { t } = useLocale();
   const [visible, setVisible] = useState(false);
   const [currencies, setCurrencies] = useState(FALLBACK_CURRENCIES);
@@ -41,23 +41,32 @@ export default function CurrencyPicker({ label = '', value, onChange, supporting
   };
 
   return (
-    <View style={styles.field}>
+    <View style={[styles.field, inline && styles.inlineField]}>
       {!!label && <Text style={styles.label}>{label}</Text>}
       <TouchableOpacity
-        style={styles.selector}
+        style={[styles.selector, inline && styles.inlineSelector]}
         onPress={() => setVisible(true)}
         accessibilityRole="button"
         accessibilityLabel={`Selecionar moeda. Atual: ${selected.name}, ${selected.code}`}
       >
-        {selected.country
+        {!inline && selected.country
           ? <CountryFlag countryCode={selected.country} width={27} height={18} borderRadius={3} />
-          : <Ionicons name="cash-outline" size={21} color="#A78BFA" />}
-        <View style={{ flex: 1 }}><Text style={styles.code}>{selected.code}</Text><Text style={styles.name} numberOfLines={1}>{selected.name}</Text></View>
+          : !inline && <Ionicons name="cash-outline" size={21} color="#A78BFA" />}
+        <View style={[{ flex: 1 }, inline && styles.inlineCopy]}>
+          <Text style={[styles.code, inline && styles.inlineCode]}>{inline ? selected.name : selected.code}</Text>
+          {!inline && <Text style={styles.name} numberOfLines={1}>{selected.name}</Text>}
+        </View>
         <Ionicons name="chevron-down" size={17} color="#858DAD" />
       </TouchableOpacity>
       {!!supportingText && <Text style={styles.supportingText}>{supportingText}</Text>}
       <Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)}>
-        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setVisible(false)}>
+        <View style={styles.overlay}>
+          <Pressable
+            style={styles.dismissBackdrop}
+            onPress={() => setVisible(false)}
+            accessibilityRole="button"
+            accessibilityLabel={t('currencyPicker.closeLabel')}
+          />
           <View style={styles.modal}>
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
@@ -90,6 +99,7 @@ export default function CurrencyPicker({ label = '', value, onChange, supporting
               data={filteredCurrencies}
               keyExtractor={item => item.code}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
               ListEmptyComponent={<Text style={styles.emptyText}>{t('currencyPicker.empty')}</Text>}
               renderItem={({ item }) => (
               <TouchableOpacity
@@ -107,7 +117,7 @@ export default function CurrencyPicker({ label = '', value, onChange, supporting
               </TouchableOpacity>
             )} />
           </View>
-        </TouchableOpacity>
+        </View>
       </Modal>
     </View>
   );
@@ -115,12 +125,17 @@ export default function CurrencyPicker({ label = '', value, onChange, supporting
 
 const styles = StyleSheet.create({
   field: { flex: 1, minWidth: 180, gap: 6 },
+  inlineField: { minWidth: 0, gap: 0 },
   label: { color: '#A5ACC8', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.7 },
   selector: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, borderRadius: 12, backgroundColor: '#202744', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  inlineSelector: { minHeight: 58, paddingHorizontal: 12, borderWidth: 0, borderRadius: 0, backgroundColor: 'transparent' },
+  inlineCopy: { alignItems: 'flex-end' },
+  inlineCode: { fontSize: 13, fontWeight: '700', textAlign: 'right' },
   code: { color: '#F7F7F2', fontWeight: '900', fontSize: 12 },
   name: { color: '#858DAD', fontSize: 9, marginTop: 1 },
   supportingText: { color: '#35D3C8', fontSize: 10, fontWeight: '700', marginTop: 1 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 18 },
+  dismissBackdrop: { ...StyleSheet.absoluteFillObject },
   modal: { width: '100%', maxWidth: 440, maxHeight: '78%', backgroundColor: '#171D36', borderRadius: 20, padding: 16, borderWidth: 1, borderColor: '#30395D' },
   modalHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
   title: { color: '#fff', fontSize: 17, fontWeight: '900' },

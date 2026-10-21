@@ -77,7 +77,7 @@ test('o exemplo de JSON do prompt usa os códigos do enum, não o texto livre an
 
 test('a comparação exata contra a string "Compras" saiu do código', () => {
   assert.doesNotMatch(handlerSource, /item\.category === 'Compras'/);
-  assert.match(handlerSource, /item\.category === 'compras_reserva'/);
+  assert.match(handlerSource, /\/compras\/i\.test\(item\.category\)/);
 });
 
 test('normalizePeriod aceita o enum e o texto livre salvo antes dele, sem quebrar em dado desconhecido', () => {

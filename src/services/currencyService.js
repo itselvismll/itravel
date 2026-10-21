@@ -60,7 +60,7 @@ const CURRENCY_NAME_TO_CODE = {
 export const FALLBACK_CURRENCIES = [
   { code: 'BRL', name: 'Real brasileiro', country: 'BRA', symbol: 'R$' },
   { code: 'USD', name: 'Dólar americano', country: 'USA', symbol: '$' },
-  { code: 'EUR', name: 'Euro', country: 'DEU', symbol: '€' },
+  { code: 'EUR', name: 'Euro', country: 'EU', symbol: '€' },
   { code: 'GBP', name: 'Libra esterlina', country: 'GBR', symbol: '£' },
   { code: 'ARS', name: 'Peso argentino', country: 'ARG', symbol: '$' },
   { code: 'JPY', name: 'Iene japonês', country: 'JPN', symbol: '¥' },
@@ -71,7 +71,7 @@ export const FALLBACK_CURRENCIES = [
 ];
 
 const CURRENCY_FLAG_COUNTRY = Object.freeze({
-  BRL: 'BRA', USD: 'USA', EUR: 'DEU', GBP: 'GBR', JPY: 'JPN',
+  BRL: 'BRA', USD: 'USA', EUR: 'EU', GBP: 'GBR', JPY: 'JPN',
   CAD: 'CAN', AUD: 'AUS', CHF: 'CHE', CNY: 'CHN', ARS: 'ARG',
 });
 

@@ -206,8 +206,17 @@
       "unknown": "Couldn't complete this now. Code: %{code}"
     },
     "captchaTitle": "Security check",
-    "captchaVerified": "Verification complete",
-    "captchaPrompt": "Tap to verify you're not a robot"
+    "captchaWidget": {
+      "initial": "Conclua a verificação para continuar.",
+      "openPrompt": "Resolva a verificação acima antes de continuar.",
+      "success": "Verificação concluída.",
+      "selectImages": "Selecione as imagens solicitadas e confirme a verificação.",
+      "retry": "Toque na caixa de verificação para tentar novamente.",
+      "expired": "A verificação expirou. Tente novamente.",
+      "loadingTimeout": "Ainda carregando a verificação. Aguarde alguns segundos.",
+      "loadError": "Não foi possível carregar a verificação: %{detail}",
+      "disabled": "Verificação de segurança indisponível: defina EXPO_PUBLIC_HCAPTCHA_SITE_KEY."
+    }
   },
   "drawer": {
     "closeLabel": "Close settings",
@@ -414,6 +423,10 @@
     "routeSection": "Route",
     "originPlaceholder": "Leaving from (optional)",
     "destinationPlaceholder": "City, country or airport (e.g. GRU)",
+    "resumeDraftTitle": "Retornar de onde parou",
+    "resumeDraftResult": "Seu roteiro para %{destination} continua disponível.",
+    "resumeDraftResultFallback": "a próxima viagem",
+    "resumeDraftForm": "Continue preenchendo seu planejamento sem perder as informações.",
     "destinationsSection": "Destinations and stops",
     "datesSection": "Dates",
     "departure": "Departure",
@@ -458,7 +471,9 @@
       "subtitle": "Request changes without filling everything out again.",
       "cta": "Change trip",
       "failedTitle": "Couldn't adjust the itinerary",
-      "swapFailedTitle": "Couldn't swap the activity"
+      "swapFailedTitle": "Couldn't swap the activity",
+      "swapFailedNetwork": "Verifique sua conexão e tente novamente.",
+      "done": "Pronto! Ajustei o roteiro mantendo os demais detalhes da viagem."
     },
     "openSaved": "Open my saved itineraries",
     "estimatesDisclaimer": "Amounts are estimates. Confirm prices, times, documents and alerts with official sources.",
@@ -540,14 +555,10 @@
     "subtitle": "Set the trip style and compare your limits in any currency.",
     "styleSection": "BUDGET STYLE",
     "styleHint": "The AI uses this choice to decide lodging, food, transport and tours.",
-    "limitSection": "LIMIT PER DESTINATION",
-    "selectDestinationsHint": "Select the countries in “Trip destinations” to build the budget.",
-    "addDestination": "Add destination",
-    "totalSection": "ESTIMATED TOTAL",
-    "convertedToBRL": "Total converted to reais",
-    "rateComparison": "Comparing %{base} → %{comparison} • Rate as of %{date}",
-    "rateSourcePrefix": " • Source: ",
-    "compareCurrencyLabel": "Currency to compare"
+    "converterTitle": "Conversor de moedas",
+    "converterSubtitle": "Compare qualquer moeda sem alterar a moeda usada no roteiro.",
+    "rateQuoteDate": "Cotação de %{date}",
+    "rateSourcePrefix": " • Source: "
   },
   "legalSheet": {
     "title": "Policy and Privacy",

@@ -27,7 +27,7 @@ import { HCAPTCHA_ENABLED, HCAPTCHA_SITE_KEY } from './hcaptchaConfig';
  * @property {import('react-native').StyleProp<import('react-native').ViewStyle>} [style]
  */
 
-/** @typedef {{ reset: () => void, markUsed: () => void }} HCaptchaWidgetHandle */
+/** @typedef {{ reset: () => void, markUsed: () => void, open: () => void }} HCaptchaWidgetHandle */
 
 /**
  * @param {HCaptchaWidgetProps} props
@@ -41,7 +41,11 @@ function HCaptchaWidgetImpl({ onVerify, onError, theme = 'light', style }, ref) 
     captchaRef.current?.resetCaptcha?.();
   }, [onVerify]);
 
-  useImperativeHandle(ref, () => ({ reset, markUsed: () => {} }), [reset]);
+  const open = useCallback(() => {
+    captchaRef.current?.execute?.();
+  }, []);
+
+  useImperativeHandle(ref, () => ({ reset, markUsed: () => {}, open }), [reset, open]);
 
   if (!HCAPTCHA_ENABLED) {
     return (
