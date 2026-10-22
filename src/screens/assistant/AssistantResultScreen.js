@@ -75,6 +75,10 @@ import {
   clearTripPlannerDraft,
   saveTripPlannerResultDraft,
 } from '../../services/tripPlannerDraftService';
+import {
+  formatActivitySchedule,
+  normalizeTravelPlanTimeline,
+} from '../../services/itineraryTimeService';
 
 const TABS = [
   { id: 'itinerary', labelKey: 'assistantResult.tabs.itinerary', icon: 'map-outline' },
@@ -99,7 +103,9 @@ export default function AssistantResultScreen({ route, navigation }) {
   // Quem chega pelo convite ou pela notificação traz só o id, e para esses dois
   // a viagem é BUSCADA (ver o efeito "viagem aberta só pelo id" mais abaixo).
   const [request, setRequest] = useState(route.params?.request || route.params?.request_data || {});
-  const [plan, setPlan] = useState(route.params?.plan || route.params?.plan_data || {});
+  const [plan, setPlan] = useState(() => normalizeTravelPlanTimeline(
+    route.params?.plan || route.params?.plan_data || {},
+  ));
   const [planId, setPlanId] = useState(route.params?.planId || route.params?.id || null);
   const [tripLoading, setTripLoading] = useState(false);
   const [tripError, setTripError] = useState(/** @type {string | null} */ (null));
@@ -703,7 +709,7 @@ export default function AssistantResultScreen({ route, navigation }) {
 
   const handleShare = async () => {
     const daySummary = (plan.days || []).map(day => (
-      `Dia ${day.day} — ${day.theme}\n${(day.activities || []).map(item => `• ${t(periodLabelKey(item.period))}: ${item.title}`).join('\n')}`
+      `Dia ${day.day} — ${day.theme}\n${(day.activities || []).map(item => `• ${formatActivitySchedule(item) || t(periodLabelKey(item.period))}: ${item.title}`).join('\n')}`
     )).join('\n\n');
     await Share.share({
       title: plan.title || 'Meu roteiro Journi',
@@ -819,7 +825,7 @@ export default function AssistantResultScreen({ route, navigation }) {
         notify(t('assistantResult.adjust.swapFailedTitle'), formatAssistantError(result));
         return;
       }
-      setPlan(result.plan);
+      setPlan(normalizeTravelPlanTimeline(result.plan));
     } catch {
       notify(t('assistantResult.adjust.swapFailedTitle'), t('assistantResult.adjust.swapFailedNetwork'));
     } finally {
@@ -864,7 +870,7 @@ export default function AssistantResultScreen({ route, navigation }) {
   // edição fica na tela até o "Salvar roteiro", que é quem cria a viagem.
   const saveActivityEdit = async () => {
     if (!editing) return;
-    const nextPlan = {
+    const nextPlan = normalizeTravelPlanTimeline({
       ...plan,
       days: plan.days.map((day, dayIndex) => (
         dayIndex !== editing.dayIndex ? day : {
@@ -874,7 +880,7 @@ export default function AssistantResultScreen({ route, navigation }) {
           )),
         }
       )),
-    };
+    });
 
     const persiste = Boolean(planId) && !String(planId).startsWith('local-');
     if (!persiste) {
@@ -912,7 +918,7 @@ export default function AssistantResultScreen({ route, navigation }) {
         return;
       }
 
-      setPlan(result.plan);
+      setPlan(normalizeTravelPlanTimeline(result.plan));
       setChatText('');
       setAdjustments(current => [
         ...current,
@@ -1163,6 +1169,7 @@ export default function AssistantResultScreen({ route, navigation }) {
                 {(day.activities || []).map((activity, activityIndex) => {
                   const key = `${dayIndex}-${activityIndex}`;
                   const isEditing = editing?.dayIndex === dayIndex && editing?.activityIndex === activityIndex;
+                  const schedule = formatActivitySchedule(activity);
                   return (
                     <View key={key} style={styles.activity}>
                       <View style={styles.timelineIcon}><Ionicons name={periodIcon(activity.period)} size={16} color="#A78BFA" /></View>
@@ -1178,6 +1185,7 @@ export default function AssistantResultScreen({ route, navigation }) {
                           </View>
                         ) : (
                           <>
+                            {!!schedule && <Text style={styles.schedule}>{schedule}</Text>}
                             <Text style={styles.period}>{t(periodLabelKey(activity.period))} · {activity.duration}</Text>
                             <Text style={styles.activityTitle}>{activity.title}</Text>
                             <Text style={styles.activityDescription}>{activity.description}</Text>
@@ -1713,6 +1721,7 @@ const styles = StyleSheet.create({
   dayDate: { color: '#777F9E', fontSize: 10, marginTop: 2 },
   activity: { flexDirection: 'row', gap: 11, paddingTop: 15, marginTop: 11, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.055)' },
   timelineIcon: { width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(139,92,246,0.13)', alignItems: 'center', justifyContent: 'center' },
+  schedule: { color: '#F0E9FF', fontSize: 14, fontWeight: '900', fontVariant: ['tabular-nums'] },
   period: { color: '#A78BFA', fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
   activityTitle: { color: '#F0F1F7', fontSize: 14, fontWeight: '800', marginTop: 3 },
   activityDescription: { color: '#9BA2BF', fontSize: 12, lineHeight: 18, marginTop: 5 },

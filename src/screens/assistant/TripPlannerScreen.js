@@ -383,6 +383,9 @@ export default function TripPlannerScreen({ navigation, route }) {
         </FormSection>
 
         <FormSection icon="speedometer-outline" title={t('tripPlanner.paceSection')}>
+          <Text style={styles.helperText}>
+            {t('tripPlanner.paceHint', { count: TRAVEL_PACES.find(item => item.id === form.pace)?.stopsPerDay || 5 })}
+          </Text>
           <ChipGroup
             values={TRAVEL_PACES.map(item => t(item.labelKey))}
             selected={[t(TRAVEL_PACES.find(item => item.id === form.pace)?.labelKey || 'tripPlanner.paces.balanced')]}

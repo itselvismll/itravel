@@ -566,7 +566,7 @@ test('long AI plans must contain exactly the requested duration and explain ever
   assert.match(assistant, /Math\.min\(strictDaySchemaLimit, duration - index \* strictDaySchemaLimit\)/);
   assert.match(assistant, /spec\.days <= strictDaySchemaLimit/);
   assert.match(assistant, /minItems: spec\.days, maxItems: spec\.days/);
-  assert.match(assistant, /Math\.min\(65535, Math\.max\(8192, spec\.days \* 1100\)\)/);
+  assert.match(assistant, /Math\.min\(65535, Math\.max\(8192, spec\.days \* activitiesPerDay \* 380\)\)/);
   assert.match(assistant, /candidatePlan\.days\.length === spec\.days/);
   assert.match(assistant, /retorne somente o campo days/);
   assert.match(assistant, /const chunkConcurrency = 2/);
@@ -598,6 +598,33 @@ test('long AI plans must contain exactly the requested duration and explain ever
   assert.match(assistant, /Passagens, Hospedagem, Alimentação, Transporte local, Passeios e ingressos, Compras e Reserva/);
   assert.match(result, /assistantResult.budget.whatIsIncluded/);
   assert.match(result, /purchaseNote/);
+  assert.match(assistant, /startTime/);
+  assert.match(assistant, /endTime/);
+  assert.match(assistant, /normalizePlanTimeline\(plan\)/);
+  assert.match(assistant, /nunca sobreponha horários/i);
+  assert.match(assistant, /buildNearbyPlaceGroups/);
+  assert.match(assistant, /nearbyPlaceGroups/);
+  assert.match(assistant, /não faça zigue-zague/i);
+  assert.match(assistant, /activitiesPerDay/);
+  assert.match(assistant, /activitiesPerDay: 4/);
+  assert.match(assistant, /activitiesPerDay: 5/);
+  assert.match(assistant, /activitiesPerDay: 6/);
+  assert.match(assistant, /sightseeingMinimum/);
+  assert.match(assistant, /experiências por dia/);
+  assert.match(assistant, /não preencha a agenda apenas com refeições/i);
+  assert.match(assistant, /day\.activities\.length === activitiesPerDay/);
+  assert.match(result, /formatActivitySchedule/);
+  assert.match(result, /styles\.schedule/);
+  const timeline = read('src/services/itineraryTimeService.js');
+  assert.match(timeline, /normalizeTravelPlanTimeline/);
+  assert.match(timeline, /previousEnd/);
+  assert.match(result, /fontVariant/);
+  const assistantService = read('src/services/assistantService.js');
+  const planner = read('src/screens/assistant/TripPlannerScreen.js');
+  assert.match(assistantService, /stopsPerDay: 4/);
+  assert.match(assistantService, /stopsPerDay: 5/);
+  assert.match(assistantService, /stopsPerDay: 6/);
+  assert.match(planner, /tripPlanner\.paceHint/);
 });
 
 test('trip budget uses a travel style, a free currency converter, and grounded prices', () => {
@@ -756,7 +783,7 @@ test('message, seasonal explore, requirements, and decimal budget fixes stay int
   assert.match(countryModal, /CountryRequirementsCard/);
   assert.match(requirements, /MAY_REQUIRE_YELLOW_FEVER_CIVP/);
   assert.match(requirements, /ETIAS ainda não está em operação/);
-  assert.match(assistant, /maxItems: 3/);
+  assert.match(assistant, /maxItems: 6/);
   assert.match(assistant, /gemini-3\.5-flash-lite/);
 });
 

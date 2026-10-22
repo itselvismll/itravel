@@ -437,6 +437,7 @@
     "travelersLabel": "Número de viajantes",
     "budgetSection": "Orçamento",
     "paceSection": "Ritmo da viagem",
+    "paceHint": "%{count} experiências por dia, organizadas por proximidade.",
     "interestsSection": "O que você gosta",
     "preferencesSection": "Preferências importantes",
     "foodLabel": "Alimentação",

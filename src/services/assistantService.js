@@ -57,9 +57,9 @@ export const TRAVEL_INTERESTS = [
 ];
 
 export const TRAVEL_PACES = [
-  { id: 'calm', labelKey: 'tripPlanner.paces.calm' },
-  { id: 'balanced', labelKey: 'tripPlanner.paces.balanced' },
-  { id: 'intense', labelKey: 'tripPlanner.paces.intense' },
+  { id: 'calm', labelKey: 'tripPlanner.paces.calm', stopsPerDay: 4 },
+  { id: 'balanced', labelKey: 'tripPlanner.paces.balanced', stopsPerDay: 5 },
+  { id: 'intense', labelKey: 'tripPlanner.paces.intense', stopsPerDay: 6 },
 ];
 
 const executeAssistantRequest = async (payload) => {
