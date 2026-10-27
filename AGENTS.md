@@ -44,6 +44,103 @@ e isso roda isolado (`npm run verify:prod`) e também num workflow agendado
 (`.github/workflows/verify-production.yml`, a cada 6h), que pega um deploy
 feito por fora mesmo que ninguém rode a conferência na mão.
 
+**Terceiro incidente, 27/10/2026**: o globo voltou a ficar sem satélite,
+desta vez porque o deploy saiu de uma máquina cujo `.env` nunca teve
+`EXPO_PUBLIC_MAPBOX_TOKEN` — não é o caso do segundo incidente (deploy por
+fora do script), é o `.env` daquela máquina mesmo que não tinha a variável.
+Sem o token, `MAPBOX_SATELLITE_SOURCE` (`src/components/map/globeConfig.js`)
+vira `null`, o globo pede satélite à Stadia, que responde 403, e
+`isSatelliteTileError` engole esse erro de propósito — zero aviso, em
+produção, até alguém reclamar.
+
+Por isso agora existe uma CAMADA 1, antes do export: `npm run deploy:web`
+roda `scripts/check-build-env.cjs` automaticamente (via `predeploy:web` no
+`package.json`) e aborta, nomeando a variável, se faltar qualquer uma das
+três que já quebraram produção — `EXPO_PUBLIC_SUPABASE_URL`,
+`EXPO_PUBLIC_SUPABASE_ANON_KEY`, `EXPO_PUBLIC_MAPBOX_TOKEN`. As demais
+`EXPO_PUBLIC_*` são opcionais por design (degradam com aviso, não quebram em
+silêncio) e a classificação de cada uma — com o motivo — está no topo do
+próprio script, não só aqui.
+
+Isto não substitui a verificação do bundle que já existia (`verifyBundle()`
+dentro de `scripts/deploy-web.cjs`): uma variável pode estar no AMBIENTE e
+ainda assim não ir para o bundle. As duas camadas ficam, cada uma pega um
+jeito diferente do mesmo bug chegar à produção:
+
+```bash
+npm run check:build-env      # só a camada 1, isolada — útil pra testar antes
+npm run deploy:web           # roda a camada 1 antes de exportar, e já tinha a 2
+```
+
+`tests/check-build-env.test.cjs` é a catraca: toda variável `EXPO_PUBLIC_*`
+declarada em `.env.example` tem que estar classificada (obrigatória ou
+opcional) em `scripts/check-build-env.cjs` — variável nova em `.env.example`
+sem dono falha o teste, em vez de escapar da checagem em silêncio.
+
+**Duas lacunas na trava acima, fechadas no mesmo dia**: "a variável existe"
+não é "é a variável CERTA", e "existe uma checagem" não é "ninguém consegue
+ignorá-la".
+
+1. **Identidade do token, não só formato.** O projeto usa DOIS tokens do
+   Mapbox (ver `.env.example`): o de `.env`, restrito a `journi.expo.app` —
+   o único que pode ir para produção —, e o de `.env.local`, SEM restrição
+   de URL, só para localhost. O Expo sobrepõe `.env` com `.env.local`
+   sempre que o arquivo existe, **inclusive num `expo export --platform web`
+   de produção**. Se isso acontecer, o site vai ao ar perfeito — todas as
+   chaves "presentes", globo com satélite — com o token sem restrição
+   exposto no bundle público, pronto para qualquer site queimar a cota da
+   conta. `findMissingBundleKeys` não pega isso: os dois tokens têm o mesmo
+   formato `pk.*`.
+
+   Por isso `verifyBundle()` (`scripts/deploy-web.cjs`) agora também compara
+   por IDENTIDADE: lê `.env` direto do disco (nunca `.env.local`, de
+   propósito — `scripts/lib/verifyMapboxTokenSource.cjs`) e confere que é
+   esse valor, e não outro, que foi embutido no bundle. Nenhum token entra
+   hardcoded neste repositório — nem o "público" `pk.*`, que o push
+   protection do GitHub recusa.
+
+2. **O comando cru não passava por nenhuma checagem.** `predeploy:web` só
+   dispara via `npm run deploy:web`. Os incidentes de produção já
+   registrados aqui saíram exatamente do comando direto —
+   `npx expo export --platform web` seguido de `eas deploy --prod`, sem
+   passar por nenhum script deste projeto. Uma trava que só existe dentro de
+   um script npm não resolve isso.
+
+   A correção está em `app.config.js`, na raiz do projeto: o Expo CLI avalia
+   esse arquivo (via `require`, no mesmo processo) sempre que lê a
+   configuração — em `expo export`, `expo start`, `eas build` — **não tem
+   como pular por engano**. Ele faz a mesma validação de variáveis
+   obrigatórias e de identidade do token do Mapbox, e aborta com
+   `process.exit(1)` especificamente para `expo export --platform web` (o
+   único export que este projeto publica); em qualquer outro caminho — `expo
+   start`, build de preview, build nativo — é tolerante por design, no
+   máximo um aviso, porque ali o token sem restrição é legítimo. A decisão
+   em si mora em `scripts/lib/validateDeployEnvironment.cjs`, como função
+   pura, para dar para testar sem precisar spawnar um processo.
+
+   **Produção nunca deve rodar com `.env.local` carregado.** É por isso que
+   `scripts/deploy-web.cjs` renomeia `.env.local` antes do `expo export` e
+   só devolve depois — e é por isso que o comando cru é perigoso: nada faz
+   essa troca por quem roda `npx expo export` na mão. Uma alternativa mais
+   robusta que depender do estado de `.env.local` de cada máquina é puxar as
+   variáveis do painel da EAS antes de exportar:
+
+   ```bash
+   eas env:pull production   # traz as variáveis de PRODUÇÃO do painel da EAS
+   npm run deploy:web
+   ```
+
+```bash
+npm run check:build-env      # camada 1 isolada: só variáveis obrigatórias presentes
+npm run deploy:web           # camada 1 + export + camada 2 (chaves e IDENTIDADE do Mapbox) + publicar
+```
+
+`tests/validate-deploy-environment.test.cjs` cobre a decisão de
+`app.config.js` (duro só no export de produção para web; aviso, nunca falha,
+em qualquer outro caminho) e `tests/mapbox-token-source.test.cjs` cobre a
+comparação por identidade contra o bundle — os dois reproduzem o vazamento
+exato: token de `.env.local` embutido num export de produção.
+
 ## Antes de entregar qualquer mudança
 
 ```bash

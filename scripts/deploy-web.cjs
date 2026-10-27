@@ -25,6 +25,17 @@
 // Agora há: o passo de verificação abre o bundle gerado e procura os valores. Se
 // não estiverem lá, o deploy NÃO acontece.
 //
+// TERCEIRO INCIDENTE, 27/10/2026: "a variável existe no bundle" não é "é a
+// variável CERTA". O projeto usa dois tokens do Mapbox (ver .env.example) — o
+// de `.env`, restrito a journi.expo.app, e o de `.env.local`, sem restrição,
+// para localhost — e os dois têm o mesmo formato `pk.*`. Um export de
+// produção que carregasse `.env.local` por engano saía com a chave
+// "presente" e ainda assim errada: token sem proteção de domínio, exposto no
+// bundle público. `verifyBundle()` agora compara por IDENTIDADE, não só
+// formato — e `app.config.js`, na raiz do projeto, faz a MESMA comparação
+// antes mesmo do export rodar, e funciona mesmo para quem ignora este script
+// e roda `expo export` cru: o Expo avalia `app.config.js` de qualquer jeito.
+//
 // SEGUNDO INCIDENTE, 06/10/2026: a checagem acima só protege quem passa por
 // ESTE script. O globo voltou a ficar com países transparentes porque algum
 // deploy saiu ao ar sem passar por aqui — publicado manualmente, por fora. A
@@ -42,6 +53,7 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { findMissingBundleKeys, REQUIRED_BUNDLE_KEYS } = require('./lib/requiredBundleKeys.cjs');
+const { verifyMapboxTokenSource, readProductionMapboxToken } = require('./lib/verifyMapboxTokenSource.cjs');
 
 const root = path.resolve(__dirname, '..');
 const distDir = path.join(root, 'dist');
@@ -73,18 +85,50 @@ const verifyBundle = () => {
   const bundle = readBundle();
   const missing = findMissingBundleKeys(bundle);
 
-  if (!missing.length) {
-    console.log(`\n✓ bundle verificado: ${REQUIRED_BUNDLE_KEYS.map((entry) => entry.name).join(', ')}`);
+  if (missing.length) {
+    // A dica importa: quem vê este erro precisa saber que o problema é o
+    // ambiente do build, não o código.
+    throw new Error(
+      `O bundle saiu SEM estas variáveis: ${missing.map((entry) => entry.name).join(', ')}.\n`
+      + 'O `expo export` não leu nenhum arquivo .env. Confira se .env existe na raiz\n'
+      + 'do projeto e se ele não foi movido para fora durante o processo.\n'
+      + 'NADA foi publicado.'
+    );
+  }
+
+  console.log(`\n✓ bundle verificado: ${REQUIRED_BUNDLE_KEYS.map((entry) => entry.name).join(', ')}`);
+
+  // TERCEIRO INCIDENTE, 27/10/2026: a checagem acima só prova que EXISTE um
+  // token com formato de token do Mapbox -- e os dois tokens documentados em
+  // .env.example (o restrito de `.env`, o sem restrição de `.env.local`) têm
+  // o mesmo formato `pk.*`. Ela sozinha deixa passar o vazamento: um export
+  // de produção que pegou o token SEM restrição por engano sai com todas as
+  // chaves "presentes" e mesmo assim errado. Por isso esta segunda
+  // comparação, por IDENTIDADE: o token embutido tem que ser exatamente o
+  // de `.env` (não `.env.local`) -- a mesma verificação que já roda antes do
+  // export, em app.config.js, repetida aqui contra o ARTEFATO de verdade.
+  /** @type {{ ok: boolean, reason?: string }} */
+  const mapboxResult = verifyMapboxTokenSource({
+    bundleSource: bundle,
+    productionToken: readProductionMapboxToken(root),
+  });
+
+  // 'bundle-sem-token' e 'env-sem-token' já viraram erro acima (chave
+  // ausente) ou são um `.env` mal configurado para publicar produção --
+  // nenhum dos dois é o vazamento que esta checagem existe para pegar. Só
+  // 'token-divergente' é.
+  if (mapboxResult.ok || mapboxResult.reason !== 'token-divergente') {
+    console.log('✓ token do Mapbox no bundle confere com o de .env');
     return;
   }
 
-  // A dica importa: quem vê este erro precisa saber que o problema é o ambiente
-  // do build, não o código.
   throw new Error(
-    `O bundle saiu SEM estas variáveis: ${missing.map((entry) => entry.name).join(', ')}.\n`
-    + 'O `expo export` não leu nenhum arquivo .env. Confira se .env existe na raiz\n'
-    + 'do projeto e se ele não foi movido para fora durante o processo.\n'
-    + 'NADA foi publicado.'
+    'EXPO_PUBLIC_MAPBOX_TOKEN embutido no bundle NÃO é o valor declarado em .env --\n'
+    + 'o export provavelmente pegou o token SEM restrição de .env.local, que o Expo\n'
+    + 'sobrepõe a .env. Esse token não pode ir para produção: sem restrição de\n'
+    + 'domínio, qualquer site pode usá-lo e queimar a cota da conta.\n\n'
+    + 'Confira se .env.local foi removido/renomeado durante o export (ver a seção\n'
+    + '"`.env.local` guardado" acima) e refaça o deploy. NADA foi publicado.'
   );
 };
 
