@@ -540,6 +540,10 @@ export default function ProfileScreen({ navigation }) {
         setSettingsVisible(false);
         navigation.navigate('Support');
       }}
+      onFAQ={() => {
+        setSettingsVisible(false);
+        navigation.navigate('FAQ');
+      }}
       onBlockedUsers={() => {
         setSettingsVisible(false);
         navigation.navigate('BlockedUsers');

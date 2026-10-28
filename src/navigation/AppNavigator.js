@@ -50,6 +50,8 @@ import SupportScreen from '../screens/support/SupportScreen';
 import BlockedUsersScreen from '../screens/profile/BlockedUsersScreen';
 import NotificationPreferencesScreen from '../screens/NotificationPreferencesScreen';
 import LanguageScreen from '../screens/LanguageScreen';
+import FAQScreen from '../screens/FAQScreen';
+import FAQCategoryScreen from '../screens/FAQCategoryScreen';
 import MessagesScreen from '../screens/messages/MessagesScreen';
 import ConversationScreen from '../screens/messages/ConversationScreen';
 import PassportDetailScreen from '../screens/profile/PassportDetailScreen';
@@ -94,6 +96,8 @@ function ProfileStack() {
       <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
       <Stack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} />
       <Stack.Screen name="Language" component={LanguageScreen} />
+      <Stack.Screen name="FAQ" component={FAQScreen} />
+      <Stack.Screen name="FAQCategory" component={FAQCategoryScreen} />
     </Stack.Navigator>
   );
 }

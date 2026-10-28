@@ -134,6 +134,7 @@ export default function SettingsDrawer({
   onEditProfile,
   onSavedTrips,
   onSupport,
+  onFAQ,
   onBlockedUsers,
   onNotificationPreferences,
   onLanguage,
@@ -363,6 +364,11 @@ export default function SettingsDrawer({
 
             <View style={styles.section}>
               <SectionLabel>{t('drawer.sections.support')}</SectionLabel>
+              <DrawerItem
+                icon="help-circle-outline"
+                label={t('drawer.items.faq')}
+                onPress={onFAQ}
+              />
               <DrawerItem
                 icon="chatbubble-ellipses-outline"
                 label={t('drawer.items.talkToTeam')}

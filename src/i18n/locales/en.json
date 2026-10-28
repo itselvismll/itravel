@@ -67,6 +67,10 @@
       "character": {
         "one": "%{count} character",
         "other": "%{count} characters"
+      },
+      "question": {
+        "one": "%{count} pergunta",
+        "other": "%{count} perguntas"
       }
     },
     "calendar": {
@@ -234,6 +238,7 @@
       "inviteFriendsSubtitle": "Invite who travels with you",
       "notifications": "Notifications",
       "language": "Language",
+      "faq": "Perguntas frequentes",
       "talkToTeam": "Talk to the team",
       "termsAndPrivacy": "Terms and privacy",
       "logout": "Log out"
@@ -980,6 +985,203 @@
     },
     "successBack": "Back",
     "successMessage": "Our team will review it and, if needed, reply by email at %{email}."
+  },
+  "faq": {
+    "title": "Perguntas frequentes",
+    "categoriesSubtitle": "Toque numa categoria para ver as perguntas",
+    "categoryNotFound": "Categoria não encontrada.",
+    "categories": {
+      "account": {
+        "title": "Conta e acesso",
+        "questions": {
+          "createAccount": {
+            "question": "Como crio uma conta?",
+            "answer": "Com e-mail e senha, ou entrando direto com sua conta Google. No cadastro por e-mail, você recebe um link de confirmação antes de poder usar o app."
+          },
+          "confirmationEmailMissing": {
+            "question": "Não recebi o e-mail de confirmação.",
+            "answer": "Confira a caixa de spam ou lixo eletrônico. O envio pode levar alguns minutos — espere um pouco antes de pedir de novo, porque pedidos seguidos entram numa fila e demoram mais. Se continuar sem chegar, fale com o time pelo Ajuda e suporte."
+          },
+          "googleLogin": {
+            "question": "Posso entrar com o Google?",
+            "answer": "Sim. Na tela de login, toque em \"Continuar com Google\". Na primeira vez, o Journi sugere um nome de usuário a partir do seu nome — você pode mudar antes de confirmar."
+          },
+          "changeUsername": {
+            "question": "Como mudo meu nome de usuário?",
+            "answer": "Em Editar perfil. O nome de usuário aceita de 3 a 10 caracteres, só letras minúsculas, números e sublinhado (_)."
+          },
+          "forgotPassword": {
+            "question": "Esqueci minha senha.",
+            "answer": "Na tela de login, toque em \"Esqueceu a senha?\" e informe seu e-mail. Você recebe um link para criar uma senha nova."
+          }
+        }
+      },
+      "globe": {
+        "title": "O globo e os países",
+        "questions": {
+          "visitedVsWishlist": {
+            "question": "Qual a diferença entre país visitado e lista de desejos?",
+            "answer": "Visitado é onde você já esteve — o território fica pintado de roxo no globo. A lista de desejos é onde você quer ir — o território fica branco. Um país pode estar em só um dos dois."
+          },
+          "markCountry": {
+            "question": "Como marco um país?",
+            "answer": "Toque no território ou na bandeirinha dele no globo. O país abre com as opções de marcar como visitado ou adicionar à lista de desejos."
+          },
+          "unmarkCountry": {
+            "question": "Posso desmarcar um país?",
+            "answer": "Pode, a qualquer momento: abra o país de novo e desfaça a marcação."
+          },
+          "ukNations": {
+            "question": "Por que Inglaterra, Escócia, País de Gales e Irlanda do Norte aparecem separados?",
+            "answer": "Porque cada uma tem bandeira, cultura e identidade próprias, e quem visitou só a Escócia não visitou o Reino Unido inteiro. No Journi elas contam como países separados."
+          }
+        }
+      },
+      "aiPlanning": {
+        "title": "Viagens e roteiro com IA",
+        "questions": {
+          "howItWorks": {
+            "question": "Como funciona o planejamento com IA?",
+            "answer": "Você diz para onde quer ir e por quantos dias, e a IA monta um roteiro dia a dia com sugestões de lugares. É um ponto de partida: tudo pode ser editado depois."
+          },
+          "editPlan": {
+            "question": "Posso editar o roteiro que a IA montou?",
+            "answer": "Pode. Dá para adicionar, remover e reordenar paradas, e ajustar os dias."
+          },
+          "viewOnGlobe": {
+            "question": "Como vejo o roteiro no globo?",
+            "answer": "Aplique o roteiro na tela de roteiros salvos. Ele aparece no globo com as paradas e o trajeto entre elas, e dá para filtrar por dia."
+          },
+          "savedPlans": {
+            "question": "Meus roteiros ficam salvos?",
+            "answer": "Sim, e você pode ter quantos quiser. Eles ficam em Roteiros salvos."
+          }
+        }
+      },
+      "groupTrips": {
+        "title": "Viagens em grupo",
+        "questions": {
+          "inviteSomeone": {
+            "question": "Como convido alguém para a viagem?",
+            "answer": "De duas formas: buscando a pessoa dentro do app, se ela já tiver conta no Journi, ou copiando o link do convite e mandando por onde quiser. Quem está como visualizador não pode convidar."
+          },
+          "participantRoles": {
+            "question": "O que cada participante pode fazer?",
+            "answer": "- **Organizador** — faz tudo, incluindo convidar e remover participantes.\n- **Editor** — edita as informações da viagem e o roteiro, e também pode convidar. Não pode remover participantes.\n- **Visualizador** — só acompanha a viagem. Não edita nem convida."
+          },
+          "groupTasks": {
+            "question": "Como funcionam as tarefas do grupo?",
+            "answer": "O organizador cria as tarefas e escolhe um responsável. A tarefa só pode ser marcada como concluída pelo responsável ou pelo próprio organizador. Todo mundo da viagem acompanha o andamento."
+          },
+          "checklistVsTasks": {
+            "question": "Qual a diferença entre a checklist pessoal e as tarefas do grupo?",
+            "answer": "A checklist pessoal é só sua, ninguém mais vê. As tarefas do grupo são compartilhadas com todos os participantes e têm responsável."
+          }
+        }
+      },
+      "profile": {
+        "title": "Perfil, passaporte e níveis",
+        "questions": {
+          "levels": {
+            "question": "Como funcionam os níveis?",
+            "answer": "Seu nível sobe conforme o número de países visitados: Iniciante (0), Viajante (2), Explorador (5), Globetrotter (10) e Lenda Viajante (20)."
+          },
+          "passport": {
+            "question": "O que é o passaporte?",
+            "answer": "É a sua coleção de carimbos: cada país visitado vira um carimbo no seu passaporte, que fica no seu perfil."
+          },
+          "publicProfile": {
+            "question": "Meu perfil é público?",
+            "answer": "Sim. Outras pessoas podem ver seu perfil, seus países e suas publicações. Mensagens privadas e sua checklist pessoal não aparecem para ninguém."
+          },
+          "changePhoto": {
+            "question": "Como mudo minha foto de perfil?",
+            "answer": "Em Editar perfil, toque na foto."
+          }
+        }
+      },
+      "social": {
+        "title": "Social",
+        "questions": {
+          "followSomeone": {
+            "question": "Como sigo alguém?",
+            "answer": "Abra o perfil da pessoa e toque em Seguir. As publicações de quem você segue aparecem no seu início."
+          },
+          "postPhoto": {
+            "question": "Como publico uma foto?",
+            "answer": "Pelo botão \"+\" na barra inferior. Dá para marcar o local, dar uma nota e escrever um comentário sobre o lugar."
+          },
+          "shareInstagram": {
+            "question": "Como compartilho no Instagram?",
+            "answer": "Nas suas publicações e no seu passaporte, use a opção de compartilhar nos Stories."
+          }
+        }
+      },
+      "messages": {
+        "title": "Mensagens",
+        "questions": {
+          "sendMessage": {
+            "question": "Como mando mensagem?",
+            "answer": "Pelo ícone de conversas no início, ou direto pelo perfil da pessoa."
+          },
+          "shareInChat": {
+            "question": "Dá para compartilhar meu passaporte ou um roteiro na conversa?",
+            "answer": "Dá. Na conversa, use a opção de compartilhar e escolha o passaporte ou um roteiro salvo."
+          }
+        }
+      },
+      "notifications": {
+        "title": "Notificações",
+        "questions": {
+          "pushToPhone": {
+            "question": "O Journi envia notificações para o meu celular?",
+            "answer": "Os avisos aparecem dentro do app, no sino e em mensagens na tela enquanto você está usando. O Journi não envia notificações para fora do app."
+          },
+          "chooseTypes": {
+            "question": "Posso escolher quais avisos recebo?",
+            "answer": "Pode. Em Configurações → Notificações dá para ligar e desligar por tipo: novos seguidores, curtidas, comentários, convites e novidades das viagens, tarefas e mensagens."
+          },
+          "disableAll": {
+            "question": "Como desligo tudo de uma vez?",
+            "answer": "Use o interruptor geral em Configurações → Notificações. Ele pausa todos os avisos sem apagar suas escolhas por tipo — ao religar, tudo volta como estava."
+          }
+        }
+      },
+      "safety": {
+        "title": "Segurança e convivência",
+        "questions": {
+          "blockVsReport": {
+            "question": "Qual a diferença entre bloquear e denunciar?",
+            "answer": "São coisas diferentes e você pode fazer as duas. Bloquear é imediato e privado: a pessoa some da sua frente e você da dela, e ninguém é avisado. Denunciar envia o conteúdo para revisão do nosso time e não muda nada na sua tela."
+          },
+          "whatHappensWhenBlocking": {
+            "question": "O que acontece quando bloqueio alguém?",
+            "answer": "Vocês deixam de se ver no app, nos dois sentidos: publicações, perfil, comentários e mensagens. A pessoa não recebe nenhum aviso."
+          },
+          "unblock": {
+            "question": "Como desbloqueio alguém?",
+            "answer": "Em Configurações → Usuários bloqueados."
+          }
+        }
+      },
+      "privacy": {
+        "title": "Privacidade e dados",
+        "questions": {
+          "deleteAccount": {
+            "question": "Como excluo minha conta?",
+            "answer": "Pelo pedido de exclusão nas configurações. A conta não é apagada na hora: ela fica invisível para as outras pessoas por 5 dias. Se você entrar de novo nesse prazo, o pedido é cancelado e nada se perde. Passado o prazo, os dados são apagados."
+          },
+          "whatHappensToData": {
+            "question": "O que acontece com minhas fotos e viagens?",
+            "answer": "São apagadas junto com a conta, depois do prazo de 5 dias."
+          },
+          "termsLocation": {
+            "question": "Onde vejo os termos e a política de privacidade?",
+            "answer": "Em Configurações → Política e Privacidade."
+          }
+        }
+      }
+    }
   },
   "notificationPreferences": {
     "title": "Notifications",
