@@ -44,6 +44,7 @@ import {
   saveNotificationPreferences,
 } from '../services/notificationPreferenceService';
 import { useLocale } from '../i18n/LocaleProvider';
+import useTabBarContentPadding from '../hooks/useTabBarContentPadding';
 
 const ROXO = '#6C2BD9';
 const TRILHO_DESLIGADO = '#2A3354';
@@ -77,6 +78,9 @@ function Interruptor({ value, onValueChange, disabled = false, label }) {
 
 export default function NotificationPreferencesScreen({ navigation }) {
   const { t } = useLocale();
+  // A barra de abas flutua sobre o conteúdo e não reserva espaço no layout
+  // (ver tabBarLayout.js) -- sem esta folga, o rodapé da lista nasce atrás dela.
+  const tabBarPadding = useTabBarContentPadding();
   const [prefs, setPrefs] = useState(
     /** @type {Record<string, boolean>} */ ({ ...DEFAULT_NOTIFICATION_PREFERENCES })
   );
@@ -138,7 +142,10 @@ export default function NotificationPreferencesScreen({ navigation }) {
       {carregando ? (
         <View style={styles.center}><ActivityIndicator color={ROXO} /></View>
       ) : (
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={[styles.content, tabBarPadding > 0 && { paddingBottom: tabBarPadding }]}
+          showsVerticalScrollIndicator={false}
+        >
           {/* O card do geral ───────────────────────────────────────────────── */}
           <View style={styles.card}>
             <View style={styles.cardRow}>

@@ -21,6 +21,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import { AUTOMATIC, SUPPORTED_LOCALES, localeDescriptor } from '../i18n';
 import { useLocale } from '../i18n/LocaleProvider';
+import useTabBarContentPadding from '../hooks/useTabBarContentPadding';
 
 const ROXO = '#6C2BD9';
 
@@ -65,6 +66,9 @@ function LanguageRow({ short, label, subtitle, selected, onPress, selectedLabel 
 
 export default function LanguageScreen({ navigation }) {
   const { choice, automaticResolvesTo, changeLocale, t } = useLocale();
+  // A barra de abas flutua sobre o conteúdo e não reserva espaço no layout
+  // (ver tabBarLayout.js) -- sem esta folga, o rodapé da lista nasce atrás dela.
+  const tabBarPadding = useTabBarContentPadding();
 
   // Em que idioma "Automático" cai agora, escrito na própria língua — o mesmo
   // rótulo que a opção correspondente usa, para a pessoa poder cruzar os dois.
@@ -85,7 +89,10 @@ export default function LanguageScreen({ navigation }) {
         <View style={styles.backBtn} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.content, tabBarPadding > 0 && { paddingBottom: tabBarPadding }]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.group} accessibilityRole="radiogroup">
           {/* "Automático" primeiro, e é o padrão de quem nunca escolheu: seguir o
               aparelho é o que acerta sem a pessoa fazer nada. */}

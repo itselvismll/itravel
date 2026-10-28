@@ -23,9 +23,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { confirm, notify } from '../../utils/dialogs';
 import { getBlockedUsers, unblockUser } from '../../services/moderationService';
 import { useLocale } from '../../i18n/LocaleProvider';
+import useTabBarContentPadding from '../../hooks/useTabBarContentPadding';
 
 export default function BlockedUsersScreen({ navigation }) {
   const { t } = useLocale();
+  // A barra de abas flutua sobre o conteúdo e não reserva espaço no layout
+  // (ver tabBarLayout.js) -- sem esta folga, o último bloqueado nasce atrás dela.
+  const tabBarPadding = useTabBarContentPadding();
   const [bloqueados, setBloqueados] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [desbloqueando, setDesbloqueando] = useState(null);
@@ -131,7 +135,7 @@ export default function BlockedUsersScreen({ navigation }) {
           data={bloqueados}
           keyExtractor={(item) => item.blocked_id}
           renderItem={renderItem}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, tabBarPadding > 0 && { paddingBottom: tabBarPadding }]}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
         />
       )}
