@@ -4,15 +4,19 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../../components/Avatar';
 import { getConversations } from '../../services/messageService';
+import { useLocale } from '../../i18n/LocaleProvider';
 
-const preview = message => message?.body || (
-  message?.shared_photo ? 'Compartilhou uma publicação'
-    : message?.shared_plan ? 'Compartilhou um roteiro'
-      : message?.shared_passport ? 'Compartilhou um passaporte'
-        : 'Nova conversa'
+// `t` entra por parâmetro, e não por hook: esta função é módulo, não
+// componente — o hook só pode ser chamado de dentro de um.
+const preview = (message, t) => message?.body || (
+  message?.shared_photo ? t('messages.previews.photo')
+    : message?.shared_plan ? t('messages.previews.plan')
+      : message?.shared_passport ? t('messages.previews.passport')
+        : t('messages.previews.empty')
 );
 
 export default function MessagesScreen({ navigation }) {
+  const { t } = useLocale();
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
   const load = useCallback(async () => {
@@ -30,13 +34,13 @@ export default function MessagesScreen({ navigation }) {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
           accessibilityRole="button"
-          accessibilityLabel="Voltar para o início"
+          accessibilityLabel={t('messages.backLabel')}
         >
           <Ionicons name="arrow-back" size={21} color="#FFFFFF" />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Conversas</Text>
-          <Text style={styles.subtitle}>Compartilhe viagens com seus amigos</Text>
+          <Text style={styles.title}>{t('messages.title')}</Text>
+          <Text style={styles.subtitle}>{t('messages.subtitle')}</Text>
         </View>
       </View>
       {loading ? <ActivityIndicator color="#6C2BD9" style={{ marginTop: 50 }} /> : (
@@ -44,11 +48,11 @@ export default function MessagesScreen({ navigation }) {
           data={conversations}
           keyExtractor={item => item.id}
           contentContainerStyle={conversations.length ? styles.list : styles.emptyList}
-          ListEmptyComponent={<View style={styles.empty}><Ionicons name="chatbubbles-outline" size={52} color="#3D4565" /><Text style={styles.emptyTitle}>Nenhuma conversa ainda</Text><Text style={styles.emptyText}>Compartilhe uma publicação, roteiro ou passaporte com alguém que você segue.</Text></View>}
+          ListEmptyComponent={<View style={styles.empty}><Ionicons name="chatbubbles-outline" size={52} color="#3D4565" /><Text style={styles.emptyTitle}>{t('messages.empty.title')}</Text><Text style={styles.emptyText}>{t('messages.empty.text')}</Text></View>}
           renderItem={({ item }) => (
             <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('Conversation', { conversationId: item.id, profile: item.profile })}>
               <Avatar profile={item.profile} size={48} />
-              <View style={{ flex: 1 }}><Text style={styles.name}>{item.profile?.display_name || item.profile?.username || 'Viajante'}</Text><Text style={styles.preview} numberOfLines={1}>{preview(item.lastMessage)}</Text></View>
+              <View style={{ flex: 1 }}><Text style={styles.name}>{item.profile?.display_name || item.profile?.username || t('messages.unnamed')}</Text><Text style={styles.preview} numberOfLines={1}>{preview(item.lastMessage, t)}</Text></View>
               <Ionicons name="chevron-forward" size={18} color="#626A89" />
             </TouchableOpacity>
           )}

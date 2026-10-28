@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -8,17 +8,35 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { deleteTripPlan, getSavedTripPlans } from '../../services/tripPlanService';
 import { confirm, notify } from '../../utils/dialogs';
+import { useLocale } from '../../i18n/LocaleProvider';
 import { useActivePlan } from '../../context/ActivePlanContext';
 import useTabBarContentPadding from '../../hooks/useTabBarContentPadding';
+import TripListCard from '../../components/trip/TripListCard';
+import { getTourismImage } from '../../services/tourismImageService';
+import {
+  countPlanStops,
+  coverSearchTerm,
+  destinationTitle,
+  tripChips,
+  tripDurationDays,
+} from '../../utils/tripSummary';
 
 export default function SavedTripsScreen({ navigation }) {
+  const { t } = useLocale();
+  const insets = useSafeAreaInsets();
   // Dentro do ProfileStack, sob as tabs: a barra cobriria o último roteiro.
   const tabBarPadding = useTabBarContentPadding();
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Capa de cada viagem, por id. O serviço tem cache próprio (memória +
+  // localStorage), então voltar para a lista não repete nenhuma ida à rede — o
+  // estado aqui é só o que já foi resolvido nesta sessão.
+  const [covers, setCovers] = useState({});
 
   // Esta tela é o ÚNICO controle de "roteiro no globo" — o mapa não tem botão
   // nem card sobreposto. Só um roteiro fica aplicado por vez: aplicar outro
@@ -29,11 +47,35 @@ export default function SavedTripsScreen({ navigation }) {
     setLoading(true);
     const result = await getSavedTripPlans();
     if (result.success) setPlans(result.data);
-    else notify('Erro ao carregar roteiros', result.error);
+    else notify(t('savedTrips.loadFailedTitle'), result.error);
     setLoading(false);
   }, []);
 
   useFocusEffect(useCallback(() => { loadPlans(); }, [loadPlans]));
+
+  // Uma busca por DESTINO, não por viagem: duas viagens para a Itália dividem a
+  // mesma foto e a mesma entrada de cache.
+  useEffect(() => {
+    let cancelled = false;
+
+    plans.forEach((plan) => {
+      // Um destino, não a lista: "Itália, Croácia, Eslováquia" não casa com nada
+      // no Wikimedia e o cartão ficaria sem foto.
+      const destino = coverSearchTerm(
+        plan.request_data?.destinations,
+        plan.destination || plan.title
+      );
+      if (!destino || covers[plan.id]) return;
+
+      getTourismImage(null, destino).then((image) => {
+        if (cancelled || !image?.url) return;
+        setCovers((current) => ({ ...current, [plan.id]: image.url }));
+      });
+    });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `covers` é o acumulador; relê-lo aqui reiniciaria a busca a cada foto que chega
+  }, [plans]);
 
   const openPlan = (savedPlan) => {
     navigation.getParent()?.navigate('AssistantResult', {
@@ -45,11 +87,11 @@ export default function SavedTripsScreen({ navigation }) {
   };
 
   const removePlan = async (plan) => {
-    const approved = await confirm('Excluir roteiro', `Remover “${plan.title}”?`);
+    const approved = await confirm(t('savedTrips.delete.confirmTitle'), t('savedTrips.delete.confirmMessage', { title: plan.title }));
     if (!approved) return;
     const result = await deleteTripPlan(plan.id);
     if (!result.success) {
-      notify('Erro ao excluir', result.error);
+      notify(t('savedTrips.delete.failedTitle'), result.error);
       return;
     }
     // O roteiro excluído não pode continuar plotado no globo.
@@ -66,23 +108,23 @@ export default function SavedTripsScreen({ navigation }) {
     // Roteiro antigo, salvo antes de as coordenadas existirem, não tem o que
     // plotar — melhor dizer isso do que aplicar e o globo não mudar nada.
     if (!isActive && !hasPoints) {
-      notify('Sem pontos no mapa', 'Este roteiro não tem coordenadas. Gere-o novamente para vê-lo no globo.');
+      notify(t('savedTrips.noMapPoints.title'), t('savedTrips.noMapPoints.message'));
       return;
     }
 
     const result = isActive ? await removeFromMap() : await applyToMap(plan);
-    if (!result.success) notify('Não foi possível atualizar o globo', result.error);
+    if (!result.success) notify(t('savedTrips.globeFailedTitle'), result.error);
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}>
           <Ionicons name="arrow-back" size={22} color="#F7F7F2" />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Minhas viagens</Text>
-          <Text style={styles.subtitle}>Roteiros planejados e salvos</Text>
+          <Text style={styles.title}>{t('savedTrips.title')}</Text>
+          <Text style={styles.subtitle}>{t('savedTrips.subtitle')}</Text>
         </View>
         <TouchableOpacity onPress={() => navigation.getParent()?.navigate('TripPlanner')} style={styles.newButton}>
           <Ionicons name="add" size={20} color="#fff" />
@@ -94,11 +136,11 @@ export default function SavedTripsScreen({ navigation }) {
       ) : plans.length === 0 ? (
         <View style={styles.empty}>
           <View style={styles.emptyIcon}><Ionicons name="map-outline" size={34} color="#A78BFA" /></View>
-          <Text style={styles.emptyTitle}>Nenhum roteiro salvo</Text>
-          <Text style={styles.emptyText}>Planeje sua próxima viagem e encontre tudo organizado aqui.</Text>
+          <Text style={styles.emptyTitle}>{t('savedTrips.empty.title')}</Text>
+          <Text style={styles.emptyText}>{t('savedTrips.empty.text')}</Text>
           <TouchableOpacity style={styles.createButton} onPress={() => navigation.getParent()?.navigate('TripPlanner')}>
             <Ionicons name="sparkles" size={18} color="#fff" />
-            <Text style={styles.createText}>Planejar viagem</Text>
+            <Text style={styles.createText}>{t('savedTrips.empty.cta')}</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -108,31 +150,30 @@ export default function SavedTripsScreen({ navigation }) {
         >
           {plans.map(plan => {
             const request = plan.request_data || {};
-            const days = plan.plan_data?.days?.length || 0;
             const isActive = plan.id === activePlanId;
+
+            // Os MESMOS números e o MESMO título da tela da viagem: é o que faz
+            // a lista e a tela parecerem o mesmo produto.
+            const chips = tripChips({
+              startDate: request.startDate || plan.start_date,
+              durationDays: tripDurationDays({
+                startDate: request.startDate || plan.start_date,
+                endDate: request.endDate || plan.end_date,
+                planDays: (plan.plan_data?.days || []).length,
+              }),
+              travelers: Number(request.travelers || plan.travelers) || null,
+              stops: countPlanStops(plan.plan_data),
+            });
+
             return (
-              <TouchableOpacity
-                key={plan.id}
-                onPress={() => openPlan(plan)}
-                style={[styles.card, isActive && styles.cardActive]}
-                activeOpacity={0.86}
-              >
-                <View style={styles.cardTop}>
-                  <View style={styles.cardIcon}><Ionicons name="airplane" size={20} color="#C4B5FD" /></View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.cardTitle} numberOfLines={1}>{plan.title}</Text>
-                    <Text style={styles.destination}>{plan.origin ? `${plan.origin} → ` : ''}{plan.destination}</Text>
-                    <View style={styles.metaRow}>
-                      <Text style={styles.meta}>{days} dias</Text>
-                      <Text style={styles.dot}>•</Text>
-                      <Text style={styles.meta}>{request.travelers || plan.travelers} viajante(s)</Text>
-                      {plan.local_only && <Text style={styles.localBadge}>LOCAL</Text>}
-                    </View>
-                  </View>
-                  <TouchableOpacity onPress={() => removePlan(plan)} style={styles.deleteButton}>
-                    <Ionicons name="trash-outline" size={18} color="#FF8AA0" />
-                  </TouchableOpacity>
-                </View>
+              <View key={plan.id} style={styles.tripBlock}>
+                <TripListCard
+                  title={destinationTitle(request.destinations, plan.destination || plan.title)}
+                  photoUrl={covers[plan.id] || null}
+                  chips={chips}
+                  appliedToMap={isActive}
+                  onPress={() => openPlan(plan)}
+                />
 
                 <View style={styles.actionRow}>
                   <TouchableOpacity
@@ -150,14 +191,17 @@ export default function SavedTripsScreen({ navigation }) {
                     </Text>
                   </TouchableOpacity>
 
-                  {isActive && (
-                    <View style={styles.activeTag}>
-                      <View style={styles.activeDot} />
-                      <Text style={styles.activeTagText}>Ativo no mapa</Text>
-                    </View>
-                  )}
+                  {plan.local_only ? <Text style={styles.localBadge}>{t('savedTrips.localBadge')}</Text> : null}
+
+                  <TouchableOpacity
+                    onPress={() => removePlan(plan)}
+                    style={styles.deleteButton}
+                    accessibilityLabel={`Excluir ${plan.title}`}
+                  >
+                    <Ionicons name="trash-outline" size={18} color="#FF8AA0" />
+                  </TouchableOpacity>
                 </View>
-              </TouchableOpacity>
+              </View>
             );
           })}
         </ScrollView>
@@ -168,31 +212,25 @@ export default function SavedTripsScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0D1326' },
+  // Cartão + fileira de ações formam um bloco; o `gap` do conteúdo separa uma
+  // viagem da outra.
+  tripBlock: { gap: 10 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
   iconButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#1B2240', alignItems: 'center', justifyContent: 'center' },
   newButton: { width: 38, height: 38, borderRadius: 13, backgroundColor: '#6C2BD9', alignItems: 'center', justifyContent: 'center' },
   title: { color: '#F7F7F2', fontSize: 18, fontWeight: '800' },
   subtitle: { color: '#858DAD', fontSize: 11, marginTop: 2 },
   content: { width: '100%', maxWidth: 760, alignSelf: 'center', padding: 15, gap: 11, paddingBottom: 50 },
-  card: { gap: 12, padding: 15, backgroundColor: '#171D36', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
+  // O cartão de caixa cinza com ícone de avião virou o TripListCard, com a foto
+  // do destino — mesma linguagem da capa da tela da viagem.
   // O roteiro plotado no globo se destaca na cor da marca, para a resposta de
   // "qual está no mapa?" caber num relance da lista.
-  cardActive: { borderColor: '#6C2BD9', backgroundColor: 'rgba(108,43,217,0.14)' },
-  cardTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   mapButton: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: '#6C2BD9', paddingHorizontal: 13, paddingVertical: 9, borderRadius: 11 },
   mapButtonActive: { backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: 'rgba(196,181,253,0.35)' },
   mapButtonText: { color: '#fff', fontSize: 11, fontWeight: '800' },
   mapButtonTextActive: { color: '#C4B5FD' },
-  activeTag: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, backgroundColor: 'rgba(108,43,217,0.28)', borderWidth: 1, borderColor: '#6C2BD9' },
-  activeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#00D1C1' },
-  activeTagText: { color: '#E9E3FF', fontSize: 10, fontWeight: '800' },
-  cardIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: 'rgba(139,92,246,0.16)', alignItems: 'center', justifyContent: 'center' },
-  cardTitle: { color: '#F7F7F2', fontSize: 14, fontWeight: '800' },
-  destination: { color: '#A2A9C5', fontSize: 11, marginTop: 3 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
-  meta: { color: '#707896', fontSize: 9 },
-  dot: { color: '#4D5575', fontSize: 9 },
+  // O selo de "no globo" mora no cartão (TripListCard), sobre a capa.
   localBadge: { color: '#35D3C8', fontSize: 8, fontWeight: '900', marginLeft: 4 },
   deleteButton: { padding: 9 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30 },

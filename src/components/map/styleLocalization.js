@@ -1,4 +1,4 @@
-// Traduz os rótulos do mapa para português.
+// Traduz os rótulos do mapa para o idioma do app.
 //
 // O schema OpenMapTiles traz um campo `name:<idioma>` por
 // feature, mas as styles vêm montadas em cima de `name:latin` + `name:nonlatin`
@@ -12,42 +12,85 @@
 // sobrevivem intactos.
 //
 // Módulo sem dependência de react-native de propósito (countryUtils também é
-// puro): roda no browser e é exercitado direto nos testes.
+// puro): roda no browser e é exercitado direto nos testes. O idioma entra como
+// PARÂMETRO, nunca lido de um contexto — é o que mantém isso verdadeiro.
+//
+// FASE 2 DO IDIOMA: `getCountryName` (countryUtils) agora recebe a tag de
+// locale e usa `Intl.DisplayNames` no idioma pedido, então a sobreposição vale
+// para os três idiomas — não só português.
 
-import { ALPHA3_TO_ALPHA2, getCountryNamePtByCode } from '../../utils/countryUtils';
+import { ALPHA3_TO_ALPHA2, getCountryName } from '../../utils/countryUtils';
 
-const PT_FROM_TILE = [
+/**
+ * A cadeia de nomes vinda do tile, na ordem de preferência.
+ *
+ * `name:<idioma>` primeiro; `name:latin` e `name` como rede, porque o campo do
+ * idioma não está preenchido em toda feature — e um rótulo em qualquer idioma é
+ * melhor do que nenhum rótulo.
+ *
+ * @param {string} mapNameField o campo do tileset ('name:pt', 'name:en', …)
+ */
+const nameFromTile = (mapNameField) => [
   'coalesce',
-  ['get', 'name:pt'],
+  ['get', mapNameField],
   ['get', 'name:latin'],
   ['get', 'name'],
 ];
 
 // O `name:pt` do OpenMapTiles é português europeu: vem "Quénia", "Seri-Lanca",
-// "Moscovo". Num app brasileiro isso lê como bug. Para PAÍS dá para fazer melhor:
-// a feature carrega `iso_a2`, e o app já sabe o nome pt-BR de cada código por
-// getCountryNamePtByCode. Assim o rótulo no mapa bate exatamente com o nome
-// usado no badge, na busca e no modal — em vez de duas grafias no mesmo app.
+// "Moscovo". Num app brasileiro isso lê como bug — e o mesmo tile tem o problema
+// equivalente em outros idiomas às vezes. Para PAÍS dá para fazer melhor: a
+// feature carrega `iso_a2`, e o app sabe o nome de cada código no idioma ativo
+// por getCountryName (Intl.DisplayNames). Assim o rótulo no mapa bate
+// exatamente com o nome usado no badge, na busca e no modal — em vez de duas
+// grafias no mesmo app.
 //
 // Cidades e água continuam vindo do tile (não têm código ISO para cruzar).
-const buildCountryNameMatch = () => {
+const buildCountryNameMatch = (locale, mapNameField) => {
+  const fromTile = nameFromTile(mapNameField);
+  const tag = MAP_LOCALE_TAG[locale];
+  if (!tag) return fromTile;
+
   const pairs = [];
   for (const alpha2 of new Set(Object.values(ALPHA3_TO_ALPHA2))) {
-    const name = getCountryNamePtByCode(alpha2, '');
+    const name = getCountryName(alpha2, '', tag);
     if (name && name !== alpha2) pairs.push(alpha2, name);
   }
   // `match` precisa de pelo menos um par; sem nomes resolvidos, cai no tile.
-  if (pairs.length === 0) return PT_FROM_TILE;
+  if (pairs.length === 0) return fromTile;
 
   return [
     'case',
     ['has', 'iso_a2'],
-    ['match', ['get', 'iso_a2'], ...pairs, PT_FROM_TILE],
-    PT_FROM_TILE,
+    ['match', ['get', 'iso_a2'], ...pairs, fromTile],
+    fromTile,
   ];
 };
 
-const PT_NAME_EXPRESSION = buildCountryNameMatch();
+/** O idioma dos rótulos quando quem chama não diz. */
+export const DEFAULT_MAP_LOCALE = 'pt';
+
+/** O campo do tileset de cada idioma. Espelha `SUPPORTED_LOCALES` em src/i18n. */
+const MAP_NAME_FIELD = { pt: 'name:pt', en: 'name:en', es: 'name:es' };
+
+/** A tag de `Intl` de cada idioma do mapa. Espelha `SUPPORTED_LOCALES` em src/i18n. */
+const MAP_LOCALE_TAG = { pt: 'pt-BR', en: 'en-US', es: 'es-ES' };
+
+/**
+ * A expressão de nome de um idioma.
+ *
+ * Memoizada por idioma porque montar o `match` de país percorre ~250 códigos, e
+ * isto é chamado uma vez por symbol layer (~24 por style).
+ */
+const nameExpressionCache = new Map();
+
+const nameExpressionFor = (locale) => {
+  const code = MAP_NAME_FIELD[locale] ? locale : DEFAULT_MAP_LOCALE;
+  if (!nameExpressionCache.has(code)) {
+    nameExpressionCache.set(code, buildCountryNameMatch(code, MAP_NAME_FIELD[code]));
+  }
+  return nameExpressionCache.get(code);
+};
 
 // Tokens no formato antigo de string ("{name:latin}").
 const NAME_TOKEN_PATTERN = /^\{name(:latin)?\}$/;
@@ -59,30 +102,35 @@ const isHasOf = (node, key) =>
   Array.isArray(node) && node.length === 2 && node[0] === 'has' && node[1] === key;
 
 /**
- * Reescreve uma expressão de text-field para usar `name:pt`.
+ * Reescreve uma expressão de text-field para usar o nome no idioma pedido.
  *
  * Duas substituições:
- * 1. `["get","name:latin"]` e `["get","name"]` viram o coalesce com `name:pt`.
+ * 1. `["get","name:latin"]` e `["get","name"]` viram o coalesce com `name:<idioma>`.
  * 2. `["has","name:nonlatin"]` vira `false`, o que faz o ramo que concatena o
  *    nome em escrita nativa cair fora sozinho — sem sobrar "\n" solto, que é o
  *    que aconteceria se trocássemos só o `get` por string vazia.
+ *
+ * @param {unknown} node
+ * @param {string} [locale] 'pt' | 'en' | 'es'; idioma desconhecido cai em 'pt'
  */
-export const localizeTextField = (node) => {
+export const localizeTextField = (node, locale = DEFAULT_MAP_LOCALE) => {
+  const nameExpression = nameExpressionFor(locale);
+
   if (typeof node === 'string') {
-    return NAME_TOKEN_PATTERN.test(node) ? PT_NAME_EXPRESSION : node;
+    return NAME_TOKEN_PATTERN.test(node) ? nameExpression : node;
   }
 
   if (!Array.isArray(node)) return node;
 
   if (isGetOf(node, 'name:latin') || isGetOf(node, 'name')) {
-    return PT_NAME_EXPRESSION;
+    return nameExpression;
   }
 
   if (isHasOf(node, 'name:nonlatin')) {
     return false;
   }
 
-  return node.map(localizeTextField);
+  return node.map((filho) => localizeTextField(filho, locale));
 };
 
 /** Só mexe em layer que realmente rotula um nome — shields de rodovia ("{ref}") ficam de fora. */
@@ -94,9 +142,10 @@ export const textFieldReferencesName = (textField) =>
  * Precisa rodar depois do evento `style.load`.
  *
  * @param {import('maplibre-gl').Map} map
+ * @param {string} [locale] 'pt' | 'en' | 'es'
  * @returns {number} quantas layers foram traduzidas
  */
-export const localizeMapLabels = (map) => {
+export const localizeMapLabels = (map, locale = DEFAULT_MAP_LOCALE) => {
   const layers = map.getStyle()?.layers ?? [];
   let localized = 0;
 
@@ -106,7 +155,7 @@ export const localizeMapLabels = (map) => {
     const textField = layer.layout?.['text-field'];
     if (!textField || !textFieldReferencesName(textField)) continue;
 
-    map.setLayoutProperty(layer.id, 'text-field', localizeTextField(textField));
+    map.setLayoutProperty(layer.id, 'text-field', localizeTextField(textField, locale));
     localized += 1;
   }
 

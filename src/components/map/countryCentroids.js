@@ -94,7 +94,9 @@ const anchorOfPolygons = (polygons) => {
 export const getCountryAnchor = (feature) => anchorOfPolygons(polygonsOf(feature?.geometry));
 
 /**
- * Mapa alpha3 -> âncora para todas as features com código ISO reconhecido.
+ * Agrupa os polígonos de todas as features pelo código alpha-3 — o primeiro
+ * passo de `buildCountryAnchors`/`buildCountryAnchorsAsync`, compartilhado
+ * pelas duas.
  *
  * Junta TODAS as features do mesmo código antes de calcular. Vários datasets de
  * fronteiras quebram um país em mais de uma feature (partes separadas, enclaves,
@@ -102,14 +104,10 @@ export const getCountryAnchor = (feature) => anchorOfPolygons(polygonsOf(feature
  * qualquer: o badge ia parar no meio do oceano, quase sempre do lado escondido
  * do globo — o país entrava na lista e nunca aparecia.
  *
- * No fim, a lista de exceções (countryCoordinateOverrides.js) tem a última
- * palavra sobre a POSIÇÃO, para os punhados de países cuja forma nenhum
- * centróide resolve.
- *
  * @param {{ features: any[] } | null} geoData
- * @returns {Record<string, { lng: number, lat: number, area: number }>}
+ * @returns {Map<string, number[][][][]>}
  */
-export const buildCountryAnchors = (geoData) => {
+const groupPolygonsByCode = (geoData) => {
   /** @type {Map<string, number[][][][]>} */
   const byCode = new Map();
 
@@ -125,10 +123,81 @@ export const buildCountryAnchors = (geoData) => {
     else byCode.set(code, [...polygons]);
   }
 
+  return byCode;
+};
+
+/**
+ * Mapa alpha3 -> âncora para todas as features com código ISO reconhecido.
+ *
+ * No fim, a lista de exceções (countryCoordinateOverrides.js) tem a última
+ * palavra sobre a POSIÇÃO, para os punhados de países cuja forma nenhum
+ * centróide resolve.
+ *
+ * @param {{ features: any[] } | null} geoData
+ * @returns {Record<string, { lng: number, lat: number, area: number }>}
+ */
+export const buildCountryAnchors = (geoData) => {
+  const byCode = groupPolygonsByCode(geoData);
+
   const anchors = /** @type {Record<string, { lng: number, lat: number, area: number }>} */ ({});
   for (const [code, polygons] of byCode) {
     const anchor = anchorOfPolygons(polygons);
     if (anchor) anchors[code] = applyCoordinateOverride(code, anchor);
   }
   return anchors;
+};
+
+/**
+ * Mesmo cálculo de `buildCountryAnchors`, mas em lotes — cede a thread entre um
+ * lote e outro (`setTimeout(fn, 0)`) em vez de rodar a geometria esférica dos
+ * ~238 países inteira de uma vez.
+ *
+ * Existe porque, no globo nativo, esse cálculo roda na MESMA thread que depois
+ * desenha o WebGL do mapa (ver NativeGlobe.dom.js): de uma vez só, ele trava a
+ * WebView por tempo suficiente para o carregamento inicial do mapa parecer
+ * travado. Em lotes, a UI consegue processar frames entre eles.
+ *
+ * Não é um Web Worker real: não há, neste projeto, nenhum bundler (esbuild,
+ * webpack, rollup) capaz de empacotar este módulo + d3-geo num script
+ * standalone para rodar fora da thread principal — o worker do MapLibre em
+ * `scripts/copy-maplibre-worker.cjs` só copia um arquivo JÁ compilado que vem
+ * dentro do pacote `maplibre-gl`; não existe equivalente pronto para código
+ * nosso. Fila-de-lotes resolve o mesmo sintoma (thread travada) sem essa
+ * infraestrutura nova, com resultado idêntico ao da versão síncrona.
+ *
+ * @param {{ features: any[] } | null} geoData
+ * @param {{ chunkSize?: number, isCancelled?: () => boolean }} [options]
+ * @returns {Promise<Record<string, { lng: number, lat: number, area: number }>>}
+ */
+export const buildCountryAnchorsAsync = (geoData, options = {}) => {
+  const { chunkSize = 25, isCancelled = () => false } = options;
+
+  return new Promise((resolve) => {
+    const byCode = groupPolygonsByCode(geoData);
+    const codes = Array.from(byCode.keys());
+    const anchors = /** @type {Record<string, { lng: number, lat: number, area: number }>} */ ({});
+    let index = 0;
+
+    const processChunk = () => {
+      if (isCancelled()) {
+        resolve(anchors);
+        return;
+      }
+
+      const end = Math.min(index + chunkSize, codes.length);
+      for (; index < end; index++) {
+        const code = codes[index];
+        const anchor = anchorOfPolygons(byCode.get(code));
+        if (anchor) anchors[code] = applyCoordinateOverride(code, anchor);
+      }
+
+      if (index < codes.length) {
+        setTimeout(processChunk, 0);
+      } else {
+        resolve(anchors);
+      }
+    };
+
+    processChunk();
+  });
 };

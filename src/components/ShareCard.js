@@ -3,6 +3,7 @@ import { View, Text, Image, StyleSheet, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getLevelInfo } from '../utils/travelerLevels';
 import CountryFlag from './CountryFlag';
+import { useLocale } from '../i18n/LocaleProvider';
 
 // Mesma correção usada no autocomplete de países do mapa: bandeiras via imagem
 // (através do CountryFlag compartilhado) em vez de emoji Unicode.
@@ -84,7 +85,8 @@ const ShareCard = forwardRef(
     { profile, avatarUrl, visitedCountryCodes, wishlistCodes },
     ref
   ) {
-    const username = profile?.username || 'viajante';
+    const { t } = useLocale();
+    const username = profile?.username || t('shareCard.defaultUsername');
     const initial = username[0]?.toUpperCase() || 'V';
     const avatarSrc = profile?.avatar_url || avatarUrl;
 
@@ -115,7 +117,7 @@ const ShareCard = forwardRef(
               style={styles.logoIcon}
               resizeMode="contain"
             />
-            <Text style={styles.tagline}>PASSAPORTE</Text>
+            <Text style={styles.tagline}>{t('shareCard.tagline')}</Text>
           </View>
 
           <View style={styles.avatarRingOuter}>
@@ -140,7 +142,12 @@ const ShareCard = forwardRef(
         <View style={styles.identityRow}>
           <Text style={styles.username} numberOfLines={1}>@{username}</Text>
           <View style={styles.levelBadge}>
-            <Text style={styles.levelIcon}>{levelInfo.current.icon}</Text>
+            {/* SEM ÍCONE, de propósito — e não é esquecimento da troca de emoji
+                por ícone vetorial. Ver o cabeçalho deste arquivo: a exportação
+                web (toPng com skipFonts) não embute fontes customizadas, então
+                um glifo do Ionicons viraria uma caixa vazia no PNG compartilhado.
+                O emoji que estava aqui saiu junto com os outros; o nome do nível
+                ao lado já diz o que o ícone dizia. */}
             <Text style={styles.levelText}>
               {levelInfo.current.name} nível {levelInfo.current.level}
             </Text>
@@ -156,7 +163,7 @@ const ShareCard = forwardRef(
         {/* 4. Card — países visitados (todos, em grid, até 3 linhas) */}
         <View style={styles.gridCard}>
           {visitedGrid.visible.length === 0 ? (
-            <Text style={styles.emptyText}>Sua jornada está só começando ✈</Text>
+            <Text style={styles.emptyText}>{t('shareCard.emptyVisited')}</Text>
           ) : (
             <View style={styles.visitedGrid}>
               {visitedGrid.visible.map((code, i) => (
@@ -176,9 +183,9 @@ const ShareCard = forwardRef(
 
         {/* 5. Card — wishlist "sonhando com" (todos, em grid, até 3 linhas) */}
         <View style={styles.wishlistSection}>
-          <Text style={styles.wishlistTitle}>sonhando com</Text>
+          <Text style={styles.wishlistTitle}>{t('shareCard.wishlistTitle')}</Text>
           {wishlistGrid.visible.length === 0 ? (
-            <Text style={styles.emptyText}>Nenhum destino na lista ainda</Text>
+            <Text style={styles.emptyText}>{t('shareCard.emptyWishlist')}</Text>
           ) : (
             <View style={styles.wishlistGrid}>
               {wishlistGrid.visible.map((code, i) => (
@@ -199,7 +206,7 @@ const ShareCard = forwardRef(
         {/* 6. Rodapé */}
         <View style={styles.footerDivider} />
         <View style={styles.footer}>
-          <Text style={styles.footerText}>journi.app</Text>
+          <Text style={styles.footerText}>{t('shareCard.domain')}</Text>
         </View>
       </View>
     );
@@ -257,7 +264,6 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     paddingHorizontal: 12,
   },
-  levelIcon: { fontSize: 13 },
   levelText: { color: '#B79CF2', fontFamily: 'Poppins_700Bold', fontSize: 11 },
 
   heroRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, marginTop: 16 },

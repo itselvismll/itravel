@@ -7,16 +7,23 @@
 // Some sozinha e não bloqueia nada: `pointerEvents="none"` no wrapper.
 import React, { useEffect, useRef } from 'react';
 import { Animated, View, Text, StyleSheet, Platform, Easing } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../utils/constants';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 // Tempo em tela antes do fade de saída.
 const HOLD_MS = 2600;
 const FADE_OUT_MS = 420;
 
+// Mesmo tamanho do emoji que estava aqui (fontSize 30), para o anel animado em
+// volta continuar proporcional ao que ele envolve.
+const GLOBE_ICON_SIZE = 30;
+
 /**
  * @param {{ countryName?: string | null, onDone: () => void }} props
  */
 export default function FirstCountryCelebration({ countryName = null, onDone }) {
+  const { t } = useLocale();
   const enter = useRef(new Animated.Value(0)).current;
   const ring = useRef(new Animated.Value(0)).current;
   const exit = useRef(new Animated.Value(1)).current;
@@ -83,14 +90,14 @@ export default function FirstCountryCelebration({ countryName = null, onDone }) 
             ]}
           />
           <View style={styles.globeDot}>
-            <Text style={styles.globeGlyph}>🌎</Text>
+            <Ionicons name="earth-outline" size={GLOBE_ICON_SIZE} color="#6C2BD9" />
           </View>
         </View>
 
         <View style={styles.banner}>
-          <Text style={styles.title}>Seu mapa começou!</Text>
+          <Text style={styles.title}>{t('onboarding.firstCountryDone')}</Text>
           {countryName ? (
-            <Text style={styles.subtitle}>{countryName} agora é seu.</Text>
+            <Text style={styles.subtitle}>{t('onboarding.firstCountryIsYours', { country: countryName })}</Text>
           ) : null}
         </View>
       </Animated.View>
@@ -131,7 +138,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(167,139,250,0.32)',
   },
-  globeGlyph: { fontSize: 30, lineHeight: 38 },
+
 
   banner: {
     marginTop: 14,

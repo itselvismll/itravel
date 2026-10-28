@@ -99,6 +99,46 @@ npx expo start --ios
 npx expo start --android
 ```
 
+## Deploy do site (journi.expo.app)
+
+```bash
+npm run deploy:web           # exporta, verifica e publica em produção
+npm run deploy:web -- --dry  # exporta e verifica, sem publicar
+```
+
+**Use sempre o script.** Não rode `expo export -p web` e `eas deploy` separados,
+na mão: em 15/09/2026 a produção foi ao ar com o bundle sem nenhuma variável
+`EXPO_PUBLIC_*` e o app quebrou no boot para todos os usuários, com
+"Configuração do Supabase ausente".
+
+A falha é silenciosa por natureza — o `expo export` não sabe que aquelas
+variáveis são obrigatórias, termina com exit 0 e entrega um site que não abre. O
+script fecha esse buraco: ele guarda o `.env.local` (para os ajustes locais não
+vazarem para produção), exporta, **abre o bundle gerado e confere que as chaves
+do Supabase e do Mapbox estão lá dentro**, publica, e devolve o `.env.local` no
+lugar mesmo se algo falhar no meio. Faltando qualquer chave, ele aborta e não
+publica nada.
+
+**Segundo incidente, 06/10/2026**: o globo voltou a mostrar países
+transparentes — bundle publicado com `EXPO_PUBLIC_MAPBOX_TOKEN` vazio — porque
+algum deploy saiu ao ar sem passar por este script (a checagem acima só vê o
+que o PRÓPRIO script exportou; não tem como pegar um deploy publicado por
+fora). Por isso agora, depois de publicar, `npm run deploy:web` também lê
+journi.expo.app de verdade e confere que o que está no ar tem as chaves — e
+isso também roda isolado, a qualquer hora:
+
+```bash
+npm run verify:prod   # lê journi.expo.app agora e confere as chaves no ar
+```
+
+Um workflow agendado (`.github/workflows/verify-production.yml`) roda o mesmo
+comando a cada 6 horas e falha (com e-mail do GitHub para quem tem acesso ao
+repositório) se a produção ficar sem alguma chave — pega um deploy feito por
+fora deste script mesmo que ninguém rode `verify:prod` na mão.
+
+O rollback de um deploy ruim é feito pelo painel, promovendo o deployment
+anterior: <https://expo.dev/accounts/itselvismll/projects/journi/hosting/deployments>
+
 ## Estrutura do projeto
 
 ```

@@ -1,11 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { COUNTRIES_STATIC } from '../data/countriesStaticData';
-import { getCountryNamePtByCode } from '../utils/countryUtils';
+import { buildCountryDirectory } from '../utils/countryUtils';
 import CountryFlag from './CountryFlag';
 
-const COUNTRIES = Object.entries(COUNTRIES_STATIC)
-  .map(([code, country]) => ({ code, name: getCountryNamePtByCode(code, country.name), nameEn: country.name }))
+// NÃO USADO em lugar nenhum do app (confirmado por busca completa) — ver o
+// achado registrado no lote que generalizou o idioma de nome de país. Fica
+// com o nome novo só para não referenciar a função depreciada; continua preso
+// a 'pt-BR' porque, sem tela que o monte, não há `tag` de locale para receber.
+const COUNTRIES = buildCountryDirectory()
   .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 
 export default function CountryAutocomplete({ label, value, onChange, placeholder = 'Busque um país' }) {

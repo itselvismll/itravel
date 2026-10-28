@@ -23,6 +23,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { API_CONFIG } from '../utils/constants';
 import { notify } from '../utils/dialogs';
+import { useLocale } from '../i18n/LocaleProvider';
 
 // Mesma base do RegisterScreen. A extensão .html é deliberada: o EAS Hosting faz
 // fallback de SPA e devolve 200 com o app para caminho desconhecido, então uma
@@ -33,27 +34,28 @@ const DOCUMENTOS = [
   {
     key: 'termos',
     icon: 'document-text-outline',
-    label: 'Termos de Uso',
-    description: 'Regras de uso, conteúdo e conta',
+    labelKey: 'legalSheet.terms.label',
+    descriptionKey: 'legalSheet.terms.description',
     path: 'termos.html',
   },
   {
     key: 'privacidade',
     icon: 'lock-closed-outline',
-    label: 'Política de Privacidade',
-    description: 'Que dados coletamos e seus direitos',
+    labelKey: 'legalSheet.privacy.label',
+    descriptionKey: 'legalSheet.privacy.description',
     path: 'privacidade.html',
   },
 ];
 
 function DocumentoItem({ icon, label, description, onPress }) {
+  const { t } = useLocale();
   return (
     <TouchableOpacity
       style={styles.item}
       onPress={onPress}
       accessibilityRole="link"
       accessibilityLabel={label}
-      accessibilityHint="Abre no navegador"
+      accessibilityHint={t('legalSheet.openInBrowserHint')}
     >
       <View style={styles.itemIcon}>
         <Ionicons name={icon} size={19} color="#A78BFA" />
@@ -74,12 +76,13 @@ function DocumentoItem({ icon, label, description, onPress }) {
  * }} props
  */
 export default function LegalSheet({ visible, onClose }) {
+  const { t } = useLocale();
   const abrir = async (path) => {
     const url = `${BASE_URL}/${path}`;
     try {
       await Linking.openURL(url);
     } catch {
-      notify('Não foi possível abrir', `Acesse ${url} pelo navegador.`);
+      notify(t('legalSheet.openFailedTitle'), t('legalSheet.openFailedMessage', { url }));
     }
   };
 
@@ -87,15 +90,15 @@ export default function LegalSheet({ visible, onClose }) {
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       {/* O toque no fundo fecha. `Pressable` e não `TouchableOpacity` para o
           fundo não piscar a cada toque. */}
-      <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Fechar" />
+      <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel={t('legalSheet.closeLabel')} />
 
       <View style={styles.sheet}>
         <View style={styles.handle} />
 
         <View style={styles.header}>
           <Ionicons name="shield-checkmark-outline" size={21} color="#A78BFA" />
-          <Text style={styles.title}>Política e Privacidade</Text>
-          <TouchableOpacity onPress={onClose} accessibilityRole="button" accessibilityLabel="Fechar">
+          <Text style={styles.title}>{t('legalSheet.title')}</Text>
+          <TouchableOpacity onPress={onClose} accessibilityRole="button" accessibilityLabel={t('legalSheet.closeLabel')}>
             <Ionicons name="close" size={22} color="#8A90A6" />
           </TouchableOpacity>
         </View>
@@ -105,8 +108,8 @@ export default function LegalSheet({ visible, onClose }) {
             <DocumentoItem
               key={documento.key}
               icon={documento.icon}
-              label={documento.label}
-              description={documento.description}
+              label={t(documento.labelKey)}
+              description={t(documento.descriptionKey)}
               onPress={() => abrir(documento.path)}
             />
           ))}

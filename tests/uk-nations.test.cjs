@@ -9,13 +9,14 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { loadEsm } = require('./helpers/load-esm.cjs');
+const { countryUtilsDeps } = require('./helpers/countryUtilsDeps.cjs');
 
 const root = path.resolve(__dirname, '..');
 const ukNations = JSON.parse(
   fs.readFileSync(path.join(root, 'src/data/geo/uk-nations.json'), 'utf8')
 );
 
-const countryUtils = loadEsm('src/utils/countryUtils.js');
+const countryUtils = loadEsm('src/utils/countryUtils.js', countryUtilsDeps());
 const geoCountryUtils = loadEsm('src/utils/geo-country-utils.js', {
   './countryUtils': countryUtils,
 });

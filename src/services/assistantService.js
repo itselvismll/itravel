@@ -1,5 +1,19 @@
 import { supabase } from './supabase';
 
+// O idioma em que o assistente deve responder.
+//
+// Lê o i18n direto em vez de receber por parâmetro: as cinco funções exportadas
+// daqui são chamadas de telas e de outros serviços, e enfiar o idioma na
+// assinatura de todas elas espalharia a decisão por cinco chamadores — que é
+// exatamente o tipo de coisa que alguém esquece ao acrescentar a sexta.
+//
+// `i18n.locale` é a fonte, e não a escolha guardada: o que importa é o idioma
+// EFETIVO (quem está em "Automático" com o aparelho em inglês quer o roteiro em
+// inglês).
+import { i18n } from '../i18n';
+
+const currentAssistantLanguage = () => i18n.locale;
+
 const BASE_ASSISTANT_TIMEOUT_MS = 150000;
 const ACTIVITY_REGENERATION_TIMEOUT_MS = 60000;
 export const ASSISTANT_PLANNER_VERSION = 2;
@@ -43,9 +57,9 @@ export const TRAVEL_INTERESTS = [
 ];
 
 export const TRAVEL_PACES = [
-  { id: 'calm', label: 'Tranquilo', stopsPerDay: 4 },
-  { id: 'balanced', label: 'Equilibrado', stopsPerDay: 5 },
-  { id: 'intense', label: 'Intenso', stopsPerDay: 6 },
+  { id: 'calm', labelKey: 'tripPlanner.paces.calm', stopsPerDay: 4 },
+  { id: 'balanced', labelKey: 'tripPlanner.paces.balanced', stopsPerDay: 5 },
+  { id: 'intense', labelKey: 'tripPlanner.paces.intense', stopsPerDay: 6 },
 ];
 
 const executeAssistantRequest = async (payload) => {
@@ -217,7 +231,17 @@ export const generateTravelPlan = async ({ planRequest, userContext }) => {
 
 // Duas telas podem pedir o mesmo roteiro ao mesmo tempo (retry do usuário, remount).
 // A chave é o payload inteiro, então só pedidos idênticos compartilham a chamada em voo.
-const invokeAssistant = (payload) => {
+//
+// O IDIOMA ENTRA AQUI, num ponto só: todas as chamadas à função passam por este
+// helper, então acrescentar o campo em cada `invokeAssistant({...})` seria cinco
+// lugares para esquecer um. Ele entra ANTES da chave de deduplicação, de
+// propósito — dois pedidos idênticos em idiomas diferentes são pedidos
+// diferentes, e compartilhar a resposta entregaria o roteiro na língua errada.
+//
+// Lido do i18n, e não de um parâmetro: este módulo é serviço, não tela, e as
+// cinco funções que chamam daqui não têm o contexto do React em mãos.
+const invokeAssistant = (entrada) => {
+  const payload = { ...entrada, language: currentAssistantLanguage() };
   const requestKey = JSON.stringify(payload);
   const activeRequest = activeAssistantRequests.get(requestKey);
   if (activeRequest) return activeRequest;

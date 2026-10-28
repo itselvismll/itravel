@@ -4,8 +4,10 @@ import { Svg, Path, G } from 'react-native-svg';
 import * as d3 from 'd3-geo';
 import { COLORS } from '../../utils/constants';
 import { loadWorldCountries, VISITED_COUNTRIES } from '../../data/worldGeoData';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 export default function WorldMap({ onCountryPress }) {
+  const { t } = useLocale();
   const [countries, setCountries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCountry, setSelectedCountry] = useState(null);
@@ -74,7 +76,7 @@ export default function WorldMap({ onCountryPress }) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Carregando mapa-múndi...</Text>
+        <Text style={styles.loadingText}>{t('worldMap.loading')}</Text>
       </View>
     );
   }

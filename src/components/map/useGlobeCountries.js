@@ -7,18 +7,19 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getCurrentUser, getVisitedCountries } from '../../services/supabase';
 import { getWishlist } from '../../services/socialService';
 import { loadWorldCountries } from '../../data/worldGeoData';
-import { getAlpha3, getCountryNamePtByCode } from '../../utils/countryUtils';
+import { getAlpha3, getCountryName } from '../../utils/countryUtils';
 import { getGeoCountryAlpha3, getGeoCountryName } from '../../utils/geo-country-utils';
 import { buildCountryAnchors } from './countryCentroids';
 import { buildGlobeCountries, expandUkNations, statusOf, toAlpha3Set } from './countryStatus';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 /**
- * Nome em português de cada código, a partir do nome em inglês do GeoJSON.
+ * Nome de cada código no idioma ativo, a partir do nome em inglês do GeoJSON.
  *
  * O caminho normal é o Intl.DisplayNames traduzir o alpha-2, e para isso o nome
  * do dataset nem seria preciso. Ele existe pelas nações do Reino Unido:
  * 'GB-ENG' não é um alpha-2, o Intl não sabe traduzir, e sem o "England" do
- * GeoJSON o badge mostraria o código cru em vez de "Inglaterra".
+ * GeoJSON o badge mostraria o código cru em vez do rótulo traduzido.
  */
 const buildNameIndex = (geoData) => {
   const names = new Map();
@@ -72,6 +73,7 @@ const buildNameIndex = (geoData) => {
  * }}
  */
 export default function useGlobeCountries({ loadGeometry = true } = {}) {
+  const { tag } = useLocale();
   const [anchors, setAnchors] = useState(null);
   // Lista pronta vinda de fora (a WebView do nativo). Alternativa a `anchors`,
   // nunca as duas ao mesmo tempo — ver o comentário do cabeçalho.
@@ -170,10 +172,10 @@ export default function useGlobeCountries({ loadGeometry = true } = {}) {
     if (!anchors) return [];
 
     const names = buildNameIndex(geoData);
-    const nameOf = (code) => getCountryNamePtByCode(code, names.get(code) || code);
+    const nameOf = (code) => getCountryName(code, names.get(code) || code, tag);
 
     return buildGlobeCountries(anchors, { visited, wishlist, nameOf });
-  }, [adoptedAnchors, anchors, geoData, visited, wishlist]);
+  }, [adoptedAnchors, anchors, geoData, visited, wishlist, tag]);
 
   // Marcar um país no modal precisa refletir no globo na hora — território
   // repintado e badge promovido — sem esperar uma nova ida ao banco. O modal

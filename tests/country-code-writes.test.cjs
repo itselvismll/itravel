@@ -16,13 +16,14 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { loadEsm } = require('./helpers/load-esm.cjs');
+const { countryUtilsDeps } = require('./helpers/countryUtilsDeps.cjs');
 
 const read = (file) => fs.readFileSync(path.resolve(__dirname, '..', file), 'utf8');
 const stripComments = (source) => source
   .replace(/\/\*[\s\S]*?\*\//g, ' ')
   .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 
-const countryUtils = loadEsm('src/utils/countryUtils.js', {});
+const countryUtils = loadEsm('src/utils/countryUtils.js', countryUtilsDeps());
 const { toStorableCountryCode, getAlpha3, ALPHA3_TO_ALPHA2, UK_NATION_CODES } = countryUtils;
 
 /**
@@ -130,7 +131,8 @@ test('os pontos de escrita usam toStorableCountryCode e recusam quando não reco
     'o fallback que gravava o código cru voltou'
   );
   assert.match(uploader, /if \(!uploadCountryCode \|\| !uploadCountryName\)/, 'sumiu o guard que recusa');
-  assert.match(uploader, /País não identificado/, 'sumiu a mensagem de recusa');
+  // O texto virou chave no lote 5; a asserção passa a cobrar a chave.
+  assert.match(uploader, /photoUploader\.countryUnknownTitle/, 'sumiu a mensagem de recusa');
 
   // visited_countries.
   const supabaseService = stripComments(read('src/services/supabase.js'));

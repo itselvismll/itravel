@@ -1,5 +1,55 @@
 import { supabase } from './supabase';
 import { ensurePlanCoordinates } from '../utils/planGeography';
+import { itineraryFromRows, itineraryToRowsPayload } from '../utils/tripItinerary';
+
+// Colunas da viagem, mais a MINHA linha de participante e o roteiro normalizado.
+//
+// `trip_members!inner` com o filtro por user_id traz uma linha só — a de quem
+// está pedindo. É de lá que sai `is_active_on_map` (que saiu de travel_plans na
+// migração 20260915120000, porque a viagem no globo é estado de quem olha) e o
+// `role`, que a UI vai usar para saber quem pode editar.
+const TRIP_SELECT = `
+  *,
+  trip_members!inner (user_id, role, status, is_active_on_map),
+  trip_days (
+    id, day_number, date, theme, updated_at, last_edited_by,
+    trip_activities (
+      id, position, period, title, description, location, duration,
+      updated_at, last_edited_by, last_edited_at, created_by,
+      estimated_cost, map_query, official_url, purchase_note, indoor,
+      latitude, longitude, coordinate_source, approximate_coordinate, category,
+      rating, review_count, opening_hours, verification_source, place_id, extra
+    )
+  )
+`;
+
+/**
+ * Achata o registro do Supabase no formato que o app já usa.
+ *
+ * O app inteiro lê `record.plan_data.days[]` e `record.is_active_on_map`. A
+ * fonte desses dois mudou de lugar no banco — o roteiro virou linhas, a flag do
+ * globo virou coluna do participante — e esta função é o único lugar que precisa
+ * saber disso. Nenhuma tela mudou.
+ *
+ * O `plan_data` gravado continua servindo de fallback: viagem antiga que ainda
+ * não tenha linha em trip_days lê do jsonb, como sempre leu.
+ */
+const flattenTripRecord = (record) => {
+  const membership = Array.isArray(record?.trip_members) ? record.trip_members[0] : null;
+  const normalized = itineraryFromRows(record?.trip_days);
+
+  const { trip_members: _members, trip_days: _days, ...trip } = record ?? {};
+
+  return {
+    ...trip,
+    plan_data: normalized
+      ? { ...(record?.plan_data ?? {}), days: normalized }
+      : record?.plan_data,
+    is_active_on_map: Boolean(membership?.is_active_on_map),
+    member_role: membership?.role || null,
+    member_status: membership?.status || null,
+  };
+};
 
 // Roteiros salvos antes de a Edge Function passar a garantir coordenada/categoria/ordem
 // são normalizados na leitura, sem rede — o suficiente para o globo não receber um plano
@@ -52,7 +102,6 @@ export const saveTripPlan = async ({ planId, request, plan }) => {
   }
 
   const payload = {
-    user_id: user.id,
     title: plan.title || `Viagem para ${request.destination}`,
     destination: request.destination,
     origin: request.origin || null,
@@ -66,20 +115,82 @@ export const saveTripPlan = async ({ planId, request, plan }) => {
     plan_data: plan,
   };
 
+  // Duas diferenças entre criar e atualizar, e as duas são de permissão:
+  //
+  // 1. `user_id` só vai no INSERT. Ele é o dono denormalizado, e mandá-lo num
+  //    update faria um editor convidado virar dono da viagem só por salvar — a
+  //    policy "Editors update trips" deixaria passar, porque ela pergunta se a
+  //    pessoa pode editar, não de quem é a viagem.
+  //
+  // 2. O update não filtra mais por `user_id`: quem pode gravar é quem a policy
+  //    deixa (dono OU editor). Manter o filtro faria o convidado salvar "com
+  //    sucesso" sem alterar nada — zero linhas afetadas não é erro no PostgREST.
   const query = planId
-    ? supabase.from('travel_plans').update(payload).eq('id', planId).eq('user_id', user.id)
-    : supabase.from('travel_plans').insert(payload);
+    ? supabase.from('travel_plans').update(payload).eq('id', planId)
+    : supabase.from('travel_plans').insert({ ...payload, user_id: user.id });
 
   const { data, error } = await query.select().single();
   if (error) {
-    const localPlan = saveLocalPlan({ ...payload, id: planId?.startsWith('local-') ? planId : null });
+    // O fallback local vale para roteiro NOVO ou para um que já era local. Um
+    // roteiro que existe no servidor nunca vira local: ele pode ter outros
+    // participantes, e uma cópia no localStorage de um deles não teria como
+    // sincronizar com ninguém — as edições dos outros sumiriam da tela dele, e
+    // as dele nunca chegariam a eles.
+    const isRemotePlan = Boolean(planId) && !planId.startsWith('local-');
+    if (isRemotePlan) {
+      return {
+        success: false,
+        error: 'Não foi possível salvar agora. Verifique a conexão e tente de novo.',
+      };
+    }
+
+    const localPlan = saveLocalPlan({ ...payload, user_id: user.id, id: planId || null });
     return {
       success: true,
       data: localPlan,
       warning: 'Roteiro salvo somente neste dispositivo durante o desenvolvimento local.',
     };
   }
-  return { success: true, data };
+
+  // O roteiro em linhas, que é o caminho de leitura e escrita. O jsonb acima
+  // continua gravado como rede de segurança — se algo der errado aqui, a viagem
+  // ainda tem o roteiro inteiro.
+  //
+  // `sync_trip_itinerary` e não `replace_trip_itinerary`: a antiga apagava o
+  // roteiro e reinseria, o que numa viagem compartilhada significa a segunda
+  // pessoa a salvar apagando o trabalho da primeira. A nova casa item a item pelo
+  // `id` e RECUSA sobrescrever parada que mudou no banco depois de esta cópia ter
+  // sido lida — é o que `updatedAt` no payload está fazendo ali.
+  const { data: syncResult, error: itineraryError } = await supabase.rpc('sync_trip_itinerary', {
+    p_trip_id: data.id,
+    p_days: itineraryToRowsPayload(plan),
+  });
+
+  if (itineraryError) {
+    return {
+      success: true,
+      data,
+      warning: 'O roteiro foi salvo, mas a sincronização com os participantes falhou. '
+        + 'Salve de novo para compartilhar as mudanças.',
+    };
+  }
+
+  // Conflito não é erro: é outra pessoa tendo mexido na mesma parada primeiro. O
+  // salvamento vale, a versão dela fica, e o usuário PRECISA saber — foi para não
+  // perder trabalho em silêncio que a guarda existe. Avisar é metade do valor
+  // dela.
+  const conflicts = Number(syncResult?.conflicts) || 0;
+
+  return {
+    success: true,
+    data,
+    conflicts,
+    warning: conflicts
+      ? `${conflicts === 1 ? 'Uma parada foi' : `${conflicts} paradas foram`} alterada${conflicts === 1 ? '' : 's'} `
+        + 'por outro participante enquanto você editava, e a versão dele foi mantida. '
+        + 'Recarregue a viagem para ver como ela está agora.'
+      : undefined,
+  };
 };
 
 export const getSavedTripPlans = async () => {
@@ -92,18 +203,170 @@ export const getSavedTripPlans = async () => {
     };
   }
 
+  // Sem `.eq('user_id')`: a lista agora é "as viagens de que eu participo", e
+  // quem decide isso é a policy "Members read trips" (via trip_members). Filtrar
+  // por dono aqui esconderia justamente as viagens compartilhadas comigo.
   const { data, error } = await supabase
     .from('travel_plans')
-    .select('*')
-    .eq('user_id', user.id)
+    .select(TRIP_SELECT)
+    .eq('trip_members.user_id', user.id)
     .order('updated_at', { ascending: false });
 
-  const remotePlans = error ? [] : (data || []);
+  let remoteRecords = error ? null : (data || []).map(flattenTripRecord);
+  let warning = error?.message;
+
+  // REDE DE SEGURANÇA, e ela existe por um motivo concreto.
+  //
+  // Uma consulta que falha entregava uma lista vazia, e lista vazia na tela lê
+  // como "você não tem nenhum roteiro salvo" — indistinguível da verdade. Foi
+  // exatamente assim que a ambiguidade de FK da Fase 0 (PGRST201, corrigida em
+  // 20260916120000) apagou as viagens de todo mundo da tela sem uma mensagem
+  // sequer.
+  //
+  // Então quando a consulta rica falha, a pobre ainda tenta: sem embed nenhum,
+  // ela depende só da RLS e devolve as viagens com o roteiro vindo do
+  // `plan_data`. O usuário vê as viagens dele; o que se perde é o roteiro
+  // normalizado e a marcação do globo, não a lista.
+  // Quando a lista vem pelo caminho degradado, ninguém sabe qual viagem está no
+  // globo — e "não sei" não pode virar "nenhuma".
+  let activeUnknown = false;
+
+  if (error) {
+    const [fallback, membership] = await Promise.all([
+      supabase.from('travel_plans').select('*').order('updated_at', { ascending: false }),
+      // A marcação do globo mora em trip_members desde a Fase 0 (a coluna saiu de
+      // travel_plans). Sem esta segunda consulta, o caminho degradado devolveria
+      // todas as viagens com `is_active_on_map` indefinido — e o globo
+      // "desaplicaria" o roteiro sozinho, que foi exatamente o que aconteceu ao
+      // voltar do app de mapas.
+      supabase.from('trip_members').select('trip_id, role, status, is_active_on_map')
+        .eq('user_id', user.id),
+    ]);
+
+    if (!fallback.error) {
+      const byTrip = new Map(
+        (membership.data || []).map((row) => [row.trip_id, row])
+      );
+      activeUnknown = Boolean(membership.error);
+
+      remoteRecords = (fallback.data || []).map((record) => {
+        const row = byTrip.get(record.id);
+        return {
+          ...record,
+          is_active_on_map: Boolean(row?.is_active_on_map),
+          member_role: row?.role || null,
+          member_status: row?.status || null,
+        };
+      });
+      warning = `Algumas informações da viagem não carregaram (${error.message}).`;
+    }
+  }
+
   const localPlans = readLocalPlans();
+
+  // Falhou dos dois jeitos: é erro, e a tela precisa dizer isso em vez de
+  // mostrar um vazio que mente.
+  if (!remoteRecords) {
+    return {
+      success: false,
+      error: error?.message || 'Não foi possível carregar seus roteiros.',
+      data: await Promise.all(localPlans.map(normalizeStoredPlan)),
+      activeUnknown: true,
+    };
+  }
+
   return {
     success: true,
-    data: await Promise.all([...localPlans, ...remotePlans].map(normalizeStoredPlan)),
-    warning: error?.message,
+    data: await Promise.all([...localPlans, ...remoteRecords].map(normalizeStoredPlan)),
+    // Quem consome decide o que fazer com "a lista veio, mas sem saber qual
+    // está no globo" — ver nextActivePlan em activePlanService.
+    activeUnknown,
+    warning,
+  };
+};
+
+/**
+ * UMA viagem, pelo id — o caminho de quem chega sem trazer o roteiro na mão.
+ *
+ * POR QUE ISTO PRECISOU EXISTIR
+ *
+ * A tela da viagem sempre foi aberta pela LISTA, que já carrega tudo e passa o
+ * roteiro inteiro em `route.params`. Os caminhos da Fase 2 não passam por lá: o
+ * link de convite resgata o token e manda `navigate('AssistantResult', {
+ * planId })`, e a notificação faz o mesmo. Sem params, a tela abria com
+ * `plan = {}` — sem capa, sem nome, "0 dias" — e parecia falta de permissão.
+ * Não era: quem entra pelo convite é membro `accepted` e a RLS ("Members read
+ * trips", "Members read trip days") já deixava ler. Faltava a leitura.
+ *
+ * Devolve o registro no MESMO formato da lista (`flattenTripRecord`), para a
+ * tela não precisar saber por qual porta entrou.
+ *
+ * @param {string} planId
+ * @returns {Promise<{ success: boolean, data?: any, error?: string, warning?: string }>}
+ */
+export const getTripPlan = async (planId) => {
+  if (!planId) return { success: false, error: 'Viagem não informada.' };
+
+  // Roteiro que nunca chegou ao banco (salvo offline) mora só aqui.
+  const local = readLocalPlans().find((item) => item.id === planId);
+  if (local) return { success: true, data: await normalizeStoredPlan(local) };
+
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) {
+    return { success: false, error: 'Entre na sua conta para abrir esta viagem.' };
+  }
+
+  // Sem `.eq('user_id')`: quem pode ler é quem a policy deixa — o dono E quem
+  // participa. Filtrar por dono aqui é justamente o bug que esta função existe
+  // para não repetir. O filtro em `trip_members.user_id` não restringe o acesso;
+  // ele escolhe QUAL linha de participante vem junto (a minha), que é de onde
+  // saem o meu papel e a marcação do globo.
+  const { data, error } = await supabase
+    .from('travel_plans')
+    .select(TRIP_SELECT)
+    .eq('id', planId)
+    .eq('trip_members.user_id', user.id)
+    .maybeSingle();
+
+  if (!error && data) {
+    return { success: true, data: await normalizeStoredPlan(flattenTripRecord(data)) };
+  }
+
+  // A mesma rede de segurança da lista, pela mesma razão: um embed que falha
+  // (PGRST201 e parentes) não pode virar uma viagem vazia na tela, que lê como
+  // "não há nada aqui". Sem embed, a viagem ainda vem, com o roteiro saindo do
+  // `plan_data` — perde-se o papel do participante, não a viagem.
+  const [simples, minhaLinha] = await Promise.all([
+    supabase.from('travel_plans').select('*').eq('id', planId).maybeSingle(),
+    supabase.from('trip_members')
+      .select('role, status, is_active_on_map')
+      .eq('trip_id', planId)
+      .eq('user_id', user.id)
+      .maybeSingle(),
+  ]);
+
+  if (simples.error || !simples.data) {
+    // Nem a consulta pobre trouxe: ou a viagem não existe, ou a RLS recusou.
+    // As duas leem igual de fora, e é assim que fica — dizer "existe, mas você
+    // não pode ver" conta a quem não participa que a viagem existe.
+    return {
+      success: false,
+      error: simples.error?.message
+        || 'Não foi possível abrir esta viagem. Talvez você não faça mais parte dela.',
+    };
+  }
+
+  return {
+    success: true,
+    data: await normalizeStoredPlan({
+      ...simples.data,
+      is_active_on_map: Boolean(minhaLinha.data?.is_active_on_map),
+      member_role: minhaLinha.data?.role || null,
+      member_status: minhaLinha.data?.status || null,
+    }),
+    warning: error?.message
+      ? `Algumas informações da viagem não carregaram (${error.message}).`
+      : undefined,
   };
 };
 

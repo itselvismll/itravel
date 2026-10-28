@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getBadge, getTitle } from '../utils/notificationRouting';
+import { useLocale } from '../i18n/LocaleProvider';
 
 // O driver nativo não existe no react-native-web; sem isso o Animated emite aviso e as
 // animações de transform param de rodar na build web.
@@ -66,6 +67,7 @@ export default function NotificationBanner({
   visibleForMs = 2500,
 }) {
   const insets = useSafeAreaInsets();
+  const { t } = useLocale();
   const translateY = useRef(new Animated.Value(HIDDEN_OFFSET)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const badgeProgress = useRef(new Animated.Value(0)).current;
@@ -77,6 +79,16 @@ export default function NotificationBanner({
   onHiddenRef.current = onHidden;
 
   const notificationId = notification?.id ?? null;
+  // Quando o conteúdo de um banner JÁ VISÍVEL é trocado — segunda mensagem da
+  // mesma conversa, que atualiza a notificação em vez de criar outra —, o `id`
+  // não muda, então a animação de entrada não deve rodar de novo. O que precisa
+  // reiniciar é só a contagem para esconder: a mensagem nova merece os 2,5s
+  // inteiros, e sem isto ela herdaria o que restasse do tempo da anterior,
+  // podendo aparecer por 100ms. Ver GlobalNotificationBanner.
+  const bumpedAt = notification?.bumpedAt ?? null;
+  // O `hide` do efeito principal, para o efeito do bump rearmar o MESMO timer em
+  // vez de escrever uma segunda saída que precisaria ficar em sincronia.
+  const hideRef = useRef(/** @type {(() => void) | null} */ (null));
 
   useEffect(() => {
     if (notificationId === null) return undefined;
@@ -130,6 +142,7 @@ export default function NotificationBanner({
       ]),
     ]);
 
+    hideRef.current = hide;
     entrance.start();
     dismissTimerRef.current = setTimeout(hide, visibleForMs);
 
@@ -139,12 +152,23 @@ export default function NotificationBanner({
     };
   }, [notificationId, visibleForMs, translateY, opacity, badgeProgress]);
 
+  // Conteúdo trocado no banner que já está na tela: rearma o timer, sem tocar na
+  // animação. O `hasExitedRef` é o que impede ressuscitar um banner que já começou
+  // a sair — rearmar ali deixaria a saída rodando e o timer esperando por nada.
+  useEffect(() => {
+    if (bumpedAt === null || notificationId === null) return;
+    if (hasExitedRef.current || !hideRef.current) return;
+
+    if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    dismissTimerRef.current = setTimeout(hideRef.current, visibleForMs);
+  }, [bumpedAt, notificationId, visibleForMs]);
+
   if (!notification) return null;
 
   const actor = notification.actor;
-  const actorName = (actor?.display_name || actor?.username || 'Alguém').trim();
+  const actorName = (actor?.display_name || actor?.username || t('common.someone')).trim();
   const badge = getBadge(notification.type);
-  const title = getTitle(notification, actorName);
+  const title = getTitle(notification, actorName, t);
   const preview = notification.preview?.trim();
 
   const badgeRotate = badgeProgress.interpolate({

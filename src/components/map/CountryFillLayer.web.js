@@ -15,6 +15,17 @@ import {
   isStyleReady,
   repaintCountryLayers,
 } from './countryFill';
+import {
+  PLAN_CLUSTER_LAYER_ID,
+  PLAN_HALO_LAYER_ID,
+  PLAN_PIN_LAYER_ID,
+} from './planRoute';
+
+// As layers do roteiro que respondem ao toque no lugar do país. Sem elas aqui,
+// tocar numa parada abriria o modal do país POR CIMA do "o que tem por perto" —
+// os dois handlers recebem o mesmo clique. Os ids são estáveis e as layers podem
+// nem existir (sem roteiro aplicado); `bindCountryClick` checa antes de consultar.
+const PLAN_LAYER_IDS_ABOVE = [PLAN_PIN_LAYER_ID, PLAN_HALO_LAYER_ID, PLAN_CLUSTER_LAYER_ID];
 
 // Assinatura estável de um Set de códigos, para o efeito de repintura só rodar
 // quando o CONTEÚDO muda. O hook devolve um Set novo a cada resposta do banco.
@@ -67,7 +78,9 @@ export default function CountryFillLayer({ map, geoData, visited, wishlist, onSe
   // que ele seja religado sempre que as layers forem remontadas.
   useEffect(() => {
     if (!map) return undefined;
-    return bindCountryClick(map, (alpha3) => onSelectRef.current?.(alpha3));
+    return bindCountryClick(map, (alpha3) => onSelectRef.current?.(alpha3), {
+      blockedBy: PLAN_LAYER_IDS_ABOVE,
+    });
   }, [map, data]);
 
   // Reatividade: marcar ou desmarcar um país troca só as expressions de cor. A

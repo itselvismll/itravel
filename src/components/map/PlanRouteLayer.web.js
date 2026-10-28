@@ -1,69 +1,113 @@
-// Prende o ciclo de vida das layers do roteiro ao ciclo de vida do React, e
-// abre o popup do ponto tocado.
+// Prende o ciclo de vida das layers do roteiro ao ciclo de vida do React.
 //
 // Mesma divisão de CountryFillLayer: planRoute.js sabe O QUE desenhar e como
-// conversar com um mapa; aqui é só QUANDO. A única saída visual própria é o
-// popup — que existe porque ele é DOM do MapLibre, e o React precisa de um
-// portal para renderizar conteúdo do app lá dentro.
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { Popup } from 'maplibre-gl';
-import PlanPointPopup from './PlanPointPopup';
+// conversar com um mapa; aqui é só QUANDO. Desde o redesenho, este arquivo é
+// SÓ renderização — ele não decide mais nada.
+//
+// O QUE SAIU DAQUI, E POR QUÊ. Antes este componente abria um popup, buscava a
+// isócrona, guardava qual pino tinha a área no ar e desenhava o cartão da parada.
+// Tudo isso era regra de negócio morando no único arquivo do projeto que só
+// existe na web — e o destino do Journi é o app nativo. Agora:
+//
+//   • o agrupamento de paradas próximas é puro (planClusters.js), e este arquivo
+//     só fornece a projeção de tela que ele pede;
+//   • a busca da área e dos lugares é um hook (useNearbyPlaces), que roda no lado
+//     React Native nas duas plataformas;
+//   • o cartão da parada é uma folha React Native (NearbyPlacesSheet), fora do
+//     mapa.
+//
+// O que restou é o contrato: o mapa AVISA que tocaram numa parada
+// (`onSelectStop`) ou num grupo (`onSelectCluster`), e RECEBE a área pronta para
+// desenhar (`nearbyArea`). É o mesmo contrato que atravessa a ponte do DOM
+// Component no iOS/Android — lá as chamadas viram mensagens, e nada mais muda.
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   attachPlanRouteLayers,
+  bindPlanClusterClick,
   bindPlanPointClick,
   buildPlanRouteData,
   detachPlanRouteLayers,
+  filterPointsByDay,
   isStyleReady,
   planBounds,
+  PLAN_CLUSTER_LAYER_ID,
   PLAN_HALO_LAYER_ID,
   PLAN_PIN_LAYER_ID,
-  registerCategoryIcons,
+  PLAN_POINT_SOURCE_ID,
   setPlanDayFilter,
-  unregisterCategoryIcons,
   updatePlanRouteData,
 } from './planRoute';
+import { registerCategoryIcons, unregisterCategoryIcons } from './categoryIconImages';
+import { clusterMembers, clusterPlanFeatures } from './planClusters';
 import usePlanRoutes from './usePlanRoutes';
 import {
+  NEARBY_AREA_FEATURE_ENABLED,
   attachIsochroneLayers,
+  attachNearbyFocusLayers,
   detachIsochroneLayers,
+  detachNearbyFocusLayers,
   updateIsochroneData,
+  updateNearbyFocusData,
 } from './isochroneLayer';
-import { fetchIsochrone, DEFAULT_ISOCHRONE_MINUTES } from '../../services/mapboxIsochrone';
-import { notify } from '../../utils/dialogs';
-
-// O popup do MapLibre nasce branco, com seta e sombra de mapa de rua. Aqui ele
-// vira um cartão da identidade do Journi. Precisa ser CSS: os elementos nascem
-// dentro do MapLibre, depois da montagem, e o React nunca os renderiza.
-//
-// A seta é escondida em vez de recolorida porque o MapLibre pinta uma borda
-// diferente para cada âncora do popup — seriam oito regras para um triângulo de
-// 10px. Um deslocamento do cartão dá a mesma leitura de "isto pertence àquele
-// pino", sem a fragilidade.
-const POPUP_CSS = `
-.journi-plan-popup .maplibregl-popup-content {
-  padding: 0;
-  border-radius: 14px;
-  background: rgba(13,19,38,0.96);
-  border: 1px solid rgba(108,43,217,0.45);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.45);
-}
-.journi-plan-popup .maplibregl-popup-tip { display: none; }
-`;
+import { distanceMeters, geometryBounds } from '../../utils/geoMeasure';
 
 // Enquadramento do roteiro. O padding evita que um ponto encoste na borda (e
 // fique atrás da barra de IA no topo); o maxZoom impede que um roteiro de um
 // bairro só mergulhe até o nível da calçada.
-// Aviso de falha da isócrona. Discreto de propósito: a área é um extra, e uma
-// tela de erro para um extra que não carregou custa mais atenção do que vale.
-const NEARBY_ERROR_TITLE = 'Área indisponível';
-const NEARBY_ERROR_MESSAGE =
-  'Não foi possível calcular o que dá para alcançar a pé daqui. Tente de novo em instantes.';
-
 const FIT_PADDING = 72;
 const FIT_MAX_ZOOM = 14;
 const FIT_DURATION = 2000;
 const SINGLE_POINT_ZOOM = 13;
+
+// Até onde o toque num grupo aproxima, e a partir de onde ele desiste de
+// aproximar. Passado isso, mais zoom não separa mais nada — duas paradas na
+// mesma esquina continuariam no mesmo pixel — e a resposta certa é a lista.
+const CLUSTER_ZOOM_MAX = 16.5;
+
+// Distância entre as paradas do grupo abaixo da qual o zoom não resolve. Dez
+// metros é a largura de uma calçada: dois pontos assim tão próximos são, para
+// quem está andando, o mesmo lugar.
+const CLUSTER_SEPARABLE_METERS = 10;
+
+// Enquadramento da área a pé quando a folha abre.
+//
+// A folha ocupa a parte de baixo da tela, e sem isto a área — que é desenhada em
+// volta da parada, quase sempre no meio do mapa — nasce atrás dela. O padding de
+// baixo é a altura real da folha, medida na tela e recebida por prop: é o que
+// garante que o círculo inteiro caiba na faixa de mapa que sobra por cima.
+const AREA_FIT_PADDING_TOP = 96;
+const AREA_FIT_PADDING_SIDE = 32;
+const AREA_FIT_MARGIN = 20;
+const AREA_FIT_MAX_ZOOM = 15.5;
+const AREA_FIT_DURATION = 700;
+
+/**
+ * Uma parada está atrás do globo?
+ *
+ * `map.project` devolve um pixel para o hemisfério de trás também — e sem esta
+ * checagem uma parada em Tóquio agruparia com uma em Lisboa quando as duas caem
+ * no mesmo ponto da silhueta. É a mesma checagem que CountryBadgeMarkers faz
+ * para os badges de país, pelo mesmo motivo.
+ */
+const isBehindGlobe = (map, coordinates) => {
+  const transform = /** @type {any} */ (map).transform;
+  const lngLat = { lng: coordinates?.[0], lat: coordinates?.[1] };
+
+  if (typeof transform?.isLocationOccluded === 'function') {
+    return transform.isLocationOccluded(lngLat);
+  }
+
+  // Sem o método interno, o ângulo de grande círculo até o centro: mais de 90°
+  // é hemisfério de trás.
+  const center = map.getCenter();
+  const toRad = Math.PI / 180;
+  const cosAngle =
+    Math.sin(lngLat.lat * toRad) * Math.sin(center.lat * toRad)
+    + Math.cos(lngLat.lat * toRad)
+      * Math.cos(center.lat * toRad)
+      * Math.cos((lngLat.lng - center.lng) * toRad);
+  return cosAngle < 0;
+};
 
 /**
  * @param {{
@@ -71,9 +115,28 @@ const SINGLE_POINT_ZOOM = 13;
  *   points?: Array<any>,
  *   planId?: string | null,
  *   selectedDay?: number | null,
+ *   countryCodes?: Array<string | null>,
+ *   nearbyArea?: any,
+ *   focusPlace?: any,
+ *   bottomInset?: number,
+ *   onSelectStop?: (properties: any) => void,
+ *   onSelectCluster?: (members: Array<any>) => void,
+ *   onDismiss?: () => void,
  * }} props
  */
-export default function PlanRouteLayer({ map, points, planId, selectedDay = null }) {
+export default function PlanRouteLayer({
+  map,
+  points,
+  planId,
+  selectedDay = null,
+  countryCodes = undefined,
+  nearbyArea = null,
+  focusPlace = null,
+  bottomInset = 0,
+  onSelectStop,
+  onSelectCluster,
+  onDismiss,
+}) {
   // Ordem otimizada e traçado real, quando o Mapbox responde. Chega em partes,
   // um dia por vez — e pode nunca chegar, que é o caso de fallback.
   const { routes } = usePlanRoutes(points, planId);
@@ -81,84 +144,49 @@ export default function PlanRouteLayer({ map, points, planId, selectedDay = null
   // `routes` entra na dependência porque cada dia que volta redesenha aquele
   // dia: os pinos ganham a numeração da sequência otimizada e a reta tracejada
   // vira o caminho de rua.
-  const data = useMemo(() => buildPlanRouteData(points, routes), [points, routes]);
+  const data = useMemo(
+    () => buildPlanRouteData(points, routes, { countryCodes }),
+    [points, routes, countryCodes]
+  );
   const hasPoints = Boolean(points?.length);
 
-  // { properties, coordinates, container } — o container é o <div> que o
-  // MapLibre hospeda e o portal preenche.
-  const [popup, setPopup] = useState(null);
-  const popupRef = useRef(null);
+  // Callbacks por ref: trocar a função no pai não pode desfazer e refazer os
+  // listeners do mapa a cada render.
+  const onSelectStopRef = useRef(onSelectStop);
+  onSelectStopRef.current = onSelectStop;
+  const onSelectClusterRef = useRef(onSelectCluster);
+  onSelectClusterRef.current = onSelectCluster;
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
 
-  // Área "o que tem por perto": o polígono no ar (ou null) e o pedido em voo.
-  // A chave guarda de QUAL pino a área é — sem ela, abrir o popup de outro ponto
-  // mostraria "Ocultar área" para uma área desenhada em volta do anterior.
-  const [nearby, setNearby] = useState(null);
-  const [nearbyLoading, setNearbyLoading] = useState(false);
-  // O pedido em voo precisa ser cancelável de fora do handler que o criou
-  // (troca de roteiro, desmontagem), e trocar de ref não deve re-renderizar.
-  const nearbyRequestRef = useRef(null);
-
-  const clearNearby = useCallback(() => {
-    nearbyRequestRef.current?.abort();
-    nearbyRequestRef.current = null;
-    setNearbyLoading(false);
-    setNearby(null);
-  }, []);
-
-  // O dia escolhido é lido dentro do `attach`, que roda em resposta a um evento
-  // do mapa e não a um render. Uma ref é o que dá a ele o valor ATUAL sem
-  // colocar `selectedDay` na dependência do efeito de montagem — que
-  // remontaria todas as layers a cada troca de aba.
+  // O dia escolhido e os dados são lidos dentro de handlers do MAPA, que rodam
+  // em resposta a um evento e não a um render. Refs são o que dá a eles o valor
+  // ATUAL sem colocar essas dependências no efeito de montagem — que remontaria
+  // todas as layers a cada troca de aba.
   const selectedDayRef = useRef(selectedDay);
   selectedDayRef.current = selectedDay;
-
-  const closePopup = useCallback(() => {
-    popupRef.current?.remove();
-    popupRef.current = null;
-    setPopup(null);
-  }, []);
+  const dataRef = useRef(data);
+  dataRef.current = data;
 
   /**
-   * Pede a área a pé do ponto tocado, ou a esconde se ela já estiver no ar.
+   * Recalcula os grupos e manda o resultado para a source.
    *
-   * O toggle mora aqui e não no popup porque quem sabe se a área desenhada é
-   * DESTE pino é a chave — o popup só recebe a resposta pronta.
+   * É a única coisa que roda a cada movimento da câmera, e é barata: dezenas de
+   * paradas, aritmética de pixels, uma `setData`. O filtro de dia acontece ANTES
+   * do agrupamento — é o que garante que um badge "+3" nunca conte parada de um
+   * dia que está escondido.
    */
-  const toggleNearby = useCallback(async (coordinates) => {
-    const key = `${coordinates?.[0]},${coordinates?.[1]}`;
+  const renderClusters = useCallback(() => {
+    if (!map || !dataRef.current) return;
 
-    // Segundo toque no mesmo pino: esconde. Toque num pino diferente com área de
-    // outro no ar: o pedido novo substitui a antiga, sem passar por vazio.
-    if (nearby?.key === key) {
-      clearNearby();
-      return;
-    }
+    const visible = filterPointsByDay(dataRef.current.points, selectedDayRef.current);
+    const clustered = clusterPlanFeatures(visible, (coordinates) => {
+      if (isBehindGlobe(map, coordinates)) return null;
+      return map.project(coordinates);
+    });
 
-    nearbyRequestRef.current?.abort();
-    const controller = new AbortController();
-    nearbyRequestRef.current = controller;
-    setNearbyLoading(true);
-
-    const feature = await fetchIsochrone(
-      { longitude: coordinates?.[0], latitude: coordinates?.[1] },
-      { minutes: DEFAULT_ISOCHRONE_MINUTES, signal: controller.signal }
-    );
-
-    // Um pedido cancelado não tem direito de mexer no estado: quem cancelou já
-    // decidiu o que a tela deve mostrar.
-    if (controller.signal.aborted) return;
-    nearbyRequestRef.current = null;
-    setNearbyLoading(false);
-
-    // fetchIsochrone nunca lança: `null` cobre 403, timeout, cota e resposta
-    // vazia. A tela segue como estava e o aviso é a única consequência.
-    if (!feature) {
-      notify(NEARBY_ERROR_TITLE, NEARBY_ERROR_MESSAGE);
-      return;
-    }
-
-    setNearby({ key, feature });
-  }, [nearby, clearNearby]);
+    updatePlanRouteData(map, { points: clustered, lines: dataRef.current.lines });
+  }, [map]);
 
   // Sem roteiro ativo as layers nem são criadas: o globo fica exatamente como
   // era antes desta feature. É por isso que `hasPoints` está na dependência —
@@ -170,10 +198,11 @@ export default function PlanRouteLayer({ map, points, planId, selectedDay = null
       // As imagens de categoria vivem na style, não no mapa: uma troca de style
       // as leva junto, então elas são registradas no mesmo gatilho das layers.
       registerCategoryIcons(map);
-      attachPlanRouteLayers(map, { data });
+      attachPlanRouteLayers(map, { data: dataRef.current });
       // Layer recém-criada nasce sem filtro. Sem esta linha, uma troca de style
-      // com um dia selecionado traria o roteiro inteiro de volta à tela.
+      // com um dia selecionado traria as linhas do roteiro inteiro de volta.
       setPlanDayFilter(map, selectedDayRef.current);
+      renderClusters();
     };
 
     // A style pode ainda não estar parseada (mapa criado, style em voo) e volta
@@ -188,40 +217,55 @@ export default function PlanRouteLayer({ map, points, planId, selectedDay = null
       detachPlanRouteLayers(map);
       unregisterCategoryIcons(map);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `data` entra só na montagem; a troca de roteiro é o efeito abaixo
-  }, [map, hasPoints]);
+  }, [map, hasPoints, renderClusters]);
 
-  // Aplicar OUTRO roteiro troca só os dados das sources: as layers continuam as
-  // mesmas e nada é recriado. O attach acima cobre o caso de as sources ainda
-  // não existirem (roteiro que chegou antes da style).
+  // Aplicar OUTRO roteiro, ou receber a rota otimizada de mais um dia, troca só
+  // os dados: as layers continuam as mesmas e nada é recriado. Passa pelo
+  // agrupamento porque é ele que decide o que a source recebe.
   useEffect(() => {
     if (!map || !hasPoints) return;
-    if (!updatePlanRouteData(map, data)) attachPlanRouteLayers(map, { data });
-  }, [map, data, hasPoints]);
+    // A source já existe no caminho normal; o attach aqui cobre o roteiro que
+    // chegou antes de a style ficar pronta. Quem publica os dados é sempre o
+    // agrupamento — mandar a coleção crua antes dele só desenharia, por um
+    // instante, os pinos sobrepostos que esta feature existe para evitar.
+    if (!map.getSource?.(PLAN_POINT_SOURCE_ID)) attachPlanRouteLayers(map, { data });
+    renderClusters();
+  }, [map, data, hasPoints, renderClusters]);
 
-  // Troca de dia: só o filtro das layers muda. A geometria já está no worker e
-  // as chamadas do Mapbox não são refeitas.
+  // Troca de dia: filtro nas linhas, dados novos nas paradas. Ver o comentário
+  // de setPlanDayFilter — um grupo pode misturar dias, e por isso o recorte das
+  // paradas não pode ser um filtro de layer.
   useEffect(() => {
     if (!map || !hasPoints) return;
     setPlanDayFilter(map, selectedDay);
-  }, [map, hasPoints, selectedDay, data]);
+    renderClusters();
+  }, [map, hasPoints, selectedDay, data, renderClusters]);
 
-  // O popup aponta para um ponto do roteiro anterior quando o roteiro troca —
-  // e para um ponto escondido quando o dia filtrado muda.
+  // Agrupar é uma conta em pixels: mover a câmera muda a resposta.
+  //
+  // O gatilho é 'moveend' e não 'move': o que muda o agrupamento é a DISTÂNCIA
+  // entre as paradas na tela, e ela só muda de verdade com zoom e rotação —
+  // arrastar o mapa translada todo mundo junto. Recalcular a cada quadro do
+  // arrasto pagaria uma `setData` por quadro para chegar ao mesmo resultado.
   useEffect(() => {
-    closePopup();
-  }, [planId, selectedDay, closePopup]);
+    if (!map || !hasPoints) return undefined;
+
+    map.on('moveend', renderClusters);
+    return () => {
+      map.off('moveend', renderClusters);
+    };
+  }, [map, hasPoints, renderClusters]);
 
   // Layers da área. Efeito separado do roteiro porque o ciclo de vida é outro:
   // elas só existem enquanto há área no ar, e escondê-la não mexe no roteiro.
   useEffect(() => {
-    if (!map || !nearby) return undefined;
+    if (!NEARBY_AREA_FEATURE_ENABLED) return undefined;
+    if (!map || !nearbyArea) return undefined;
 
-    const attach = () => attachIsochroneLayers(map, { feature: nearby.feature });
+    const attach = () => attachIsochroneLayers(map, { feature: nearbyArea });
 
     // Mesma escada do roteiro: style crua monta no 'style.load', style pronta
-    // monta agora. Uma troca de style leva as layers junto e o listener as traz
-    // de volta.
+    // monta agora.
     if (!isStyleReady(map)) map.on('style.load', attach);
     else attach();
 
@@ -229,81 +273,152 @@ export default function PlanRouteLayer({ map, points, planId, selectedDay = null
       map.off('style.load', attach);
       detachIsochroneLayers(map);
     };
-  }, [map, nearby]);
+  }, [map, nearbyArea]);
 
   // Área nova no mesmo ciclo: troca só os dados, sem recriar as layers.
   useEffect(() => {
-    if (!map || !nearby) return;
-    updateIsochroneData(map, nearby.feature);
-  }, [map, nearby]);
+    if (!NEARBY_AREA_FEATURE_ENABLED) return;
+    if (!map || !nearbyArea) return;
+    updateIsochroneData(map, nearbyArea);
+  }, [map, nearbyArea]);
 
-  // Trocar de roteiro ou de dia apaga a área junto com o popup: ela pertence a um
-  // pino específico, e esse pino pode nem estar mais na tela.
-  useEffect(() => {
-    clearNearby();
-  }, [planId, selectedDay, clearNearby]);
+  // Enquadra a área assim que ela chega, respeitando o espaço que a folha ocupa.
+  //
+  // A ref guarda QUAL área já foi enquadrada: a altura da folha muda sozinha
+  // (a lista chega depois da área e o cartão cresce), e sem isso cada mudança de
+  // altura mexeria na câmera de novo, no meio da leitura.
+  const framedAreaRef = useRef(null);
+  const bottomInsetRef = useRef(bottomInset);
+  bottomInsetRef.current = bottomInset;
 
-  // Toque em qualquer outro lugar do mapa esconde a área — o mesmo gesto que o
-  // usuário já faz para fechar o popup. O listener é do MAPA e não de uma layer,
-  // então ele recebe também os toques que caíram num pino; nesse caso o handler
-  // do pino já tratou, e limpar aqui apagaria a área no instante em que ela foi
-  // pedida. Daí o hit-test explícito antes de limpar.
   useEffect(() => {
-    if (!map || !nearby) return undefined;
+    // Sem área desenhada não há o que enquadrar: a câmera fica onde o usuário a
+    // deixou, que era o comportamento antes de a folha existir.
+    if (!NEARBY_AREA_FEATURE_ENABLED) return;
+    if (!map || !nearbyArea) {
+      framedAreaRef.current = null;
+      return;
+    }
+    if (framedAreaRef.current === nearbyArea) return;
+    framedAreaRef.current = nearbyArea;
+
+    const bounds = geometryBounds(nearbyArea.geometry);
+    if (!bounds) return;
+
+    const [west, south, east, north] = bounds;
+    map.fitBounds([[west, south], [east, north]], {
+      padding: {
+        top: AREA_FIT_PADDING_TOP,
+        bottom: bottomInsetRef.current + AREA_FIT_MARGIN,
+        left: AREA_FIT_PADDING_SIDE,
+        right: AREA_FIT_PADDING_SIDE,
+      },
+      maxZoom: AREA_FIT_MAX_ZOOM,
+      duration: AREA_FIT_DURATION,
+    });
+  }, [map, nearbyArea]);
+
+  // Layers do lugar tocado na lista. Ciclo de vida próprio, como o da área: elas
+  // só existem enquanto há um lugar em foco.
+  useEffect(() => {
+    if (!map || !focusPlace) return undefined;
+
+    const attach = () => attachNearbyFocusLayers(map, { place: focusPlace });
+
+    if (!isStyleReady(map)) map.on('style.load', attach);
+    else attach();
+
+    return () => {
+      map.off('style.load', attach);
+      detachNearbyFocusLayers(map);
+    };
+  }, [map, focusPlace]);
+
+  // Lugar novo no mesmo ciclo: troca só os dados, e leva a câmera até ele.
+  //
+  // O deslocamento vertical sobe o ponto para o meio da faixa de mapa que a
+  // folha deixa livre — centralizar na tela inteira o colocaria atrás da lista,
+  // que é exatamente o que o toque na lista quer mostrar.
+  useEffect(() => {
+    if (!map || !focusPlace) return;
+
+    updateNearbyFocusData(map, focusPlace);
+    map.easeTo({
+      center: [focusPlace.longitude, focusPlace.latitude],
+      offset: [0, -bottomInsetRef.current / 2],
+      duration: 600,
+    });
+  }, [map, focusPlace]);
+
+  // Toque em qualquer outro lugar do mapa fecha a folha — o mesmo gesto de
+  // sempre para dispensar um cartão. O listener é do MAPA e recebe também os
+  // toques que caíram num pino ou num badge; nesse caso o handler específico já
+  // tratou, e fechar aqui desfaria no mesmo instante o que foi pedido. Daí o
+  // hit-test explícito.
+  useEffect(() => {
+    if (!map || !hasPoints) return undefined;
 
     const handleMapClick = (event) => {
-      const layers = [PLAN_PIN_LAYER_ID, PLAN_HALO_LAYER_ID].filter((id) => map.getLayer?.(id));
-      const hits = layers.length
-        ? map.queryRenderedFeatures?.(event.point, { layers })
-        : null;
+      const layers = [PLAN_PIN_LAYER_ID, PLAN_HALO_LAYER_ID, PLAN_CLUSTER_LAYER_ID]
+        .filter((id) => map.getLayer?.(id));
+      const hits = layers.length ? map.queryRenderedFeatures?.(event.point, { layers }) : null;
       if (hits?.length) return;
-      clearNearby();
+      onDismissRef.current?.();
     };
 
     map.on('click', handleMapClick);
     return () => {
       map.off('click', handleMapClick);
     };
-  }, [map, nearby, clearNearby]);
+  }, [map, hasPoints]);
 
-  // Cancela o pedido em voo quando o componente sai ou o mapa é destruído.
-  useEffect(() => clearNearby, [map, clearNearby]);
-
-  // Toque no pino. Efeito próprio porque o listener é da LAYER: registrar antes
-  // dela existir não pega nada.
+  // Toque na parada. Efeito próprio porque o listener é da LAYER: registrar
+  // antes dela existir não pega nada.
   useEffect(() => {
     if (!map || !hasPoints) return undefined;
 
-    return bindPlanPointClick(map, (properties, coordinates) => {
-      if (!coordinates) return;
+    return bindPlanPointClick(map, (properties) => {
+      if (!properties) return;
+      onSelectStopRef.current?.(properties);
+    });
+  }, [map, hasPoints]);
 
-      popupRef.current?.remove();
+  // Toque no badge de grupo.
+  //
+  // Primeiro tenta o gesto natural: aproximar até as paradas se separarem, que é
+  // o que alguém espera de um "+3" num mapa. Quando o zoom não resolve — paradas
+  // a menos de dez metros uma da outra, ou câmera já no fundo do poço — a
+  // resposta passa a ser a lista. As duas metades existem porque as duas
+  // situações existem: seis capitais dos Bálcãs se separam com zoom, dois
+  // restaurantes no mesmo quarteirão não.
+  useEffect(() => {
+    if (!map || !hasPoints) return undefined;
 
-      const container = document.createElement('div');
-      const instance = new Popup({
-        closeButton: false,
-        // Fecha ao tocar fora, que é como um cartão discreto deve se comportar
-        // num mapa. O listener interno do MapLibre entra no meio deste mesmo
-        // clique, mas o Evented dispara sobre uma cópia da lista de ouvintes —
-        // o popup não se fecha no instante em que abre.
-        closeOnClick: true,
-        offset: 18,
-        maxWidth: '260px',
-        className: 'journi-plan-popup',
-      })
-        .setLngLat(coordinates)
-        .setDOMContent(container)
-        .addTo(map);
+    return bindPlanClusterClick(map, (properties, coordinates) => {
+      const members = clusterMembers(properties);
+      if (!members.length) return;
 
-      instance.on('close', () => {
-        // Só limpa se ainda for ESTE popup: abrir outro pino remove o anterior e
-        // dispara o 'close' dele depois do novo já estar no ar.
-        if (popupRef.current === instance) popupRef.current = null;
-        setPopup((current) => (current?.container === container ? null : current));
-      });
+      const bounds = planBounds(members);
+      const spread = bounds
+        ? distanceMeters([bounds[0][0], bounds[0][1]], [bounds[1][0], bounds[1][1]])
+        : 0;
+      const canSeparate =
+        Number.isFinite(spread)
+        && spread > CLUSTER_SEPARABLE_METERS
+        && map.getZoom() < CLUSTER_ZOOM_MAX;
 
-      popupRef.current = instance;
-      setPopup({ properties, coordinates, container });
+      if (!canSeparate) {
+        onSelectClusterRef.current?.(members);
+        return;
+      }
+
+      const [[west, south], [east, north]] = bounds;
+      if (west === east && south === north) {
+        map.flyTo({ center: coordinates, zoom: CLUSTER_ZOOM_MAX, duration: 600 });
+        return;
+      }
+
+      map.fitBounds(bounds, { padding: 120, maxZoom: CLUSTER_ZOOM_MAX, duration: 600 });
     });
   }, [map, hasPoints]);
 
@@ -340,33 +455,6 @@ export default function PlanRouteLayer({ map, points, planId, selectedDay = null
     // eslint-disable-next-line react-hooks/exhaustive-deps -- só a troca de roteiro ou de dia move a câmera
   }, [map, planId, selectedDay]);
 
-  // Fecha o popup quando o componente sai ou o mapa é destruído.
-  useEffect(() => closePopup, [map, closePopup]);
-
-  if (!popup) return null;
-
-  return (
-    <>
-      <style>{POPUP_CSS}</style>
-      {createPortal(
-        <PlanPointPopup
-          title={popup.properties?.title}
-          description={popup.properties?.description}
-          category={popup.properties?.category}
-          day={popup.properties?.day}
-          // A posição na sequência DESENHADA, que é o número que está no pino.
-          // Mostrar o `order` da IA aqui contradiria o mapa sempre que a
-          // Optimization tivesse reordenado o dia.
-          order={popup.properties?.sequence ?? popup.properties?.order}
-          color={popup.properties?.color}
-          nearbyMinutes={DEFAULT_ISOCHRONE_MINUTES}
-          nearbyLoading={nearbyLoading}
-          // "Ocultar área" só aparece quando a área desenhada é DESTE pino.
-          nearbyActive={nearby?.key === `${popup.coordinates?.[0]},${popup.coordinates?.[1]}`}
-          onToggleNearby={() => toggleNearby(popup.coordinates)}
-        />,
-        popup.container
-      )}
-    </>
-  );
+  // Componente sem saída visual própria: tudo que ele produz está no mapa.
+  return null;
 }

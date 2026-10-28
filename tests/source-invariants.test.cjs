@@ -37,6 +37,8 @@ test('AI failures keep a request id from the provider attempt to the planner scr
   const handler = read('supabase/functions/travel-assistant/index.ts');
   const assistant = read('src/services/assistantService.js');
   const planner = read('src/screens/assistant/TripPlannerScreen.js');
+  const resultScreen = read('src/screens/assistant/AssistantResultScreen.js');
+  const errors = read('src/utils/assistantErrors.js');
   for (const field of ['requestId', 'model', 'status', 'providerStatus', 'code', 'finishReason', 'durationMs']) {
     assert.match(handler, new RegExp(field));
   }
@@ -45,7 +47,14 @@ test('AI failures keep a request id from the provider attempt to the planner scr
   assert.doesNotMatch(handler, /providerMessage/);
   assert.match(assistant, /functionError\?\.code/);
   assert.match(assistant, /functionError\?\.requestId/);
-  assert.match(planner, /Código: \$\{safeCode\}-\$\{shortRequestId/);
+  // O código com o requestId é montado num lugar só (utils/assistantErrors) e
+  // usado nas DUAS telas. Ele já existia na de planejar; faltava na de ajustar,
+  // e foi justamente um erro no ajuste que ficou sem diagnóstico possível.
+  assert.match(errors, /Código: /);
+  assert.match(errors, /safeCode/);
+  assert.match(errors, /shortRequestId/);
+  assert.match(planner, /formatAssistantError/);
+  assert.match(resultScreen, /formatAssistantError\(result/);
 });
 
 test('travel planner is personalized, structured, cancellable, and editable', () => {
@@ -66,7 +75,7 @@ test('travel planner is personalized, structured, cancellable, and editable', ()
   assert.match(result, /toggleChecklist/);
   assert.match(result, /openMap/);
   assert.match(result, /startEditing/);
-  assert.match(result, /Ajuste este roteiro com IA/);
+  assert.match(result, /assistantResult.adjust.title/);
   assert.match(result, /finally\s*\{\s*setRegenerating\(''\)/);
   assert.match(assistant, /awaitWithDeadline/);
   assert.match(assistant, /ACTIVITY_REGENERATION_TIMEOUT_MS/);
@@ -84,10 +93,10 @@ test('unfinished travel planning can be resumed and saved from the header', () =
   const planner = read('src/screens/assistant/TripPlannerScreen.js');
   const result = read('src/screens/assistant/AssistantResultScreen.js');
   const drafts = read('src/services/tripPlannerDraftService.js');
-  assert.match(planner, /Retornar de onde parou/);
+  assert.match(planner, /tripPlanner\.resumeDraftTitle/);
   assert.match(planner, /getTripPlannerDraft/);
   assert.match(planner, /saveTripPlannerFormDraft/);
-  assert.match(result, /headerSaveButton/);
+  assert.match(result, /styles\.saveButton/);
   assert.match(result, /saveTripPlannerResultDraft/);
   assert.match(result, /clearTripPlannerDraft/);
   assert.match(drafts, /type: 'form'/);
@@ -119,7 +128,7 @@ test('travel planner uses a calendar, blocks past dates, and sends ISO dates', (
   const planner = read('src/screens/assistant/TripPlannerScreen.js');
   const calendar = read('src/components/CalendarField.js');
   const dateUtils = read('src/utils/dateUtils.js');
-  const result = read('src/screens/assistant/AssistantResultScreen.js');
+  const summary = read('src/utils/tripSummary.js');
   assert.match(planner, /<CalendarField/);
   assert.match(planner, /A data de ida não pode estar no passado/);
   assert.match(planner, /startDate: form\.useDates \? toIsoDate\(form\.startDate\)/);
@@ -127,7 +136,10 @@ test('travel planner uses a calendar, blocks past dates, and sends ISO dates', (
   assert.match(calendar, /setMonth\(selected \|\| minimum\);[\s\S]*?setVisible\(true\)/);
   assert.match(calendar, /onPress=\{openCalendar\}/);
   assert.match(dateUtils, /parseBrazilianDate/);
-  assert.match(result, /toBrazilianDate\(request\.startDate\)/);
+  // A data da viagem é mostrada em formato brasileiro. Ela saía no subtítulo do
+  // cabeçalho compacto da tela de resultado; desde o refino da capa, sai no chip
+  // de data — o formato é o que este teste protege, não o lugar.
+  assert.match(summary, /toBrazilianDate\(startDate\)/);
 });
 
 test('saved travel plans are private and available from the profile', () => {
@@ -236,13 +248,18 @@ test('photo uploads always synchronize their country as visited', () => {
 test('map refreshes visits after uploads and counts them from normalized codes', () => {
   // Era a MapScreen quem normalizava os códigos do banco e desenhava o anel de
   // porcentagem. Com o globo no lugar dela, a normalização virou toAlpha3Set e a
-  // estatística virou o pill de países visitados — os dados são os mesmos.
+  // estatística virou o contador de países visitados — os dados são os mesmos.
+  //
+  // O contador deixou de ser um pill e virou texto discreto no canto: com o
+  // roteiro na tela, um pill com fundo e borda dava a uma estatística o mesmo
+  // peso visual dos controles que se tocam. O que este teste protege é o DADO,
+  // que não mudou.
   const status = read('src/components/map/countryStatus.js');
   const globe = stripComments(read('src/screens/map/GlobeScreen.js'));
   assert.match(status, /getAlpha3/);
   assert.match(status, /toAlpha3Set/);
   assert.match(globe, /visitedCount = visited\.size/);
-  assert.match(globe, /styles\.visitedPill/);
+  assert.match(globe, /styles\.visitedStat/);
 });
 
 test('the globe keeps the whole planet in frame instead of a bounded flat world', () => {
@@ -319,7 +336,7 @@ test('planning, messaging, passport, and explore improvements stay integrated', 
   const budgetPlanner = read('src/components/DestinationBudgetPlanner.js');
   assert.match(budgetPlanner, /formatMoneyInput/);
   assert.match(planner, /form\.travelerType === 'Casal'/);
-  assert.match(result, /Abrir meus roteiros salvos/);
+  assert.match(result, /assistantResult.openSaved/);
   assert.match(navigation, /name="Messages"/);
   assert.match(navigation, /name="Conversation"/);
   assert.match(navigation, /name="PassportDetail"/);
@@ -327,7 +344,7 @@ test('planning, messaging, passport, and explore improvements stay integrated', 
   assert.match(messages, /shared_passport/);
   assert.match(routing, /REGISTERED_ROUTES/);
   assert.match(routing, /passportShareId/);
-  assert.match(profile, /Opções da publicação/);
+  assert.match(profile, /post.menu.title/);
   assert.match(profile, /navigator\.share/);
   assert.doesNotMatch(explore, />EXPLORAR POR DESTINO</);
   assert.match(explore, /getAlpha3\(photo\.country_code\)/);
@@ -347,7 +364,7 @@ test('public profiles show spaced photo cards with captions and comments', () =>
   assert.match(profile, /gap: 12/);
   assert.match(profile, /photo\.caption/);
   assert.match(profile, /photo\.comment_count/);
-  assert.match(profile, /Voltar ao menu/);
+  assert.match(profile, /publicProfile.backToMenu/);
   assert.match(detail, /getComments/);
   assert.match(detail, /addComment/);
 });
@@ -404,12 +421,16 @@ test('client source is free of console calls and centralizes remote flag images'
   // que sobraria seria uma tela de "algo deu errado" sem rastro nenhum para
   // diagnosticar — pior do que a tela em branco que ele veio substituir.
   //
-  // Os três serviços entraram pelo mesmo motivo, um nível abaixo: eles chamam
-  // RPCs `security definer` (bloqueio, denúncia, cancelamento de exclusão) que
-  // falham do lado do banco, onde a UI só recebe um booleano. Sem o
-  // `console.error`, uma policy recusando a chamada em produção vira "não
-  // aconteceu nada" na tela, sem nome de RPC nem mensagem do Postgres para
-  // investigar depois.
+  // Os serviços entraram pelo mesmo motivo, um nível abaixo: eles chamam RPCs
+  // `security definer` ou tabelas sob RLS (bloqueio, denúncia, cancelamento de
+  // exclusão, preferências de notificação) que falham do lado do banco, onde a UI
+  // só recebe um booleano. Sem o `console.error`, uma policy recusando a chamada
+  // em produção vira "não aconteceu nada" na tela, sem nome de RPC nem mensagem
+  // do Postgres para investigar depois.
+  //
+  // `notificationPreferenceService` é o caso mais traiçoeiro da lista: uma
+  // gravação recusada ali faz o interruptor voltar sozinho, e sem a mensagem do
+  // Postgres não há como distinguir policy errada de rede caída.
   //
   // A lista está na ordem da varredura de diretórios (`visit`), que é a ordem em
   // que `filesWithConsole` é montado — o assert abaixo compara os arrays
@@ -419,6 +440,7 @@ test('client source is free of console calls and centralizes remote flag images'
     'src/navigation/AppNavigator.js',
     'src/services/messageService.js',
     'src/services/moderationService.js',
+    'src/services/notificationPreferenceService.js',
     'src/services/profileService.js',
   ];
   assert.deepEqual(filesWithConsole, CONSOLE_ALLOWLIST);
@@ -469,9 +491,9 @@ test('users can delete only their own posts from feed and profile', () => {
   assert.match(service, /\.eq\('user_id', user\.id\)/);
   assert.match(feedService, /photo_path/);
   assert.match(feed, /post\.user_id === currentUser\?\.id/);
-  assert.match(feed, /accessibilityLabel="Excluir publicação"/);
+  assert.match(feed, /accessibilityLabel=\{t\('post\.delete\.label'\)\}/);
   assert.match(profile, /handleDeletePhoto\(fullscreenPhoto\)/);
-  assert.match(profile, /accessibilityLabel="Excluir publicação"/);
+  assert.match(profile, /accessibilityLabel=\{t\('post\.delete\.label'\)\}/);
   assert.match(migration, /on delete cascade/);
   assert.match(migration, /clear_deleted_photo_cover/);
 });
@@ -497,8 +519,8 @@ test('feed is the home tab with floating navigation and top-level social actions
   assert.match(navigator, /overflow: clip \? 'hidden' : 'visible'/);
   assert.match(navigator, /name="Messages" component=\{MessagesScreen\}/);
   assert.doesNotMatch(navigator, /tabBarLabel: 'Conversas'/);
-  assert.match(feed, /accessibilityLabel="Abrir conversas"/);
-  assert.match(feed, /accessibilityLabel="Abrir notificações"/);
+  assert.match(feed, /accessibilityLabel=\{t\('feed\.openConversations'\)\}/);
+  assert.match(feed, /accessibilityLabel=\{t\('feed\.openNotifications'\)\}/);
 });
 
 test('planner converts currencies, keeps free activities at zero, and exposes verified ticket sites', () => {
@@ -525,7 +547,9 @@ test('password recovery sends a secure link and requires a new password', () => 
   const reset = read('src/screens/auth/ResetPasswordScreen.js');
   const auth = read('src/services/supabase.js');
   const navigator = read('src/navigation/AppNavigator.js');
-  assert.match(login, /Esqueceu sua senha\?/);
+  // O texto virou chave no lote de autenticação. O que importa aqui é que a tela
+  // de login OFEREÇA a recuperação — a frase em português está em pt.json.
+  assert.match(login, /auth\.login\.forgotPassword/);
   assert.match(auth, /resetPasswordForEmail/);
   assert.match(auth, /redirectTo: getPasswordRecoveryRedirectUrl\(\)/);
   assert.match(reset, /updateRecoveredPassword/);
@@ -572,7 +596,7 @@ test('long AI plans must contain exactly the requested duration and explain ever
   assert.match(service, /requestedDuration \* 10000/);
   assert.match(assistant, /shoppingIncluded/);
   assert.match(assistant, /Passagens, Hospedagem, Alimentação, Transporte local, Passeios e ingressos, Compras e Reserva/);
-  assert.match(result, /O que esse valor inclui\?/);
+  assert.match(result, /assistantResult.budget.whatIsIncluded/);
   assert.match(result, /purchaseNote/);
   assert.match(assistant, /startTime/);
   assert.match(assistant, /endTime/);
@@ -600,7 +624,7 @@ test('long AI plans must contain exactly the requested duration and explain ever
   assert.match(assistantService, /stopsPerDay: 4/);
   assert.match(assistantService, /stopsPerDay: 5/);
   assert.match(assistantService, /stopsPerDay: 6/);
-  assert.match(planner, /experiências por dia, organizadas por proximidade/);
+  assert.match(planner, /tripPlanner\.paceHint/);
 });
 
 test('trip budget uses a travel style, a free currency converter, and grounded prices', () => {
@@ -612,10 +636,10 @@ test('trip budget uses a travel style, a free currency converter, and grounded p
   const assistant = read('supabase/functions/travel-assistant/index.ts');
   assert.match(planner, /<DestinationBudgetPlanner/);
   assert.match(planner, /converterBaseCurrency/);
-  assert.match(destinationBudget, /Orçamento da viagem/);
-  assert.match(destinationBudget, /Conversor de moedas/);
+  assert.match(destinationBudget, /destinationBudgetPlanner\.title/);
+  assert.match(destinationBudget, /destinationBudgetPlanner\.converterTitle/);
   assert.match(destinationBudget, /onDisplayCurrencyChange/);
-  assert.match(destinationBudget, /Não existe limite por destino/);
+  assert.match(destinationBudget, /destinationBudgetPlanner\.styleHint/);
   assert.match(destinationBudget, /Econômico/);
   assert.match(destinationBudget, /Equilibrado/);
   assert.match(destinationBudget, /Confortável/);
@@ -624,8 +648,8 @@ test('trip budget uses a travel style, a free currency converter, and grounded p
   assert.doesNotMatch(destinationBudget, /LIMITE POR DESTINO/);
   assert.doesNotMatch(destinationBudget, /TOTAL ESTIMADO/);
   assert.match(currencyPicker, /getAvailableCurrencies/);
+  assert.match(currencyPicker, /currencyPicker\.searchPlaceholder/);
   assert.match(currencyPicker, /inline/);
-  assert.match(currencyPicker, /Ex: dólar, euro ou USD/);
   assert.match(currencyPicker, /style=\{styles\.dismissBackdrop\}/);
   assert.match(currencyPicker, /dismissBackdrop: \{ \.\.\.StyleSheet\.absoluteFillObject \}/);
   assert.doesNotMatch(currencyPicker, /<TouchableOpacity style=\{styles\.overlay\}[^>]*onPress=/);
@@ -659,15 +683,27 @@ test('password login preserves the Supabase error code and never hides an unknow
   assert.match(authService, /code: error\?\.code \|\| 'AUTH_LOGIN_FAILED'/);
   assert.match(authService, /status: Number\(error\?\.status\) \|\| 0/);
   assert.match(authService, /trim\(\)\.toLowerCase\(\)/);
-  assert.match(login, /formatLoginError/);
-  assert.match(login, /Código: \$\{safeCode\}/);
+  // O `formatLoginError` local virou `utils/authErrors.js`, usado pelas quatro
+  // telas de conta — ele era o único caminho que já NÃO vazava texto do backend,
+  // e o cadastro e a recuperação vazavam. A intenção deste teste continua a
+  // mesma: o erro desconhecido não pode ser escondido, tem de sair com um código
+  // que o suporte consiga cruzar com o log.
+  assert.match(login, /authErrorMessage\(result, t\)/);
   assert.match(login, /AUTH_UNEXPECTED_ERROR/);
+
+  const authErrors = read('src/utils/authErrors.js');
+  assert.match(authErrors, /AUTH_ERROR_FALLBACK_KEY = 'auth\.errors\.unknown'/);
+  // O código é sanitizado: é isso que impede a mensagem do GoTrue de atravessar
+  // disfarçada de código. Ver os testes em tests/i18n.test.cjs.
+  assert.match(authErrors, /replace\(\/\[\^a-zA-Z0-9_-\]\/g, ''\)/);
+  const pt = JSON.parse(read('src/i18n/locales/pt.json'));
+  assert.match(pt.auth.errors.unknown, /%\{code\}/);
 });
 
 test('country photo fullscreen lets the owner delete the selected photo', () => {
   const gallery = read('src/components/PhotoGallery.js');
   const photoService = read('src/services/photoService.js');
-  assert.match(gallery, /accessibilityLabel="Excluir esta foto"/);
+  assert.match(gallery, /accessibilityLabel=\{t\('photoGallery\.deleteLabel'\)\}/);
   assert.match(gallery, /handleDelete\(fullscreenPhoto\.id, fullscreenPhoto\.photo_path\)/);
   assert.match(photoService, /\.eq\('user_id', user\.id\)/);
 });
@@ -684,7 +720,11 @@ test('in-app notification banner is global, queued, and deep-linked', () => {
   const containerEnd = navigator.indexOf('</NavigationContainer>');
   const bannerUsage = navigator.indexOf('<GlobalNotificationBanner');
   assert.ok(containerEnd > 0 && bannerUsage > containerEnd);
-  assert.match(navigator, /<NavigationContainer ref=\{navigationRef\}>/);
+  // O que importa é o container CARREGAR a ref — é por ela que o banner (e, desde
+  // a Fase 2, o deep link do convite) navega de fora da árvore. Outras props no
+  // mesmo elemento são livres: o `onReady` entrou com o deep link, que precisa
+  // esperar a árvore montar antes de navegar.
+  assert.match(navigator, /<NavigationContainer\s+ref=\{navigationRef\}/);
   // Suprimir durante o upload: no nativo o Modal abre em janela própria e cobriria o banner.
   assert.match(navigator, /suppressed=\{visible\}/);
   assert.match(app, /<SafeAreaProvider>/);
@@ -734,10 +774,10 @@ test('message, seasonal explore, requirements, and decimal budget fixes stay int
   assert.match(migration, /get_unread_message_count/);
   assert.match(feed, /CountBadge/);
   assert.doesNotMatch(feed, /styles\.stories/);
-  assert.match(publicProfile, />Mensagem</);
+  assert.match(publicProfile, /publicProfile.message/);
   assert.match(currency, /sanitizeMoneyInput/);
   assert.match(budget, /keyboardType="decimal-pad"/);
-  assert.match(explore, /DESTINOS EM ALTA NESTA ÉPOCA/);
+  assert.match(explore, /explore\.trendingSection/);
   assert.match(explore, /getTourismImage/);
   assert.doesNotMatch(explore, /CountryRequirementsCard/);
   assert.match(countryModal, /CountryRequirementsCard/);
@@ -813,10 +853,48 @@ test('map, currencies, and social notifications do not depend on partial provide
   assert.match(currency, /world-countries@latest\/dist\/countries\.json/);
   assert.match(currency, /open\.er-api\.com\/v6\/latest/);
   assert.match(currency, /api\.frankfurter\.dev\/v2\/rate/);
-  assert.match(socialTypes, /\['follow', 'comment', 'like'\]/);
-  assert.match(notifications, /\.in\('type', SOCIAL_NOTIFICATION_TYPES\)/);
-  assert.match(feed, /\.in\('type', SOCIAL_NOTIFICATION_TYPES\)/);
-  assert.match(banner, /isSocialNotification\(row\)/);
+  // As sociais eram exatamente três; a Fase 2 acrescentou uma família SEPARADA
+  // (trip_*) em vez de diluir esta, e isso continua valendo.
+  //
+  // `message` e `passport` entraram na migração 20260930120000, que devolveu os
+  // dois avisos que chegam pelo chat — removidos juntos na 20260812130000, porque
+  // mensagem gerava uma linha POR MENSAGEM. Agora mensagem é um aviso por conversa
+  // não lida, e passaporte é um aviso por passaporte. A lista é FILTRO (ver o
+  // cabeçalho de socialNotifications.js): sem o tipo aqui, o aviso chega ao banco,
+  // não aparece na tela e nunca é marcado como lido.
+  assert.match(
+    socialTypes,
+    /SOCIAL_NOTIFICATION_TYPES = Object\.freeze\(\[\s*'follow', 'comment', 'like', 'message', 'passport',\s*\]\)/
+  );
+  // A família de viagem CRESCE (as tarefas do grupo entraram em 20260923140000),
+  // então o que este teste trava não é a lista inteira: é que cada tipo esteja
+  // lá dentro. A regex antiga fixava a linha, e qualquer tipo novo a quebrava
+  // sem haver nada de errado.
+  for (const tipo of ['trip_invite', 'trip_joined', 'trip_edit', 'trip_task_created', 'trip_task_done']) {
+    assert.match(
+      socialTypes,
+      new RegExp(`TRIP_NOTIFICATION_TYPES = Object\\.freeze\\(\\[[\\s\\S]*?'${tipo}'[\\s\\S]*?\\]\\)`),
+      `${tipo} fora de TRIP_NOTIFICATION_TYPES`
+    );
+  }
+
+  // O BUG QUE ISTO PEGA: tipo que não entra na lista COMBINADA não aparece na
+  // tela e nunca é marcado como lido — o sino fica preso num número que o usuário
+  // não tem onde tocar para zerar. A lista é filtro, não documentação.
+  assert.match(socialTypes, /NOTIFICATION_TYPES = Object\.freeze\(\[[\s\S]{0,120}\.\.\.SOCIAL_NOTIFICATION_TYPES/);
+  assert.match(socialTypes, /NOTIFICATION_TYPES = Object\.freeze\(\[[\s\S]{0,160}\.\.\.TRIP_NOTIFICATION_TYPES/);
+
+  // As telas usam a combinada, senão a notificação de viagem some.
+  assert.match(notifications, /\.in\('type', NOTIFICATION_TYPES\)/);
+  assert.match(feed, /\.in\('type', NOTIFICATION_TYPES\)/);
+  assert.match(banner, /isKnownNotification\(row\)/);
+
+  // E o check do banco precisa aceitar os três tipos novos, senão o trigger de
+  // convite falha no insert e o convite não chega a ninguém.
+  const tripNotifications = read('supabase/migrations/20260917130000_trip_edit_log_and_notifications.sql');
+  for (const tipo of ['trip_invite', 'trip_joined', 'trip_edit']) {
+    assert.match(tripNotifications, new RegExp(`'${tipo}'`), `${tipo} fora do check`);
+  }
   assert.match(migration, /drop trigger if exists on_message_created_notify/);
   assert.match(migration, /delete from public\.notifications where type in \('message', 'passport'\)/);
   assert.match(migration, /sync_photo_like_notification/);
@@ -1021,8 +1099,8 @@ test('AI planner searches specific cities and airports with country flags', () =
   const municipalities = JSON.parse(read('src/data/brazilianMunicipalities.json'));
   const budget = read('src/components/DestinationBudgetPlanner.js');
 
-  assert.match(planner, /Cidade, país ou aeroporto \(ex: GRU\)/);
-  assert.match(planner, /Destinos e paradas/);
+  assert.match(planner, /tripPlanner.destinationPlaceholder/);
+  assert.match(planner, /tripPlanner.destinationsSection/);
   assert.match(origin, /searchTravelLocations/);
   assert.match(origin, /CountryFlag/);
   assert.match(destinations, /formatAirportLabel/);
@@ -1034,7 +1112,7 @@ test('AI planner searches specific cities and airports with country flags', () =
   assert.ok(municipalities.length >= 5570);
   assert.ok(municipalities.some(([name, state]) => name === 'Jundiaí' && state === 'SP'));
   assert.doesNotMatch(budget, /destinationId/);
-  assert.match(budget, /Conversor de moedas/);
+  assert.match(budget, /destinationBudgetPlanner\.converterTitle/);
 });
 
 test('mobile performance safeguards keep heavy content bounded', () => {
@@ -1058,8 +1136,8 @@ test('mobile performance safeguards keep heavy content bounded', () => {
   assert.match(globe, /useIsFocused/);
   assert.match(globe, /isFocused \? \(/);
   assert.match(nativeGlobe, /performanceMode/);
-  assert.match(globeMap, /pixelRatio: performanceMode \? 1 : undefined/);
-  assert.match(globeMap, /maxTileCacheSize: performanceMode \? 48 : null/);
+  assert.match(globeMap, /pixelRatio: performanceMode \? 0\.75 : undefined/);
+  assert.match(globeMap, /maxTileCacheSize: performanceMode \? 32 : null/);
 });
 
 test('the itinerary layer is optional, isolated and drawn by GL layers', () => {
@@ -1085,7 +1163,11 @@ test('the itinerary layer is optional, isolated and drawn by GL layers', () => {
   assert.doesNotMatch(route, /from 'maplibre-gl'/);
 
   // Roteiro trocado repinta os dados; nada de recriar layer a cada aplicacao.
-  assert.match(layer, /updatePlanRouteData\(map, data\)/);
+  //
+  // Quem publica as paradas e o agrupamento, e nao o dado cru: as paradas que se
+  // encostam na tela viram um badge de contagem antes de chegar a source. As
+  // linhas seguem junto, sem agrupamento nenhum.
+  assert.match(layer, /updatePlanRouteData\(map, \{ points: clustered, lines: dataRef\.current\.lines \}\)/);
 
   // Enquadramento pelo conjunto dos pontos, com flyTo so no roteiro de um ponto.
   assert.match(layer, /map\.fitBounds\(bounds/);
@@ -1116,8 +1198,13 @@ test('only one itinerary can be applied to the globe at a time', () => {
   // O marcador visual e o toggle vivem na tela de roteiros salvos.
   assert.match(screen, /Aplicar no mapa/);
   assert.match(screen, /Remover do mapa/);
-  assert.match(screen, /Ativo no mapa/);
   assert.match(screen, /plan\.id === activePlanId/);
+
+  // O marcador de "está no globo" deixou a fileira de ações e virou um selo
+  // sobre a capa da viagem, no TripListCard — o que este teste protege é ele
+  // EXISTIR e vir do mesmo estado, não o lugar onde é desenhado.
+  assert.match(screen, /appliedToMap={isActive}/);
+  assert.match(read('src/components/trip/TripListCard.js'), /tripListCard\.onGlobe/);
 });
 
 test('todo peso de Poppins usado no app está carregado no useFonts', () => {
@@ -1238,6 +1325,57 @@ test('toda tela sob a tab bar reserva folga no fim do conteúdo', () => {
   const feed = read('src/screens/feed/FeedScreen.js');
   assert.match(feed, /contentContainerStyle=\{\[styles\.body, \{ paddingBottom: tabBarPadding \}\]\}/);
   assert.doesNotMatch(stripComments(feed), /<View style=\{\{ height: 96 \}\} \/>/);
+});
+
+test('nenhum emoji pictográfico é usado como ícone de interface', () => {
+  // POR QUE ESTE TESTE EXISTE: a troca de emoji por ícone vetorial já tinha sido
+  // dada como feita uma vez, e os emojis continuavam na tela. Um relatório não
+  // prova nada; isto prova.
+  //
+  // O emoji é desenhado pela fonte do SISTEMA: o mesmo 🏛️ sai colorido e
+  // arredondado no iPhone, chapado no Android e de outra família no Windows —
+  // três aparências para o mesmo dado, nenhuma escolhida por nós, nenhuma
+  // combinando com a paleta do app. Ícone de UI é Ionicons (@expo/vector-icons).
+  //
+  // A varredura pega só o que é pictográfico (o bloco de emoji e o seletor de
+  // apresentação emoji). Sinais tipográficos — ✓, ✗, →, • — não entram: eles são
+  // pontuação, têm glifo em qualquer fonte de texto e são usados dentro de
+  // frases, não em lugar de ícone.
+  const PICTOGRAPHIC = /[\u{1F000}-\u{1FAFF}]|️/u;
+  const COMMENT = /^\s*(\/\/|\*|\/\*)/;
+
+  // As duas exceções conhecidas, ambas fora de slot de ícone:
+  const ALLOWED = new Map([
+    // Texto que sai do app: a mensagem compartilhada em outros aplicativos, onde
+    // o emoji é do conteúdo e não da interface.
+    ['src/screens/assistant/AssistantResultScreen.js', /Criado no Journi/],
+    // Bandeiras por emoji Unicode. Não é ícone: é a bandeira do país. A UI usa o
+    // CountryFlag (imagem) por causa dos sistemas sem glifo de bandeira, e esta
+    // função está sem nenhum consumidor no app.
+    ['src/utils/flagUtils.js', /return '/],
+  ]);
+
+  const offenders = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const absolute = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(absolute); continue; }
+      if (!/\.[jt]sx?$/.test(entry.name)) continue;
+
+      const relative = path.relative(root, absolute).split(path.sep).join('/');
+      const allowed = ALLOWED.get(relative);
+
+      fs.readFileSync(absolute, 'utf8').split(/\r?\n/).forEach((line, index) => {
+        if (!PICTOGRAPHIC.test(line)) return;
+        if (COMMENT.test(line)) return;
+        if (allowed && allowed.test(line)) return;
+        offenders.push(`${relative}:${index + 1}: ${line.trim().slice(0, 90)}`);
+      });
+    }
+  };
+  walk(path.join(root, 'src'));
+
+  assert.deepEqual(offenders, [], `emoji usado como ícone:\n${offenders.join('\n')}`);
 });
 
 test('excluir uma viagem permite a cascata do último proprietário', () => {

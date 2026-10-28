@@ -203,3 +203,37 @@ export const searchTravelers = async (query, currentUserId) => {
   }
   return { success: true, data: results.slice(0, 12) };
 };
+
+/**
+ * Quem pode ser convidado para uma viagem.
+ *
+ * Reaproveita `searchTravelers` — a mesma busca que a tela de explorar usa para
+ * achar gente para seguir. Não há por que a busca de convidado ser outra: a
+ * pessoa digita um nome de usuário do mesmo jeito.
+ *
+ * O QUE MUDA É O QUE SAI DA LISTA. Quem já participa da viagem não pode ser
+ * convidado de novo, e mostrá-lo seria oferecer uma ação que não faz nada: a RPC
+ * `invite_trip_member` tem `on conflict do nothing`, então o toque "funcionaria"
+ * em silêncio e a pessoa ficaria esperando um convite que nunca foi enviado.
+ *
+ * Quem foi bloqueado (nos dois sentidos) não aparece porque a própria policy do
+ * banco recusa o convite — o filtro aqui evita oferecer o que vai falhar. A
+ * decisão de quem está bloqueado continua sendo do banco; `searchTravelers` já
+ * não devolve perfil bloqueado.
+ *
+ * @param {string} query
+ * @param {{ currentUserId?: string | null, memberIds?: Array<string> }} [options]
+ * @returns {Promise<{ success: boolean, data: Array<any> }>}
+ */
+export const searchInvitees = async (query, { currentUserId, memberIds = [] } = {}) => {
+  const { data } = await searchTravelers(query, currentUserId);
+  const já = new Set([...(memberIds || []), currentUserId].filter(Boolean));
+
+  // `any` porque `searchTravelers` mistura duas origens (perfil e país visitado) e
+  // o embed do PostgREST pode chegar como objeto ou array — a inferência vira uma
+  // união que não ajuda ninguém aqui.
+  return {
+    success: true,
+    data: (data || []).filter((/** @type {any} */ perfil) => !já.has(perfil?.id)),
+  };
+};

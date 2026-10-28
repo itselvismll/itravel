@@ -8,14 +8,18 @@ import {
   Modal, ScrollView, Text, Platform, useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
+import * as ExpoLinking from 'expo-linking';
 import { COLORS } from '../utils/constants';
+import { clearPendingInvite, startupRoute } from '../utils/pendingInvite';
 import { TAB_BAR_HEIGHT, TAB_BAR_BOTTOM } from '../utils/tabBarLayout';
 import { completeWebOAuthSession, getCurrentUser, supabase } from '../services/supabase';
 import { useUpload } from '../context/UploadContext';
 import { cancelAccountDeletion } from '../services/profileService';
 import { notify } from '../utils/dialogs';
-import { navigationRef } from './navigationRef';
+import { navigationRef, navigateFromOutside } from './navigationRef';
+import { useLocale } from '../i18n/LocaleProvider';
 import GlobalNotificationBanner from '../components/GlobalNotificationBanner';
 import ScreenErrorBoundary from '../components/ScreenErrorBoundary';
 import { OnboardingProvider, useOnboardingFlow } from '../context/OnboardingContext';
@@ -44,9 +48,14 @@ import ConnectionsScreen from '../screens/profile/ConnectionsScreen';
 import PhotoDetailScreen from '../screens/PhotoDetailScreen';
 import SupportScreen from '../screens/support/SupportScreen';
 import BlockedUsersScreen from '../screens/profile/BlockedUsersScreen';
+import NotificationPreferencesScreen from '../screens/NotificationPreferencesScreen';
+import LanguageScreen from '../screens/LanguageScreen';
+import FAQScreen from '../screens/FAQScreen';
+import FAQCategoryScreen from '../screens/FAQCategoryScreen';
 import MessagesScreen from '../screens/messages/MessagesScreen';
 import ConversationScreen from '../screens/messages/ConversationScreen';
 import PassportDetailScreen from '../screens/profile/PassportDetailScreen';
+import TripInviteScreen from '../screens/trip/TripInviteScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -85,6 +94,10 @@ function ProfileStack() {
       <Stack.Screen name="SavedTrips" component={SavedTripsScreen} />
       <Stack.Screen name="Support" component={SupportScreen} />
       <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
+      <Stack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} />
+      <Stack.Screen name="Language" component={LanguageScreen} />
+      <Stack.Screen name="FAQ" component={FAQScreen} />
+      <Stack.Screen name="FAQCategory" component={FAQCategoryScreen} />
     </Stack.Navigator>
   );
 }
@@ -142,8 +155,15 @@ function TabBarButton({ style = undefined, clip = true, ...props }) {
 
 function TabNavigator() {
   const { openUploader } = useUpload();
+  const { t } = useLocale();
   const { width } = useWindowDimensions();
-  const tabBarWidth = Math.min(Math.max(width - 24, 300), 680);
+  const insets = useSafeAreaInsets();
+  // Largura realmente segura: em retrato, `insets.left/right` são quase sempre
+  // 0, então isto não muda nada hoje — mas em aparelhos com recorte lateral
+  // (dobráveis, paisagem) a cápsula centraliza na área navegável de verdade,
+  // não na largura bruta da janela.
+  const safeWidth = width - insets.left - insets.right;
+  const tabBarWidth = Math.min(Math.max(safeWidth - 24, 300), 680);
   return (
     <Tab.Navigator
       id="MainTabs"
@@ -157,8 +177,11 @@ function TabNavigator() {
         tabBarButton: (props) => <TabBarButton {...props} />,
         tabBarStyle: {
           position: 'absolute',
-          left: (width - tabBarWidth) / 2,
-          bottom: TAB_BAR_BOTTOM,
+          left: insets.left + (safeWidth - tabBarWidth) / 2,
+          // Faixa de gestos do Android: sem somar `insets.bottom`, a barra
+          // ficava colada/colidindo nela em aparelhos com faixa maior que os
+          // 18px fixos de TAB_BAR_BOTTOM.
+          bottom: TAB_BAR_BOTTOM + insets.bottom,
           width: tabBarWidth,
           backgroundColor: '#12182B',
           // Só `borderWidth`: com `borderTopWidth` junto, o topo ficava com uma
@@ -206,7 +229,7 @@ function TabNavigator() {
         name="Feed"
         component={FeedScreenSafe}
         options={{
-          tabBarLabel: 'Início',
+          tabBarLabel: t('nav.home'),
           tabBarIcon: ({ size, color, focused }) => (
             <Ionicons name={focused ? 'home' : 'home-outline'} size={size} color={color} />
           ),
@@ -217,7 +240,7 @@ function TabNavigator() {
         name="Map"
         component={GlobeScreenSafe}
         options={{
-          tabBarLabel: 'Mapa',
+          tabBarLabel: t('nav.map'),
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'map' : 'map-outline'} size={size} color={color} />
           ),
@@ -274,7 +297,7 @@ function TabNavigator() {
         name="Explore"
         component={ExploreScreenSafe}
         options={{
-          tabBarLabel: 'Explorar',
+          tabBarLabel: t('nav.explore'),
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'compass' : 'compass-outline'} size={size} color={color} />
           ),
@@ -285,7 +308,7 @@ function TabNavigator() {
         name="Profile"
         component={ProfileStackSafe}
         options={{
-          tabBarLabel: 'Perfil',
+          tabBarLabel: t('nav.profile'),
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'person' : 'person-outline'} size={size} color={color} />
           ),
@@ -319,6 +342,77 @@ export default function AppNavigator() {
   const checkingOnboarding = onboarding.checking;
   const [detectedLocation, setDetectedLocation] = useState(null);
   const [locationLoading, setLocationLoading] = useState(false);
+
+  // ── Deep link do convite de viagem ────────────────────────────────────────
+  //
+  // O link chega por duas portas, e as duas precisam ser escutadas: se o app
+  // estava FECHADO, a URL vem em `getInitialURL()`, uma vez; se estava ABERTO,
+  // vem pelo evento 'url'. Escutar só uma delas produz o bug mais confuso deste
+  // fluxo — "o convite funciona quando o app está aberto e não funciona quando
+  // está fechado", ou o contrário.
+  //
+  // A URL vira um DESTINO GUARDADO, e não uma navegação imediata, por dois
+  // motivos que acontecem o tempo todo no mundo real:
+  //
+  //  1. quem recebe o convite frequentemente NÃO está logado — o link é a
+  //     primeira vez que a pessoa ouve falar do app. Navegar agora cairia na
+  //     tela de login e o convite se perderia no caminho; guardado, ele é
+  //     resgatado assim que a sessão existe;
+  //  2. o NavigationContainer pode ainda não estar montado quando a URL chega
+  //     no boot. `navigate` antes disso é silenciosamente descartado.
+  //
+  // E guardar SÓ em memória não bastou na web, que foi o bug relatado em
+  // produção: lá todo caminho até a sessão sai da página (o Google volta em
+  // `origin`, sem o caminho do convite; a confirmação de e-mail abre outra
+  // aba), e o destino ia junto. Por isso o destino também é escrito no
+  // `localStorage` — ver `utils/pendingInvite`, que é quem decide entre a URL
+  // da vez e o convite guardado.
+  const [pendingRoute, setPendingRoute] = useState(null);
+  const [navReady, setNavReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    // No iOS e no Android não há (nem precisa de) localStorage: o retorno do
+    // OAuth acontece dentro do mesmo processo e o estado em memória sobrevive.
+    const storage = Platform.OS === 'web' && typeof window !== 'undefined'
+      ? window.localStorage
+      : null;
+
+    const receber = (url) => {
+      // Só o que reconhecemos vira destino. O Expo entrega aqui TODA url que
+      // abre o app — o retorno do OAuth, o `exp://` do desenvolvimento —, e
+      // tratar o desconhecido como erro encheria o log de ruído.
+      const rota = startupRoute(url, storage);
+      if (rota) setPendingRoute(rota);
+    };
+
+    ExpoLinking.getInitialURL().then((url) => { if (!cancelled) receber(url); });
+    const inscricao = ExpoLinking.addEventListener('url', (evento) => receber(evento?.url));
+
+    return () => {
+      cancelled = true;
+      inscricao?.remove?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    // Só navega com a árvore montada E com sessão: a RPC `redeem_trip_invite`
+    // exige `authenticated`, e sem usuário a tela do convite abriria só para
+    // mostrar um erro de permissão.
+    if (!pendingRoute || !navReady || !user) return;
+
+    if (navigateFromOutside(pendingRoute.name, pendingRoute.params)) {
+      // Consome uma vez. Sem isto, voltar da tela do convite re-navegaria para
+      // ela a cada render, e não haveria como sair. E o que foi guardado para
+      // atravessar o login sai junto: senão a tela do convite reabriria a cada
+      // abertura do app até o registro vencer, com a pessoa já na viagem.
+      setPendingRoute(null);
+      clearPendingInvite(
+        Platform.OS === 'web' && typeof window !== 'undefined' ? window.localStorage : null
+      );
+    }
+  }, [pendingRoute, navReady, user]);
 
   useEffect(() => {
     const checkUser = async () => {
@@ -511,7 +605,7 @@ export default function AppNavigator() {
       {/* O provider embrulha o NavigationContainer porque quem renderiza a etapa
           guiada é a GlobeScreen, lá dentro. */}
       <OnboardingProvider value={onboarding}>
-        <NavigationContainer ref={navigationRef}>
+        <NavigationContainer ref={navigationRef} onReady={() => setNavReady(true)}>
           {passwordRecovery ? (
             <Stack.Navigator id="PasswordRecoveryStack" screenOptions={{ headerShown: false }}>
               <Stack.Screen name="ResetPassword">
@@ -552,6 +646,15 @@ export default function AppNavigator() {
               <Stack.Screen
                 name="Connections"
                 component={ConnectionsScreen}
+                options={{ headerShown: false }}
+              />
+              {/* Convidar pessoas, e também a porta de entrada de um link de
+                  convite (`{ token }`). Esta rota estava listada em
+                  notificationRouting.js como destino registrado desde a Fase 2
+                  sem existir de fato — nada conseguia navegar para cá. */}
+              <Stack.Screen
+                name="TripInvite"
+                component={TripInviteScreen}
                 options={{ headerShown: false }}
               />
             </Stack.Navigator>

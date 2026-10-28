@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import CalendarField from '../../components/CalendarField';
 import DestinationBudgetPlanner from '../../components/DestinationBudgetPlanner';
@@ -25,23 +26,20 @@ import {
   TRAVEL_PACES,
 } from '../../services/assistantService';
 import { getCountryNamePtByCode } from '../../utils/countryUtils';
+import { useLocale } from '../../i18n/LocaleProvider';
 import {
   parseBrazilianDate,
   toBrazilianDate,
   toIsoDate,
 } from '../../utils/dateUtils';
+import { formatAssistantError } from '../../utils/assistantErrors';
+import { formatMoneyInput, parseMoneyInput } from '../../services/currencyService';
 import {
   getTripPlannerDraft,
   saveTripPlannerFormDraft,
 } from '../../services/tripPlannerDraftService';
 
 const TRAVELER_TYPES = ['Solo', 'Casal', 'Família', 'Amigos', 'Trabalho'];
-const formatAssistantError = ({ error, code, requestId }) => {
-  const friendlyMessage = error || 'Não foi possível gerar seu roteiro agora. Tente novamente.';
-  const shortRequestId = String(requestId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(-6);
-  const safeCode = String(code || 'PLANNER_UNEXPECTED_ERROR').replace(/[^A-Z0-9_]/gi, '').toUpperCase();
-  return `${friendlyMessage}\nCódigo: ${safeCode}-${shortRequestId || createAssistantRequestId().slice(-6)}`;
-};
 const initialForm = {
   origin: '',
   originDetails: null,
@@ -70,6 +68,8 @@ const initialForm = {
 };
 
 export default function TripPlannerScreen({ navigation, route }) {
+  const { t } = useLocale();
+  const insets = useSafeAreaInsets();
   const [form, setForm] = useState(() => {
     const initialRequest = route.params?.initialRequest || {};
     return {
@@ -249,13 +249,13 @@ export default function TripPlannerScreen({ navigation, route }) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}>
           <Ionicons name="arrow-back" size={22} color="#F7F7F2" />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Planejar com IA</Text>
-          <Text style={styles.headerSubtitle}>Um roteiro feito para o seu jeito de viajar</Text>
+          <Text style={styles.headerTitle}>{t('tripPlanner.title')}</Text>
+          <Text style={styles.headerSubtitle}>{t('tripPlanner.subtitle')}</Text>
         </View>
         <Ionicons name="sparkles" size={24} color="#8B5CF6" />
       </View>
@@ -267,8 +267,8 @@ export default function TripPlannerScreen({ navigation, route }) {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.hero}>
-          <Text style={styles.heroEyebrow}>SEU PRÓXIMO DESTINO</Text>
-          <Text style={styles.heroTitle}>Conte os detalhes. A gente organiza a aventura.</Text>
+          <Text style={styles.heroEyebrow}>{t('tripPlanner.destinationSection')}</Text>
+          <Text style={styles.heroTitle}>{t('tripPlanner.intro')}</Text>
           <Text style={styles.heroText}>
             Datas, orçamento e preferências ajudam a criar dias possíveis, próximos e personalizados.
           </Text>
@@ -280,20 +280,22 @@ export default function TripPlannerScreen({ navigation, route }) {
               <Ionicons name="return-up-forward" size={21} color="#C4B5FD" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.resumeTitle}>Retornar de onde parou</Text>
+              <Text style={styles.resumeTitle}>{t('tripPlanner.resumeDraftTitle')}</Text>
               <Text style={styles.resumeText} numberOfLines={2}>
                 {resumableDraft.type === 'result'
-                  ? `Seu roteiro para ${resumableDraft.request?.destination || 'a próxima viagem'} continua disponível.`
-                  : 'Continue preenchendo seu planejamento sem perder as informações.'}
+                  ? t('tripPlanner.resumeDraftResult', {
+                    destination: resumableDraft.request?.destination || t('tripPlanner.resumeDraftResultFallback'),
+                  })
+                  : t('tripPlanner.resumeDraftForm')}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={19} color="#A78BFA" />
           </TouchableOpacity>
         )}
 
-        <FormSection icon="location-outline" title="Trajeto">
+        <FormSection icon="location-outline" title={t('tripPlanner.routeSection')}>
           <LocationAutocomplete
-            label="Saindo de"
+            label={t('tripPlanner.originPlaceholder')}
             value={form.origin}
             onChange={(name, location) => {
               formTouched.current = true;
@@ -303,10 +305,10 @@ export default function TripPlannerScreen({ navigation, route }) {
                 originDetails: location,
               }));
             }}
-            placeholder="Cidade, país ou aeroporto (ex: GRU)"
+            placeholder={t('tripPlanner.destinationPlaceholder')}
           />
           <MultiDestinationSelector
-            label="Destinos e paradas"
+            label={t('tripPlanner.destinationsSection')}
             selected={form.destinations}
             onChange={destinations => {
               formTouched.current = true;
@@ -320,7 +322,7 @@ export default function TripPlannerScreen({ navigation, route }) {
           />
         </FormSection>
 
-        <FormSection icon="calendar-outline" title="Datas">
+        <FormSection icon="calendar-outline" title={t('tripPlanner.datesSection')}>
           <ChipGroup
             values={['Tenho as datas', 'Só sei a duração']}
             selected={[form.useDates ? 'Tenho as datas' : 'Só sei a duração']}
@@ -328,9 +330,9 @@ export default function TripPlannerScreen({ navigation, route }) {
           />
           {form.useDates ? (
             <View style={styles.row}>
-              <CalendarField label="Ida" value={form.startDate} onChange={value => update('startDate', value)} />
+              <CalendarField label={t('tripPlanner.departure')} value={form.startDate} onChange={value => update('startDate', value)} />
               <CalendarField
-                label="Volta"
+                label={t('tripPlanner.returnDate')}
                 value={form.endDate}
                 minDate={parseBrazilianDate(form.startDate) || new Date()}
                 onChange={value => update('endDate', value)}
@@ -338,11 +340,11 @@ export default function TripPlannerScreen({ navigation, route }) {
             </View>
           ) : (
             <Field
-              label="Quantos dias?"
+              label={t('tripPlanner.howManyDays')}
               value={form.duration}
               onChangeText={value => update('duration', value.replace(/\D/g, '').slice(0, 3))}
               keyboardType="number-pad"
-              placeholder="Ex: 7"
+              placeholder={t('tripPlanner.daysPlaceholder')}
             />
           )}
           <Text style={styles.helperText}>
@@ -350,9 +352,9 @@ export default function TripPlannerScreen({ navigation, route }) {
           </Text>
         </FormSection>
 
-        <FormSection icon="people-outline" title="Quem vai">
+        <FormSection icon="people-outline" title={t('tripPlanner.travelersSection')}>
           <Field
-            label="Número de viajantes"
+            label={t('tripPlanner.travelersLabel')}
             value={String(form.travelers)}
             onChangeText={value => update('travelers', value.replace(/\D/g, '').slice(0, 2))}
             keyboardType="number-pad"
@@ -361,7 +363,7 @@ export default function TripPlannerScreen({ navigation, route }) {
           <ChipGroup values={TRAVELER_TYPES} selected={[form.travelerType]} onPress={value => update('travelerType', value)} />
         </FormSection>
 
-        <FormSection icon="wallet-outline" title="Orçamento">
+        <FormSection icon="wallet-outline" title={t('tripPlanner.budgetSection')}>
           <DestinationBudgetPlanner
             budgetLevel={form.budgetLevel}
             onBudgetLevelChange={value => update('budgetLevel', value)}
@@ -380,26 +382,26 @@ export default function TripPlannerScreen({ navigation, route }) {
           />
         </FormSection>
 
-        <FormSection icon="speedometer-outline" title="Ritmo da viagem">
+        <FormSection icon="speedometer-outline" title={t('tripPlanner.paceSection')}>
           <Text style={styles.helperText}>
-            {`${TRAVEL_PACES.find(item => item.id === form.pace)?.stopsPerDay || 5} experiências por dia, organizadas por proximidade.`}
+            {t('tripPlanner.paceHint', { count: TRAVEL_PACES.find(item => item.id === form.pace)?.stopsPerDay || 5 })}
           </Text>
           <ChipGroup
-            values={TRAVEL_PACES.map(item => item.label)}
-            selected={[TRAVEL_PACES.find(item => item.id === form.pace)?.label]}
-            onPress={label => update('pace', TRAVEL_PACES.find(item => item.label === label)?.id || 'balanced')}
+            values={TRAVEL_PACES.map(item => t(item.labelKey))}
+            selected={[t(TRAVEL_PACES.find(item => item.id === form.pace)?.labelKey || 'tripPlanner.paces.balanced')]}
+            onPress={label => update('pace', TRAVEL_PACES.find(item => t(item.labelKey) === label)?.id || 'balanced')}
           />
         </FormSection>
 
-        <FormSection icon="heart-outline" title="O que você gosta">
-          <Text style={styles.helperText}>Escolha até 6 interesses.</Text>
+        <FormSection icon="heart-outline" title={t('tripPlanner.interestsSection')}>
+          <Text style={styles.helperText}>{t('tripPlanner.interestsHint')}</Text>
           <ChipGroup values={TRAVEL_INTERESTS} selected={form.interests} onPress={toggleInterest} />
         </FormSection>
 
-        <FormSection icon="options-outline" title="Preferências importantes">
-          <Field label="Alimentação" value={form.foodPreferences} onChangeText={value => update('foodPreferences', value)} placeholder="Ex: vegetariano, sem lactose..." multiline />
-          <Field label="Acessibilidade" value={form.accessibility} onChangeText={value => update('accessibility', value)} placeholder="Mobilidade, pausas, crianças, idosos..." multiline />
-          <Field label="Observações" value={form.notes} onChangeText={value => update('notes', value)} placeholder="Algo que não pode faltar ou que prefere evitar" multiline />
+        <FormSection icon="options-outline" title={t('tripPlanner.preferencesSection')}>
+          <Field label={t('tripPlanner.foodLabel')} value={form.foodPreferences} onChangeText={value => update('foodPreferences', value)} placeholder={t('tripPlanner.foodPlaceholder')} multiline />
+          <Field label={t('tripPlanner.accessibilityLabel')} value={form.accessibility} onChangeText={value => update('accessibility', value)} placeholder={t('tripPlanner.accessibilityPlaceholder')} multiline />
+          <Field label={t('tripPlanner.notesLabel')} value={form.notes} onChangeText={value => update('notes', value)} placeholder={t('tripPlanner.notesPlaceholder')} multiline />
         </FormSection>
 
         {!!error && (
@@ -417,7 +419,7 @@ export default function TripPlannerScreen({ navigation, route }) {
           {loading ? <ActivityIndicator color="#fff" /> : <Ionicons name="sparkles" size={20} color="#fff" />}
           <Text style={styles.generateText}>{loading ? 'Montando seu roteiro...' : 'Criar meu roteiro'}</Text>
         </TouchableOpacity>
-        <Text style={styles.disclaimer}>Custos e horários são estimativas. Confirme reservas e regras oficiais.</Text>
+        <Text style={styles.disclaimer}>{t('tripPlanner.estimatesDisclaimer')}</Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );

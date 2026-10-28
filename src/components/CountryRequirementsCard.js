@@ -2,6 +2,7 @@ import React from 'react';
 import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getFallbackTravelRequirements } from '../services/travelRequirementsService';
+import { useLocale } from '../i18n/LocaleProvider';
 
 // Cores do indicador. O "revisado" é verde-água discreto e o "geral" é âmbar:
 // âmbar porque é um aviso de que falta confirmação, e não um erro — vermelho
@@ -19,6 +20,7 @@ const GENERIC_COLOR = '#B45309';
  * mostrado.
  */
 function SourceBadge({ verified, palette }) {
+  const { t } = useLocale();
   const color = verified ? VERIFIED_COLOR : GENERIC_COLOR;
 
   return (
@@ -30,15 +32,16 @@ function SourceBadge({ verified, palette }) {
       />
       <Text style={[styles.badgeText, { color }]}>
         {verified
-          ? 'Informação específica revisada'
-          : 'Informação geral — confirme na fonte oficial'}
+          ? t('countryRequirements.specificReviewed')
+          : t('countryRequirements.genericReview')}
       </Text>
     </View>
   );
 }
 
 export default function CountryRequirementsCard({ countryCode, light = false }) {
-  const requirements = getFallbackTravelRequirements(countryCode);
+  const { t, tag } = useLocale();
+  const requirements = getFallbackTravelRequirements(countryCode, tag);
   const palette = light
     ? { card: '#FFFFFF', title: '#111827', text: '#596174', border: '#E5E7EB' }
     : { card: '#171D36', title: '#F7F7F2', text: '#A5ACC8', border: 'rgba(255,255,255,0.08)' };
@@ -49,14 +52,14 @@ export default function CountryRequirementsCard({ countryCode, light = false }) 
         <Ionicons name="shield-checkmark-outline" size={19} color="#8B5CF6" />
         <Text style={[styles.headingText, { color: palette.title }]}>
           {requirements.identified
-            ? `Entrada e saúde — ${requirements.countryName}`
-            : 'Entrada e saúde'}
+            ? t('countryRequirements.entryHealthFor', { country: requirements.countryName })
+            : t('countryRequirements.entryHealth')}
         </Text>
       </View>
       <View style={styles.item}>
         <Ionicons name="document-text-outline" size={17} color="#A78BFA" />
         <View style={styles.itemText}>
-          <Text style={[styles.label, { color: palette.title }]}>Documentos e autorizações</Text>
+          <Text style={[styles.label, { color: palette.title }]}>{t('countryRequirements.documentsSection')}</Text>
           <Text style={[styles.description, { color: palette.text }]}>{requirements.documents}</Text>
           <SourceBadge verified={requirements.documentsVerified} palette={palette} />
         </View>
@@ -64,12 +67,12 @@ export default function CountryRequirementsCard({ countryCode, light = false }) 
       <View style={styles.item}>
         <Ionicons name="medical-outline" size={17} color="#35D3C8" />
         <View style={styles.itemText}>
-          <Text style={[styles.label, { color: palette.title }]}>Vacinas e saúde</Text>
+          <Text style={[styles.label, { color: palette.title }]}>{t('countryRequirements.vaccinesSection')}</Text>
           <Text style={[styles.description, { color: palette.text }]}>{requirements.health}</Text>
           <SourceBadge verified={requirements.healthVerified} palette={palette} />
         </View>
       </View>
-      <Text style={[styles.disclaimer, { color: palette.text }]}>Regras mudam. Confirme nas fontes oficiais antes de comprar ou embarcar.</Text>
+      <Text style={[styles.disclaimer, { color: palette.text }]}>{t('countryRequirements.disclaimer')}</Text>
       <View style={styles.links}>
         <TouchableOpacity onPress={() => Linking.openURL(requirements.documentsUrl)}>
           <Text style={styles.link}>{requirements.documentsSourceLabel}</Text>

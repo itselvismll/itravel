@@ -1,7 +1,7 @@
 ﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Image, TextInput,
-  StyleSheet, ActivityIndicator, Modal, FlatList, Alert, Platform
+  StyleSheet, ActivityIndicator, Modal, FlatList, Alert, Platform, Linking
 } from 'react-native';
 import CachedImage from '../../components/CompatibleImage';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,7 +10,7 @@ import { getCurrentUser } from '../../services/supabase';
 import {
   ALPHA3_TO_ALPHA2,
   getAlpha3,
-  getCountryNamePtByCode,
+  getCountryName,
 } from '../../utils/countryUtils';
 import {
   searchCountries,
@@ -27,6 +27,9 @@ import { useUpload } from '../../context/UploadContext';
 import { COUNTRIES_STATIC } from '../../data/countriesStaticData';
 import { confirm, notify } from '../../utils/dialogs';
 import { getTourismImage } from '../../services/tourismImageService';
+import { useLocale } from '../../i18n/LocaleProvider';
+import { formatDayMonthPadded } from '../../utils/formatDate';
+import { buildGetYourGuideSearchUrl } from '../../utils/getYourGuideLink';
 
 const MOCK_USERS = [
   { id: '1', username: 'maria_viaja', display_name: 'Maria', avatar_url: null, countries: 12 },
@@ -60,6 +63,7 @@ const getSeasonalBoost = countryCode => {
 };
 
 export default function ExploreScreen({ navigation }) {
+  const { t, tag } = useLocale();
   // A tab bar flutua SOBRE a lista e não reserva espaço no layout: sem esta
   // folga o botão "Seguir" dos últimos usuários nasce atrás dela, invisível e
   // sem receber toque.
@@ -90,12 +94,19 @@ export default function ExploreScreen({ navigation }) {
     if (refreshTrigger > 0) loadData();
   }, [refreshTrigger]);
 
+  // Separado do loadData: o nome do país depende só do idioma, não de rede, e
+  // reaproveitar o loadData inteiro a cada troca de idioma refaria chamadas
+  // (seguidores, sugestões) que não têm nada a ver com nome de país.
+  useEffect(() => {
+    setAllCountries(buildFallbackCountries());
+  }, [tag]);
+
   const loadData = async () => {
     setLoading(true);
     const user = await getCurrentUser();
     setCurrentUser(user);
 
-    const parallelTasks = [loadPersonalizedExplore(user), loadAllCountries()];
+    const parallelTasks = [loadPersonalizedExplore(user)];
     if (user) {
       parallelTasks.push(
         getFollowing(user.id).then(r => { if (r.success) setFollowing(r.data); }),
@@ -112,13 +123,9 @@ export default function ExploreScreen({ navigation }) {
       .map(([code, country]) => ({
         code,
         nameEn: country.name,
-        name: getCountryNamePtByCode(code, country.name),
+        name: getCountryName(code, country.name, tag),
       }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-  const loadAllCountries = () => {
-    setAllCountries(buildFallbackCountries());
-  };
+      .sort((a, b) => a.name.localeCompare(b.name, tag));
 
   const loadPersonalizedExplore = async (user) => {
     const [photosResult, interactionsResult, wishlistResult, followsResult] = await Promise.all([
@@ -140,7 +147,7 @@ export default function ExploreScreen({ navigation }) {
     photos.forEach(photo => {
       const code = getAlpha3(photo.country_code)?.toUpperCase();
       if (!code) return;
-      if (!countries[code]) countries[code] = { country_code: code, country_name: photo.country_name, count: 0, totalRating: 0, ratingCount: 0, users: new Set(), score: interactionScores[code] || 0, coverUrl: photo.photo_url, imageSource: 'Comunidade Journi' };
+      if (!countries[code]) countries[code] = { country_code: code, country_name: photo.country_name, count: 0, totalRating: 0, ratingCount: 0, users: new Set(), score: interactionScores[code] || 0, coverUrl: photo.photo_url, imageSource: t('explore.communityCredit') };
       const entry = countries[code];
       entry.count += 1;
       entry.users.add(photo.user_id);
@@ -152,7 +159,7 @@ export default function ExploreScreen({ navigation }) {
       if (countries[code]) return;
       countries[code] = {
         country_code: code,
-        country_name: getCountryNamePtByCode(code, COUNTRIES_STATIC[code]?.name || code),
+        country_name: getCountryName(code, COUNTRIES_STATIC[code]?.name || code, tag),
         count: 0,
         totalRating: 0,
         ratingCount: 0,
@@ -241,7 +248,7 @@ export default function ExploreScreen({ navigation }) {
       : await followUser(currentUser.id, userId);
 
     if (!result.success) {
-      Alert.alert('Erro', result.error || 'Não foi possível atualizar este perfil.');
+      Alert.alert(t('explore.updateProfileFailedTitle'), result.error || t('explore.updateProfileFailed'));
       return;
     }
 
@@ -253,8 +260,8 @@ export default function ExploreScreen({ navigation }) {
   const handleDeleteCountryPhoto = async photo => {
     if (!photo || photo.user_id !== currentUser?.id || deletingPhotoId) return;
     const accepted = await confirm(
-      'Excluir publicação',
-      'A foto, a legenda e os comentários serão excluídos permanentemente. Deseja continuar?'
+      t('post.delete.confirmTitle'),
+      t('post.delete.confirmMessage')
     );
     if (!accepted) return;
 
@@ -262,12 +269,12 @@ export default function ExploreScreen({ navigation }) {
     const result = await deletePhoto(photo.id, photo.photo_path);
     setDeletingPhotoId(null);
     if (!result.success) {
-      notify('Erro ao excluir', result.error || 'Não foi possível excluir esta publicação.');
+      notify(t('explore.deletePostFailedTitle'), result.error || t('explore.deletePostFailed'));
       return;
     }
     setCountryPhotos(current => current.filter(item => item.id !== photo.id));
     setFullscreenPhoto(null);
-    notify('Publicação excluída', 'Sua foto foi removida.');
+    notify(t('explore.deletePostDoneTitle'), t('explore.deletePostDoneMessage'));
     loadPersonalizedExplore(currentUser);
   };
 
@@ -317,13 +324,13 @@ export default function ExploreScreen({ navigation }) {
     <View style={styles.container}>
       {/* HEADER FIXO */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Explorar</Text>
-        <Text style={styles.headerSub}>Descubra destinos e viajantes</Text>
+        <Text style={styles.headerTitle}>{t('explore.title')}</Text>
+        <Text style={styles.headerSub}>{t('explore.subtitle')}</Text>
         <View style={styles.searchBox}>
           <Ionicons name="search-outline" size={16} color="rgba(255,255,255,0.4)" />
           <TextInput
             style={styles.searchInput}
-            placeholder="Buscar destinos ou pessoas..."
+            placeholder={t('explore.searchPlaceholder')}
             placeholderTextColor="rgba(255,255,255,0.3)"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -350,7 +357,7 @@ export default function ExploreScreen({ navigation }) {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.searchResultText}>{traveler.display_name || traveler.username}</Text>
                   {traveler.matchedCountry && (
-                    <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>Visitou {traveler.matchedCountry}</Text>
+                    <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>{t('explore.visited', { country: traveler.matchedCountry })}</Text>
                   )}
                 </View>
                 <TouchableOpacity
@@ -358,7 +365,7 @@ export default function ExploreScreen({ navigation }) {
                   onPress={() => handleFollowToggle(traveler.id)}
                 >
                   <Text style={[styles.followBtnText, following.includes(traveler.id) && styles.followBtnTextActive]}>
-                    {following.includes(traveler.id) ? 'Seguindo' : 'Seguir'}
+                    {following.includes(traveler.id) ? t('explore.following') : t('explore.follow')}
                   </Text>
                 </TouchableOpacity>
               </TouchableOpacity>
@@ -395,7 +402,7 @@ export default function ExploreScreen({ navigation }) {
             {/* SUGERIDOS PARA VOCÊ */}
             {suggestedTravelers.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>SUGERIDOS PARA VOCÊ</Text>
+                <Text style={styles.sectionTitle}>{t('explore.suggestedSection')}</Text>
                 <FlatList
                   data={suggestedTravelers}
                   horizontal
@@ -418,7 +425,7 @@ export default function ExploreScreen({ navigation }) {
                         onPress={() => handleFollowToggle(item.id)}
                       >
                         <Text style={[styles.followBtnText, following.includes(item.id) && styles.followBtnTextActive]}>
-                          {following.includes(item.id) ? 'Seguindo' : 'Seguir'}
+                          {following.includes(item.id) ? t('explore.following') : t('explore.follow')}
                         </Text>
                       </TouchableOpacity>
                     </TouchableOpacity>
@@ -430,7 +437,7 @@ export default function ExploreScreen({ navigation }) {
             {/* DESTINOS POPULARES */}
             {popularCountries.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>DESTINOS EM ALTA NESTA ÉPOCA</Text>
+                <Text style={styles.sectionTitle}>{t('explore.trendingSection')}</Text>
                 <View style={styles.destGrid}>
                   {popularCountries.map((country, i) => (
                     <TouchableOpacity
@@ -451,16 +458,19 @@ export default function ExploreScreen({ navigation }) {
                         style={styles.destinationFlag}
                       />
                       <Text style={styles.destName} numberOfLines={1}>
-                        {getCountryNamePtByCode(country.country_code, country.country_name)}
+                        {getCountryName(country.country_code, country.country_name, tag)}
                       </Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={styles.destCount}>
                           {country.count
-                            ? `${country.count} ${country.count === 1 ? 'foto' : 'fotos'}`
-                            : 'Tendência sazonal'}
+                            ? t('common.plural.photo', { count: country.count })
+                            : t('explore.seasonalTrend')}
                         </Text>
                         {country.avgRating && (
-                          <Text style={styles.destRating}>★ {country.avgRating}</Text>
+                          <View style={styles.destRatingRow}>
+                            <Ionicons name="star" size={11} color="#FF9A00" />
+                            <Text style={styles.destRating}>{country.avgRating}</Text>
+                          </View>
                         )}
                       </View>
                       {!!country.imageSource && <Text style={styles.imageSource}>{country.imageSource}</Text>}
@@ -472,7 +482,7 @@ export default function ExploreScreen({ navigation }) {
 
             {/* FOTOS PERSONALIZADAS */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>FOTOS RECOMENDADAS PARA VOCÊ</Text>
+              <Text style={styles.sectionTitle}>{t('explore.recommendedPhotosSection')}</Text>
               {recentPhotos.map((photo) => (
                 <TouchableOpacity
                   key={photo.id}
@@ -496,7 +506,7 @@ export default function ExploreScreen({ navigation }) {
                         <Text style={styles.recentAuthorHandle}>@{photo.profiles?.username}</Text>
                       </View>
                       <Text style={styles.recentDate}>
-                        {new Date(photo.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                        {formatDayMonthPadded(photo.created_at, tag)}
                       </Text>
                     </View>
 
@@ -529,7 +539,7 @@ export default function ExploreScreen({ navigation }) {
             {/* VIAJANTES */}
             {(discoverUsers.length > 0 || MOCK_USERS.length > 0) && (
             <View style={styles.card}>
-              <Text style={styles.sectionTitle}>VIAJANTES</Text>
+              <Text style={styles.sectionTitle}>{t('explore.travelersSection')}</Text>
               {(discoverUsers.length > 0 ? discoverUsers : MOCK_USERS).map((user, i) => {
                 const list = discoverUsers.length > 0 ? discoverUsers : MOCK_USERS;
                 return (
@@ -552,7 +562,7 @@ export default function ExploreScreen({ navigation }) {
                     onPress={() => handleFollowToggle(user.id)}
                   >
                     <Text style={[styles.followBtnText, following.includes(user.id) && styles.followBtnTextActive]}>
-                      {following.includes(user.id) ? 'Seguindo' : 'Seguir'}
+                      {following.includes(user.id) ? t('explore.following') : t('explore.follow')}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -586,9 +596,10 @@ export default function ExploreScreen({ navigation }) {
               )}
               <Text style={styles.modalHeaderTitle}>
                 {selectedCountry
-                  ? getCountryNamePtByCode(
+                  ? getCountryName(
                       selectedCountry.country_code,
-                      selectedCountry.country_name
+                      selectedCountry.country_name,
+                      tag
                     )
                   : ''}
               </Text>
@@ -602,23 +613,58 @@ export default function ExploreScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {loadingPhotos ? (
-            <ActivityIndicator color="#6C2BD9" style={{ marginTop: 40 }} />
-          ) : countryPhotos.length === 0 ? (
-            <View style={{ alignItems: 'center', marginTop: 60, gap: 12 }}>
-              <Ionicons name="images-outline" size={48} color="#ddd" />
-              <Text style={{ color: '#aaa', fontSize: 14, fontWeight: '500' }}>
-                Nenhuma foto pública neste país ainda
-              </Text>
-              <Text style={{ color: '#ccc', fontSize: 12 }}>
-                Seja o primeiro a compartilhar!
-              </Text>
-            </View>
-          ) : (
+          {/* Passeios (afiliado GetYourGuide) entra como ListHeaderComponent do
+              FlatList abaixo, não como um irmão fixo antes dele: fora da
+              lista, ele fica parado na tela enquanto o feed de fotos rola por
+              baixo — sobreposição visual feia. Como header da lista, rola
+              junto com o resto do conteúdo, como mais um bloco. Nos estados de
+              loading/vazio (sem FlatList) ele entra direto no fluxo normal,
+              que já rola sem esse problema. */}
+          {(() => {
+            const tourCity = selectedCountry
+              ? getCountryName(selectedCountry.country_code, selectedCountry.country_name, tag)
+              : '';
+            const tourUrl = selectedCountry ? buildGetYourGuideSearchUrl(tourCity) : null;
+            const toursSectionBlock = tourUrl ? (
+              <View style={styles.toursSection}>
+                <Text style={styles.toursSectionTitle}>{t('explore.toursSection', { city: tourCity })}</Text>
+                <TouchableOpacity style={styles.toursBtn} onPress={() => Linking.openURL(tourUrl)}>
+                  <Ionicons name="pricetag-outline" size={18} color="#fff" />
+                  <Text style={styles.toursBtnText}>{t('explore.toursCta')}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null;
+
+            if (loadingPhotos) {
+              return (
+                <>
+                  {toursSectionBlock}
+                  <ActivityIndicator color="#6C2BD9" style={{ marginTop: 40 }} />
+                </>
+              );
+            }
+            if (countryPhotos.length === 0) {
+              return (
+                <>
+                  {toursSectionBlock}
+                  <View style={{ alignItems: 'center', marginTop: 60, gap: 12 }}>
+                    <Ionicons name="images-outline" size={48} color="#ddd" />
+                    <Text style={{ color: '#aaa', fontSize: 14, fontWeight: '500' }}>
+                      Nenhuma foto pública neste país ainda
+                    </Text>
+                    <Text style={{ color: '#ccc', fontSize: 12 }}>
+                      Seja o primeiro a compartilhar!
+                    </Text>
+                  </View>
+                </>
+              );
+            }
+            return (
             <FlatList
               data={countryPhotos}
               keyExtractor={photo => photo.id}
               contentContainerStyle={{ padding: 12, gap: 10 }}
+              ListHeaderComponent={toursSectionBlock}
               initialNumToRender={4}
               maxToRenderPerBatch={4}
               windowSize={5}
@@ -642,7 +688,7 @@ export default function ExploreScreen({ navigation }) {
                       <Avatar profile={photo.profiles} size={28} />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.photoCardName}>
-                          {photo.profiles?.display_name || photo.profiles?.username || 'Viajante'}
+                          {photo.profiles?.display_name || photo.profiles?.username || t('explore.unnamed')}
                         </Text>
                         <Text style={styles.photoCardHandle}>
                           @{photo.profiles?.username || ''}
@@ -650,7 +696,7 @@ export default function ExploreScreen({ navigation }) {
                       </View>
                       <Text style={styles.photoCardDate}>
                         {photo.created_at
-                          ? new Date(photo.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+                          ? formatDayMonthPadded(photo.created_at, tag)
                           : ''}
                       </Text>
                     </View>
@@ -684,7 +730,8 @@ export default function ExploreScreen({ navigation }) {
                 </TouchableOpacity>
               )}
             />
-          )}
+            );
+          })()}
         </View>
       </Modal>
 
@@ -704,7 +751,7 @@ export default function ExploreScreen({ navigation }) {
               style={styles.fullscreenDelete}
               onPress={() => handleDeleteCountryPhoto(fullscreenPhoto)}
               disabled={deletingPhotoId === fullscreenPhoto?.id}
-              accessibilityLabel="Excluir minha publicação"
+              accessibilityLabel={t('explore.deletePostLabel')}
             >
               {deletingPhotoId === fullscreenPhoto?.id
                 ? <ActivityIndicator size="small" color="#fff" />
@@ -797,6 +844,7 @@ const styles = StyleSheet.create({
   destName: { color: 'white', fontSize: 13, fontWeight: '700' },
   destCount: { color: 'rgba(255,255,255,0.7)', fontSize: 10 },
   destRating: { color: '#6C2BD9', fontSize: 10, fontWeight: '600' },
+  destRatingRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   imageSource: { color: 'rgba(255,255,255,0.58)', fontSize: 8 },
   card: { backgroundColor: 'white', borderRadius: 12, margin: 12, padding: 14 },
   userRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: '#f0f0f0' },
@@ -806,6 +854,24 @@ const styles = StyleSheet.create({
   userName: { fontSize: 14, fontWeight: '600', color: '#0D1326' },
   userMeta: { fontSize: 11, color: '#aaa', marginTop: 1 },
   followBtn: { backgroundColor: '#6C2BD9', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 6 },
+  toursSection: { padding: 12, paddingBottom: 0 },
+  // Mesma família/peso/letterSpacing do rótulo de seção já usado em
+  // SettingsDrawer.js/AssistantResultScreen.js (`Inter_600SemiBold`) — não o
+  // `sectionTitle` desta tela, que nunca definiu fontFamily e por isso cai na
+  // fonte do sistema, diferente do resto do app.
+  toursSectionTitle: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    fontFamily: 'Inter_600SemiBold',
+    letterSpacing: 1,
+    color: '#999',
+    marginBottom: 10,
+  },
+  toursBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: '#6C2BD9', borderRadius: 10, paddingVertical: 12,
+  },
+  toursBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   followBtnActive: { backgroundColor: '#f0f0f0' },
   followBtnText: { color: 'white', fontSize: 12, fontWeight: '600' },
   followBtnTextActive: { color: '#999' },

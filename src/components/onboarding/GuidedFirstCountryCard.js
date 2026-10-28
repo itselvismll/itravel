@@ -7,6 +7,7 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, View, Text, Pressable, StyleSheet, Platform, Easing } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../utils/constants';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 // backdrop-filter é CSS: existe só no web. Mesmo tratamento do pill de países
 // visitados na GlobeScreen.
@@ -20,6 +21,7 @@ const blur = /** @type {any} */ (
  * @param {{ onSkip: () => void, bottom: number }} props
  */
 export default function GuidedFirstCountryCard({ onSkip, bottom }) {
+  const { t } = useLocale();
   // Entrada em fade + subida curta: o card chega junto com o globo, sem cortar
   // a transição vinda dos slides.
   const enter = useRef(new Animated.Value(0)).current;
@@ -89,7 +91,7 @@ export default function GuidedFirstCountryCard({ onSkip, bottom }) {
         </View>
 
         <View style={styles.copy}>
-          <Text style={styles.title} accessibilityRole="header">Marque seu primeiro país</Text>
+          <Text style={styles.title} accessibilityRole="header">{t('onboarding.markFirstCountry')}</Text>
           <Text style={styles.subtitle}>
             Toque em um país que você já visitou para começar seu mapa.
           </Text>
@@ -97,12 +99,12 @@ export default function GuidedFirstCountryCard({ onSkip, bottom }) {
 
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Pular esta etapa"
+          accessibilityLabel={t('onboarding.skipStepLabel')}
           onPress={onSkip}
           hitSlop={8}
           style={({ pressed }) => [styles.skip, pressed && { opacity: 0.6 }]}
         >
-          <Text style={styles.skipLabel}>Pular</Text>
+          <Text style={styles.skipLabel}>{t('common.actions.skip')}</Text>
         </Pressable>
       </Animated.View>
     </View>

@@ -2,6 +2,7 @@ import React, { forwardRef, useCallback, useImperativeHandle, useState } from 'r
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Hcaptcha } from '@hcaptcha/react-native-hcaptcha';
 import { COLORS, SIZES } from '../../utils/constants';
+import { useLocale } from '../../i18n/LocaleProvider';
 import { HCAPTCHA_BASE_URL, HCAPTCHA_ENABLED, HCAPTCHA_SITE_KEY } from './hcaptchaConfig';
 
 /**
@@ -27,10 +28,12 @@ import { HCAPTCHA_BASE_URL, HCAPTCHA_ENABLED, HCAPTCHA_SITE_KEY } from './hcaptc
  * @param {import('react').ForwardedRef<HCaptchaWidgetHandle>} ref
  */
 function HCaptchaWidgetImpl({ onVerify, onError, theme = 'light', style }, ref) {
+  const { t } = useLocale();
   const [verified, setVerified] = useState(false);
   const [challengeOpen, setChallengeOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  const [message, setMessage] = useState('Conclua a verificação para continuar.');
+  const [hasLoadError, setHasLoadError] = useState(false);
+  const [message, setMessage] = useState(() => t('auth.captchaWidget.initial'));
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const isDark = theme === 'dark';
   // O widget normal mede cerca de 303 px e o HTML interno ainda possui margens.
@@ -43,9 +46,10 @@ function HCaptchaWidgetImpl({ onVerify, onError, theme = 'light', style }, ref) 
   const clearToken = useCallback(() => {
     setVerified(false);
     setChallengeOpen(false);
-    setMessage('Conclua a verificação para continuar.');
+    setHasLoadError(false);
+    setMessage(t('auth.captchaWidget.initial'));
     onVerify?.(null);
-  }, [onVerify]);
+  }, [onVerify, t]);
 
   const reset = useCallback(() => {
     clearToken();
@@ -55,15 +59,16 @@ function HCaptchaWidgetImpl({ onVerify, onError, theme = 'light', style }, ref) 
   const markUsed = useCallback(() => {
     setVerified(false);
     setChallengeOpen(false);
-    setMessage('Conclua a verificação para continuar.');
+    setHasLoadError(false);
+    setMessage(t('auth.captchaWidget.initial'));
     setReloadKey(current => current + 1);
-  }, []);
+  }, [t]);
 
   const open = useCallback(() => {
     if (!verified) {
-      setMessage('Resolva a verificação acima antes de continuar.');
+      setMessage(t('auth.captchaWidget.openPrompt'));
     }
-  }, [verified]);
+  }, [verified, t]);
 
   useImperativeHandle(ref, () => ({ reset, markUsed, open }), [reset, markUsed, open]);
 
@@ -74,47 +79,51 @@ function HCaptchaWidgetImpl({ onVerify, onError, theme = 'light', style }, ref) 
     if (event.success && data.length > 35) {
       setVerified(true);
       setChallengeOpen(false);
-      setMessage('Verificação concluída.');
+      setHasLoadError(false);
+      setMessage(t('auth.captchaWidget.success'));
       onVerify?.(data);
       return;
     }
 
     if (data === 'open') {
       setChallengeOpen(true);
-      setMessage('Selecione as imagens solicitadas e confirme a verificação.');
+      setHasLoadError(false);
+      setMessage(t('auth.captchaWidget.selectImages'));
       return;
     }
 
     if (data === 'challenge-closed' || data === 'cancel') {
       setChallengeOpen(false);
-      setMessage('Toque na caixa de verificação para tentar novamente.');
+      setHasLoadError(false);
+      setMessage(t('auth.captchaWidget.retry'));
       return;
     }
 
     clearToken();
 
     if (data === 'expired' || data === 'challenge-expired') {
-      setMessage('A verificação expirou. Tente novamente.');
+      setMessage(t('auth.captchaWidget.expired'));
       event?.reset?.();
       return;
     }
 
     if (data === 'loading timeout') {
-      setMessage('Ainda carregando a verificação. Aguarde alguns segundos.');
+      setMessage(t('auth.captchaWidget.loadingTimeout'));
       return;
     }
 
     const description = event?.nativeEvent?.description;
     const detail = description || data;
-    setMessage(`Não foi possível carregar a verificação: ${detail}`);
+    setHasLoadError(true);
+    setMessage(t('auth.captchaWidget.loadError', { detail }));
     onError?.(detail);
-  }, [clearToken, onError, onVerify]);
+  }, [clearToken, onError, onVerify, t]);
 
   if (!HCAPTCHA_ENABLED) {
     return (
       <View style={[styles.container, style]}>
         <Text style={[styles.message, styles.messageError]}>
-          Verificação de segurança indisponível: defina EXPO_PUBLIC_HCAPTCHA_SITE_KEY.
+          {t('auth.captchaWidget.disabled')}
         </Text>
       </View>
     );
@@ -151,7 +160,7 @@ function HCaptchaWidgetImpl({ onVerify, onError, theme = 'light', style }, ref) 
           styles.message,
           isDark && styles.messageDark,
           verified && styles.messageSuccess,
-          message.startsWith('Não foi possível') && styles.messageError,
+          hasLoadError && styles.messageError,
         ]}
       >
         {message}

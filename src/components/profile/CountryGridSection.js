@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import CountryTag, { TAG_HEIGHT, TAG_WIDTH } from './CountryTag';
 import CountryListModal from './CountryListModal';
 import { GRID_LIMIT, countryKey, gridSlots, tagRotation } from './countryGridData';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 /**
  * @param {{
@@ -36,6 +37,7 @@ export default function CountryGridSection({
   emptyState = null,
   limit = GRID_LIMIT,
 }) {
+  const { t } = useLocale();
   const [expanded, setExpanded] = useState(false);
   const { visible, remaining, hasMore } = gridSlots(countries, limit);
 
@@ -68,7 +70,12 @@ export default function CountryGridSection({
 
       {isEmpty && emptyState ? (
         <View style={styles.empty}>
-          <Text style={styles.emptyIcon}>{emptyState.icon || '🧳'}</Text>
+          <Ionicons
+            name={/** @type {any} */ (emptyState.icon || 'bag-outline')}
+            size={26}
+            color="rgba(255,255,255,0.3)"
+            style={styles.emptyIcon}
+          />
           <Text style={styles.emptyText}>{emptyState.text}</Text>
         </View>
       ) : (
@@ -101,7 +108,7 @@ export default function CountryGridSection({
               <Text style={[styles.moreCount, !!accentColor && { color: accentColor }]}>
                 +{remaining}
               </Text>
-              <Text style={styles.moreLabel}>ver todos</Text>
+              <Text style={styles.moreLabel}>{t('common.actions.seeAll')}</Text>
             </Pressable>
           )}
         </View>
@@ -174,6 +181,6 @@ const styles = StyleSheet.create({
   moreCount: { fontSize: 16, fontWeight: '800', color: '#46371E' },
   moreLabel: { fontSize: 8, fontWeight: '700', color: '#8A7B5E', letterSpacing: 0.4 },
   empty: { alignItems: 'center', paddingVertical: 20, gap: 10 },
-  emptyIcon: { fontSize: 32 },
+  emptyIcon: { marginBottom: 2 },
   emptyText: { fontSize: 12, color: '#bbb', textAlign: 'center', lineHeight: 18 },
 });

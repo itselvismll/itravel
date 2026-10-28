@@ -1,9 +1,12 @@
 import { supabase } from './supabase';
 
+// O texto saiu para pt.json (support.categories.*) na fase 1 do i18n. O `id` é o
+// que vai para a coluna `category` do ticket (ver createSupportTicket); o
+// `labelKey` é só exibição — quem resolve é a tela, com `t()`.
 export const SUPPORT_CATEGORIES = [
-  { id: 'bug', label: 'Reportar um bug' },
-  { id: 'duvida', label: 'Dúvida' },
-  { id: 'sugestao', label: 'Sugestão' },
+  { id: 'bug', labelKey: 'support.categories.bug' },
+  { id: 'duvida', labelKey: 'support.categories.duvida' },
+  { id: 'sugestao', labelKey: 'support.categories.sugestao' },
 ];
 
 export const createSupportTicket = async ({ userId, email, category, description }) => {

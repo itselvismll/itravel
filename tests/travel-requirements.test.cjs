@@ -14,6 +14,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { loadEsm } = require('./helpers/load-esm.cjs');
+const { countryUtilsDeps } = require('./helpers/countryUtilsDeps.cjs');
 
 const readSource = (file) => fs.readFileSync(path.resolve(__dirname, '..', file), 'utf8');
 
@@ -23,11 +24,12 @@ const stripComments = (source) => source
   .replace(/\/\*[\s\S]*?\*\//g, ' ')
   .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 
-const countryUtils = loadEsm('src/utils/countryUtils.js', {});
+const countryUtils = loadEsm('src/utils/countryUtils.js', countryUtilsDeps());
 const preposition = loadEsm('src/utils/countryPreposition.js', {});
 const service = loadEsm('src/services/travelRequirementsService.js', {
   '../utils/countryUtils': countryUtils,
   '../utils/countryPreposition': preposition,
+  '../utils/constants': loadEsm('src/utils/constants.js'),
 });
 
 const {
@@ -174,8 +176,10 @@ test('a data exposta é a da revisão do texto pela equipe', () => {
 test('o card mostra o indicador nos dois blocos', () => {
   const card = readSource('src/components/CountryRequirementsCard.js');
 
-  assert.match(card, /Informação específica revisada/);
-  assert.match(card, /Informação geral — confirme na fonte oficial/);
+  // O texto virou chave no lote 5 (src/i18n/locales/pt.json); a asserção passa
+  // a cobrar a chave.
+  assert.match(card, /countryRequirements\.specificReviewed/);
+  assert.match(card, /countryRequirements\.genericReview/);
   // Um por bloco: documentos e vacina podem discordar.
   assert.match(card, /<SourceBadge verified=\{requirements\.documentsVerified\}/);
   assert.match(card, /<SourceBadge verified=\{requirements\.healthVerified\}/);

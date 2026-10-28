@@ -10,6 +10,7 @@ import {
   parseMoneyInput,
   sanitizeMoneyInput,
 } from '../services/currencyService';
+import { useLocale } from '../i18n/LocaleProvider';
 
 const BUDGET_LEVELS = [
   {
@@ -54,6 +55,7 @@ export default function DestinationBudgetPlanner({
   onConversionChange,
   initialAmount = '1',
 }) {
+  const { t } = useLocale();
   const [levelMenuOpen, setLevelMenuOpen] = useState(false);
   const [amount, setAmount] = useState(() => formatMoneyInput(initialAmount) || '1');
   const [rate, setRate] = useState(null);
@@ -115,12 +117,12 @@ export default function DestinationBudgetPlanner({
   return (
     <View style={styles.wrapper}>
       <View>
-        <Text style={styles.title}>Orçamento da viagem</Text>
-        <Text style={styles.subtitle}>Escolha seu estilo. A IA pesquisa os custos e estima quanto a viagem realmente deve custar.</Text>
+        <Text style={styles.title}>{t('destinationBudgetPlanner.title')}</Text>
+        <Text style={styles.subtitle}>{t('destinationBudgetPlanner.subtitle')}</Text>
       </View>
 
       <View style={styles.preferenceBlock}>
-        <Text style={styles.fieldLabel}>COMO VOCÊ QUER VIAJAR?</Text>
+        <Text style={styles.fieldLabel}>{t('destinationBudgetPlanner.styleSection')}</Text>
         <TouchableOpacity
           style={styles.levelSelector}
           onPress={() => setLevelMenuOpen(current => !current)}
@@ -164,16 +166,16 @@ export default function DestinationBudgetPlanner({
             })}
           </View>
         )}
-        <Text style={styles.aiHint}>Não existe limite por destino: o roteiro mostrará a estimativa encontrada para passagem, hospedagem, alimentação, transporte e passeios.</Text>
+        <Text style={styles.aiHint}>{t('destinationBudgetPlanner.styleHint')}</Text>
       </View>
 
       <View style={styles.converterBlock}>
         <View style={styles.converterHeader}>
           <View style={styles.converterTitleRow}>
             <Ionicons name="swap-horizontal-outline" size={18} color="#35D3C8" />
-            <Text style={styles.converterTitle}>Conversor de moedas</Text>
+            <Text style={styles.converterTitle}>{t('destinationBudgetPlanner.converterTitle')}</Text>
           </View>
-          <Text style={styles.converterSubtitle}>Compare qualquer moeda sem alterar a moeda usada no roteiro.</Text>
+          <Text style={styles.converterSubtitle}>{t('destinationBudgetPlanner.converterSubtitle')}</Text>
         </View>
 
         {!!rate && !loading && (
@@ -219,7 +221,7 @@ export default function DestinationBudgetPlanner({
         {!!error && <Text style={styles.errorText} selectable>{error}</Text>}
         {!!rateDate && !error && (
           <Text style={styles.rateText}>
-            Cotação de {rateDate}{rateSource ? ' • Fonte: ' : ''}
+            {t('destinationBudgetPlanner.rateQuoteDate', { date: rateDate })}{rateSource ? t('destinationBudgetPlanner.rateSourcePrefix') : ''}
             {rateSource.includes('ExchangeRate-API') ? (
               <Text style={styles.rateLink} onPress={() => Linking.openURL('https://www.exchangerate-api.com')}>
                 {rateSource}

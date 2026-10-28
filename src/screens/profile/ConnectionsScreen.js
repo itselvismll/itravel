@@ -10,12 +10,14 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../../components/Avatar';
+import { useLocale } from '../../i18n/LocaleProvider';
 import {
   getFollowerProfiles,
   getFollowingProfiles,
 } from '../../services/followService';
 
 export default function ConnectionsScreen({ route, navigation }) {
+  const { t } = useLocale();
   const { userId, mode = 'followers' } = route.params;
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -29,7 +31,7 @@ export default function ConnectionsScreen({ route, navigation }) {
       : await getFollowerProfiles(userId);
     setProfiles(result.data || []);
     if (!result.success) {
-      setError('Não foi possível carregar esta lista.');
+      setError(t('connections.loadFailed'));
     }
     setLoading(false);
   }, [mode, userId]);
@@ -40,13 +42,13 @@ export default function ConnectionsScreen({ route, navigation }) {
     }, [loadProfiles])
   );
 
-  const title = mode === 'following' ? 'Seguindo' : 'Seguidores';
+  const title = mode === 'following' ? t('connections.following') : t('connections.followers');
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity
-          accessibilityLabel="Voltar"
+          accessibilityLabel={t('common.actions.back')}
           onPress={() => navigation.goBack()}
           style={styles.backButton}
         >
@@ -62,7 +64,7 @@ export default function ConnectionsScreen({ route, navigation }) {
         <View style={styles.empty}>
           <Text style={styles.emptyText}>{error}</Text>
           <TouchableOpacity onPress={loadProfiles} style={styles.retryButton}>
-            <Text style={styles.retryText}>Tentar novamente</Text>
+            <Text style={styles.retryText}>{t('notifications.retry')}</Text>
           </TouchableOpacity>
         </View>
       ) : profiles.length === 0 ? (
@@ -70,8 +72,8 @@ export default function ConnectionsScreen({ route, navigation }) {
           <Ionicons name="people-outline" size={42} color="#555a78" />
           <Text style={styles.emptyText}>
             {mode === 'following'
-              ? 'Este perfil ainda não segue ninguém.'
-              : 'Este perfil ainda não tem seguidores.'}
+              ? t('connections.emptyFollowing')
+              : t('connections.emptyFollowers')}
           </Text>
         </View>
       ) : (
@@ -90,7 +92,7 @@ export default function ConnectionsScreen({ route, navigation }) {
               <Avatar profile={item} size={46} />
               <View style={styles.profileText}>
                 <Text style={styles.displayName}>
-                  {item.display_name || item.username || 'Viajante'}
+                  {item.display_name || item.username || t('connections.unnamed')}
                 </Text>
                 {item.username ? (
                   <Text style={styles.username}>@{item.username}</Text>

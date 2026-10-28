@@ -13,6 +13,7 @@ import {
 } from 'maplibre-gl';
 import { Image } from 'react-native';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 // O símbolo passa pelo Image do react-native, e não por um <img> com a URL
 // resolvida na mão: `Image.resolveAssetSource` não existe no react-native-web, e
@@ -27,10 +28,13 @@ import {
   GLOBE_INITIAL_VIEW,
   GLOBE_SPACE_BACKGROUND,
   GLOBE_SKY,
+  GLOBE_SKY_DURING_GESTURE,
   SATELLITE_IMAGERY_ATTRIBUTION,
   isSatelliteTileError,
   preconnectToTileHosts,
   collapseAttributionOnce,
+  STADIA_ORIGIN,
+  STADIA_API_KEY,
 } from './globeConfig';
 import { localizeMapLabels } from './styleLocalization';
 import { TAB_BAR_CLEARANCE } from '../../utils/tabBarLayout';
@@ -53,6 +57,21 @@ preconnectToTileHosts();
 // Duração do fade do globo entrando em cena. Curto o bastante para não parecer
 // lentidão, longo o bastante para não ler como "piscada".
 const FADE_MS = 450;
+
+// Início/fim de um gesto de câmera — ver o `map.setSky` logo abaixo de
+// GESTURE_START_EVENTS no efeito de montagem.
+const GESTURE_START_EVENTS = /** @type {const} */ ([
+  'dragstart',
+  'zoomstart',
+  'rotatestart',
+  'pitchstart',
+]);
+const GESTURE_END_EVENTS = /** @type {const} */ ([
+  'dragend',
+  'zoomend',
+  'rotateend',
+  'pitchend',
+]);
 
 // A animação do indicador vive numa tag <style> própria: keyframes não existem
 // em estilo inline, e este é o único lugar do componente que precisa deles.
@@ -93,6 +112,7 @@ const MAP_CONTROL_CLEARANCE_CSS = `
  * sinal de progresso sem virar spinner genérico.
  */
 function GlobeLoadingOverlay() {
+  const { t } = useLocale();
   return (
     <div
       style={{
@@ -108,7 +128,7 @@ function GlobeLoadingOverlay() {
         zIndex: 2,
       }}
       role="status"
-      aria-label="Carregando o globo"
+      aria-label={t('globe.loading')}
     >
       <style>{LOADING_KEYFRAMES}</style>
 
@@ -165,10 +185,12 @@ function GlobeLoadingOverlay() {
 export default function GlobeMap({
   onMapReady,
   onError,
+  onFirstFrameReady,
   showGlobeControl = true,
   performanceMode = false,
   style,
 }) {
+  const { t } = useLocale();
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const [failure, setFailure] = useState(null);
@@ -185,6 +207,19 @@ export default function GlobeMap({
   const onErrorRef = useRef(onError);
   onMapReadyRef.current = onMapReady;
   onErrorRef.current = onError;
+
+  // Sinal de "primeiro frame pronto" para quem hospeda este componente de fora
+  // da WebView (ver GlobeLoadingPlaceholder, usado pelo nativo): dispara assim
+  // que `ready` vira true, por QUALQUER caminho — sucesso, erro tolerado de
+  // tile (ver `isSatelliteTileError` abaixo) ou falha dura. Os três fazem
+  // `setReady(true)` mais abaixo, e é exatamente isso que já desliga o
+  // `GlobeLoadingOverlay` daqui de dentro — o placeholder de fora só acompanha
+  // a mesma decisão, em vez de duplicá-la.
+  const onFirstFrameReadyRef = useRef(onFirstFrameReady);
+  onFirstFrameReadyRef.current = onFirstFrameReady;
+  useEffect(() => {
+    if (ready) onFirstFrameReadyRef.current?.();
+  }, [ready]);
 
   useEffect(() => {
     if (!containerRef.current) return undefined;
@@ -212,8 +247,28 @@ export default function GlobeMap({
         // aparelhos Android (frequentemente 2x ou 3x) multiplica a quantidade de
         // pixels sem trazer diferença perceptível nessa tela. O navegador normal
         // mantém a densidade original.
-        pixelRatio: performanceMode ? 1 : undefined,
-        maxTileCacheSize: performanceMode ? 48 : null,
+        //
+        // 0.75 em vez de 1: um aparelho de entrada (ex.: Redmi) ainda reamostra
+        // menos pixel por quadro que o 1x anterior — a GPU desenha a esfera e os
+        // tiles numa resolução interna 25% menor, e o browser escala o canvas
+        // para o tamanho do elemento. TROCA: o contorno das fronteiras e o texto
+        // dos rótulos saem levemente mais suaves/borrados que em 1x, mais
+        // perceptível em telas de densidade baixa. Em telas de alta densidade (a
+        // maioria dos Android atuais) o canvas em 0.75x físico ainda sai mais
+        // nítido que um canvas nativo em 1x de um aparelho de baixa densidade, e
+        // o custo por quadro cai ~44% (0.75² contra 1²) em vez de continuar igual
+        // ao que já causava a travada. Validar a nitidez num aparelho real antes
+        // de confirmar — reverter para 1 se ficar ruim demais.
+        pixelRatio: performanceMode ? 0.75 : undefined,
+        // 32 em vez de 48: o cache de tiles ocupa textura de GPU e memória; um
+        // valor menor libera essa memória mais cedo, ao custo de recarregar um
+        // tile que saiu do cache e voltou à tela (ex.: girar o globo, voltar).
+        // Em aparelho de entrada o gargalo normalmente é CPU/GPU por quadro, não
+        // memória — então o ganho esperado aqui é menor que o do pixelRatio
+        // acima; TROCA real é mais recarregamento de tile se a rotação for ampla.
+        // Validar num aparelho real: se não notar diferença e os tiles
+        // recarregarem demais, volte para 48.
+        maxTileCacheSize: performanceMode ? 32 : null,
         // A style da Stadia tem 26 symbol layers. Com o default de 300ms, cada
         // uma mantém interpolação de opacidade e re-upload de buffer de símbolo
         // durante TODO o movimento da câmera — trabalho por quadro pago no
@@ -225,6 +280,13 @@ export default function GlobeMap({
         fadeDuration: 0,
         // Desligado aqui para adicionar o controle com a atribuição do provedor.
         attributionControl: false,
+        transformRequest: (url, resourceType) => {
+          if (STADIA_API_KEY && url.startsWith(STADIA_ORIGIN) && !url.includes('api_key=')) {
+            const separator = url.includes('?') ? '&' : '?';
+            return { url: `${url}${separator}api_key=${STADIA_API_KEY}` };
+          }
+          return { url };
+        },
       });
       mapRef.current = map;
 
@@ -252,7 +314,16 @@ export default function GlobeMap({
       map.on('style.load', handleStyleLoad);
       map.on('load', handleLoad);
       map.on('error', handleError);
+
+      // Desliga o halo da atmosfera enquanto o gesto está rolando (um efeito a
+      // menos por quadro no momento mais caro) e devolve ao soltar. Ver
+      // GLOBE_SKY_DURING_GESTURE.
+      GESTURE_START_EVENTS.forEach((event) => map.on(event, dimSkyForGesture));
+      GESTURE_END_EVENTS.forEach((event) => map.on(event, restoreSky));
     };
+
+    const dimSkyForGesture = () => map.setSky(GLOBE_SKY_DURING_GESTURE);
+    const restoreSky = () => map.setSky(GLOBE_SKY);
 
     const handleStyleLoad = () => {
       // setProjection só pode ser chamado depois que a style carregou.
@@ -277,7 +348,7 @@ export default function GlobeMap({
         return;
       }
 
-      const message = event?.error?.message || 'Erro desconhecido ao carregar o mapa';
+      const message = event?.error?.message || t('globe.genericMapError');
       setFailure(message);
       onErrorRef.current?.(event?.error || new Error(message));
       // Tile que falha não pode deixar o overlay preso para sempre: melhor
@@ -307,6 +378,8 @@ export default function GlobeMap({
       map.off('style.load', handleStyleLoad);
       map.off('load', handleLoad);
       map.off('error', handleError);
+      GESTURE_START_EVENTS.forEach((event) => map.off(event, dimSkyForGesture));
+      GESTURE_END_EVENTS.forEach((event) => map.off(event, restoreSky));
       releaseAttribution();
       map.remove();
       map = null;

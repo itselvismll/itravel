@@ -5,7 +5,8 @@
 // regra, e aplica a mesma abordagem (normalização + apelidos em PT) à busca remota de
 // cidades usada pelo PhotoUploader.
 
-import { getCountryNamePtByCode } from './countryUtils';
+import { getCountryName } from './countryUtils';
+import { DEFAULT_LOCALE_TAG } from './constants';
 import { fetch } from 'expo/fetch';
 import BRAZILIAN_MUNICIPALITIES from '../data/brazilianMunicipalities.json';
 
@@ -42,7 +43,7 @@ export const matchesSearchQuery = (name, normalizedQuery) => {
  * Busca local de países. `entries` são objetos com pelo menos { name }, e opcionalmente
  * { nameEn }. Retorna as entradas originais, ordenadas por nome.
  */
-export const searchCountries = (entries, rawQuery, limit = MAX_SEARCH_RESULTS) => {
+export const searchCountries = (entries, rawQuery, limit = MAX_SEARCH_RESULTS, tag = DEFAULT_LOCALE_TAG) => {
   const normalizedQuery = normalizeSearchText(rawQuery);
   if (normalizedQuery.length < MIN_COUNTRY_QUERY_LENGTH) return [];
 
@@ -50,7 +51,7 @@ export const searchCountries = (entries, rawQuery, limit = MAX_SEARCH_RESULTS) =
     .filter((entry) =>
       matchesSearchQuery(entry?.name, normalizedQuery) ||
       matchesSearchQuery(entry?.nameEn, normalizedQuery))
-    .sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt-BR'))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), tag))
     .slice(0, limit);
 };
 
@@ -172,13 +173,13 @@ const buildPhotonUrl = (query, limit) =>
   `${PHOTON_ENDPOINT}?q=${encodeURIComponent(query)}&limit=${limit}` +
   `&lang=${PHOTON_LANG}&layer=${PHOTON_LAYER}`;
 
-const toCitySuggestion = (feature) => {
+const toCitySuggestion = (feature, tag = DEFAULT_LOCALE_TAG) => {
   const props = feature?.properties || {};
   const shortName = props.name;
   if (!shortName) return null;
 
   const countryCode = props.countrycode ? props.countrycode.toUpperCase() : '';
-  const country = getCountryNamePtByCode(countryCode, props.country || '');
+  const country = getCountryName(countryCode, props.country || '', tag);
   const coords = feature?.geometry?.coordinates || [];
 
   return {
@@ -237,16 +238,18 @@ const delay = (ms, signal) =>
     }, { once: true });
   });
 
-const searchBrazilianMunicipalities = (rawQuery, limit) => {
+const searchBrazilianMunicipalities = (rawQuery, limit, tag = DEFAULT_LOCALE_TAG) => {
   const normalizedQuery = normalizeSearchText(rawQuery);
   if (normalizedQuery.length < MIN_CITY_QUERY_LENGTH) return [];
 
+  const country = getCountryName('BR', 'Brasil', tag);
+
   return BRAZILIAN_MUNICIPALITIES
     .map(([shortName, state, ibgeId]) => ({
-      name: `${shortName}, ${state}, Brasil`,
+      name: `${shortName}, ${state}, ${country}`,
       shortName,
       state,
-      country: 'Brasil',
+      country,
       countryCode: 'BR',
       placeType: 'municipality',
       ibgeId,
@@ -259,6 +262,9 @@ const searchBrazilianMunicipalities = (rawQuery, limit) => {
       const bName = normalizeSearchText(b.shortName);
       const aRank = aName === normalizedQuery ? 0 : aName.startsWith(normalizedQuery) ? 1 : 2;
       const bRank = bName === normalizedQuery ? 0 : bName.startsWith(normalizedQuery) ? 1 : 2;
+      // O NOME do município é português (é o que ele se chama, em qualquer
+      // idioma), então a ordenação continua pt-BR de propósito — só o rótulo
+      // do país (`country`, acima) segue o idioma ativo.
       return aRank - bRank || String(a.shortName).localeCompare(String(b.shortName), 'pt-BR');
     })
     .slice(0, limit);
@@ -266,19 +272,19 @@ const searchBrazilianMunicipalities = (rawQuery, limit) => {
 
 // A instância pública da Photon devolve 503 sob rajada. Uma única retentativa curta
 // resolve o caso comum sem transformar falha de rede em "nenhuma cidade encontrada".
-const fetchCities = async (query, { signal, limit, retry = true }) => {
+const fetchCities = async (query, { signal, limit, retry = true, tag = DEFAULT_LOCALE_TAG }) => {
   const response = await fetch(buildPhotonUrl(query, limit), { signal });
 
   if (!response.ok) {
     if (retry && response.status >= 500) {
       await delay(RETRY_DELAY_MS, signal);
-      return fetchCities(query, { signal, limit, retry: false });
+      return fetchCities(query, { signal, limit, retry: false, tag });
     }
     throw new Error(`Busca de cidades indisponível (${response.status})`);
   }
 
   const data = await response.json();
-  return (data.features || []).map(toCitySuggestion).filter(Boolean);
+  return (data.features || []).map((feature) => toCitySuggestion(feature, tag)).filter(Boolean);
 };
 
 /**
@@ -290,6 +296,7 @@ const fetchCities = async (query, { signal, limit, retry = true }) => {
  * @param {string} [options.countryNameEn] usado no fallback quando o filtro por país zera
  * @param {AbortSignal} [options.signal]
  * @param {number} [options.limit]
+ * @param {string} [options.tag] tag BCP 47 do idioma ativo
  * @returns {Promise<Array>} sugestões já ordenadas e sem duplicatas
  */
 export const searchCities = async (rawQuery, options = {}) => {
@@ -298,6 +305,7 @@ export const searchCities = async (rawQuery, options = {}) => {
     countryNameEn = '',
     signal,
     limit = MAX_SEARCH_RESULTS,
+    tag = DEFAULT_LOCALE_TAG,
   } = options;
 
   const trimmed = String(rawQuery || '').trim();
@@ -311,11 +319,11 @@ export const searchCities = async (rawQuery, options = {}) => {
   const fetchLimit = targetCountry ? 30 : 20;
 
   const officialBrazilianCities = !targetCountry || targetCountry === 'BR'
-    ? searchBrazilianMunicipalities(trimmed, fetchLimit)
+    ? searchBrazilianMunicipalities(trimmed, fetchLimit, tag)
     : [];
   let results = [];
   try {
-    results = await fetchCities(resolvedQuery, { signal, limit: fetchLimit });
+    results = await fetchCities(resolvedQuery, { signal, limit: fetchLimit, tag });
   } catch (error) {
     if (error?.name === 'AbortError') throw error;
     if (!officialBrazilianCities.length) throw error;
@@ -329,6 +337,7 @@ export const searchCities = async (rawQuery, options = {}) => {
       const fallback = await fetchCities(`${resolvedQuery}, ${countryNameEn}`, {
         signal,
         limit: fetchLimit,
+        tag,
       });
       results = fallback.filter((city) => city.countryCode === targetCountry);
     } else {
@@ -359,10 +368,10 @@ export const isExactAirportCode = (airport, rawQuery) => {
     .some(code => normalizeSearchText(code) === normalizedQuery);
 };
 
-const toAirportSuggestion = airport => {
+const toAirportSuggestion = (airport, tag = DEFAULT_LOCALE_TAG) => {
   if (!airport?.name || !airport?.country_code) return null;
   const countryCode = String(airport.country_code).toUpperCase();
-  const country = getCountryNamePtByCode(countryCode, airport.country_name || '');
+  const country = getCountryName(countryCode, airport.country_name || '', tag);
   return {
     name: airport.name,
     shortName: airport.name,
@@ -398,7 +407,7 @@ export const formatAirportSubtitle = airport => (
 );
 
 export const searchAirports = async (rawQuery, options = {}) => {
-  const { signal, limit = 5 } = options;
+  const { signal, limit = 5, tag = DEFAULT_LOCALE_TAG } = options;
   const trimmed = String(rawQuery || '').trim();
   if (trimmed.length < MIN_CITY_QUERY_LENGTH) return [];
 
@@ -408,17 +417,17 @@ export const searchAirports = async (rawQuery, options = {}) => {
   const data = await response.json();
   const airports = (data?.data || [])
     .filter(item => Object.hasOwn(AIRPORT_TYPE_TIER, item?.type))
-    .map(toAirportSuggestion)
+    .map((item) => toAirportSuggestion(item, tag))
     .filter(Boolean);
 
   return rankAirports(airports, trimmed).slice(0, limit);
 };
 
 export const searchTravelLocations = async (rawQuery, options = {}) => {
-  const { signal, cityLimit = 6, airportLimit = 4 } = options;
+  const { signal, cityLimit = 6, airportLimit = 4, tag = DEFAULT_LOCALE_TAG } = options;
   const [citiesResult, airportsResult] = await Promise.allSettled([
-    searchCities(rawQuery, { signal, limit: cityLimit }),
-    searchAirports(rawQuery, { signal, limit: airportLimit }),
+    searchCities(rawQuery, { signal, limit: cityLimit, tag }),
+    searchAirports(rawQuery, { signal, limit: airportLimit, tag }),
   ]);
   if (signal?.aborted) throw abortError();
 

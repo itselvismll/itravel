@@ -27,6 +27,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { notify } from '../utils/dialogs';
+import { useLocale } from '../i18n/LocaleProvider';
 import {
   REPORT_REASONS,
   REPORT_REASON_OTHER,
@@ -53,6 +54,7 @@ const TARGET_LABEL = {
  * }} props
  */
 export default function ReportSheet({ visible, onClose, targetType, targetId, onReported }) {
+  const { t } = useLocale();
   const [reason, setReason] = useState(null);
   const [details, setDetails] = useState('');
   const [enviando, setEnviando] = useState(false);
@@ -78,20 +80,20 @@ export default function ReportSheet({ visible, onClose, targetType, targetId, on
     setEnviando(false);
 
     if (!resultado.success) {
-      notify('Não foi possível denunciar', resultado.error || 'Tente novamente em instantes.');
+      notify(t('reportSheet.failedTitle'), resultado.error || t('common.actions.tryAgainSoon'));
       return;
     }
 
     onClose();
     // A confirmação não promete prazo nem resultado: a moderação é humana, e
     // prometer "vamos remover" seria assumir a conclusão antes da análise.
-    notify('Denúncia enviada', 'Nossa equipe vai analisar. Obrigado por avisar.');
+    notify(t('reportSheet.doneTitle'), t('reportSheet.doneMessage'));
     onReported?.();
   };
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Fechar" />
+      <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel={t('reportSheet.closeLabel')} />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -103,7 +105,7 @@ export default function ReportSheet({ visible, onClose, targetType, targetId, on
           <View style={styles.header}>
             <Ionicons name="flag-outline" size={19} color="#FF4D6D" />
             <Text style={styles.title}>Denunciar {TARGET_LABEL[targetType] || 'este conteúdo'}</Text>
-            <TouchableOpacity onPress={onClose} accessibilityRole="button" accessibilityLabel="Fechar">
+            <TouchableOpacity onPress={onClose} accessibilityRole="button" accessibilityLabel={t('reportSheet.closeLabel')}>
               <Ionicons name="close" size={22} color="#8A90A6" />
             </TouchableOpacity>
           </View>
@@ -145,12 +147,12 @@ export default function ReportSheet({ visible, onClose, targetType, targetId, on
                   style={styles.detailsInput}
                   value={details}
                   onChangeText={setDetails}
-                  placeholder="Descreva o problema"
+                  placeholder={t('reportSheet.otherPlaceholder')}
                   placeholderTextColor="#5A6180"
                   multiline
                   textAlignVertical="top"
                   maxLength={DETAILS_MAX_LENGTH}
-                  accessibilityLabel="Detalhes da denúncia"
+                  accessibilityLabel={t('reportSheet.detailsLabel')}
                 />
                 <Text style={styles.detailsCount}>
                   {details.length}/{DETAILS_MAX_LENGTH}
@@ -164,11 +166,11 @@ export default function ReportSheet({ visible, onClose, targetType, targetId, on
             onPress={enviar}
             disabled={!podeEnviar}
             accessibilityRole="button"
-            accessibilityLabel="Enviar denúncia"
+            accessibilityLabel={t('reportSheet.submitLabel')}
           >
             {enviando
               ? <ActivityIndicator size="small" color="#FFFFFF" />
-              : <Text style={styles.submitText}>Enviar denúncia</Text>}
+              : <Text style={styles.submitText}>{t('reportSheet.submitLabel')}</Text>}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>

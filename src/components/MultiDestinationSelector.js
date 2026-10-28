@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import CountryFlag from './CountryFlag';
-import { COUNTRIES_STATIC } from '../data/countriesStaticData';
-import { getAlpha3, getCountryNamePtByCode } from '../utils/countryUtils';
+import { getAlpha3, buildCountryDirectory } from '../utils/countryUtils';
+import { useLocale } from '../i18n/LocaleProvider';
 import {
   CITY_SEARCH_DEBOUNCE_MS,
   formatAirportLabel,
@@ -14,12 +14,6 @@ import {
   searchTravelLocations,
 } from '../utils/geoSearch';
 
-const COUNTRIES = Object.entries(COUNTRIES_STATIC).map(([code, country]) => ({
-  code,
-  name: getCountryNamePtByCode(code, country.name),
-  nameEn: country.name,
-}));
-
 export const getTravelDestinationKey = destination => (
   destination?.id || `${destination?.type || 'country'}:${destination?.code || ''}:${destination?.name || ''}`
 );
@@ -29,12 +23,17 @@ const destinationIcon = type => (
 );
 
 export default function MultiDestinationSelector({ label, selected = [], onChange }) {
+  const { t, tag } = useLocale();
   const [query, setQuery] = useState('');
   const [cities, setCities] = useState([]);
   const [airports, setAirports] = useState([]);
   const [loading, setLoading] = useState(false);
   const requestRef = useRef(0);
-  const countries = useMemo(() => searchCountries(COUNTRIES, query, 3), [query]);
+  // Recalculado por idioma: o nome de cada país muda com `tag`, e trocar o
+  // idioma em runtime não pode deixar a lista presa no idioma de quando o
+  // componente montou.
+  const allCountries = useMemo(() => buildCountryDirectory(tag), [tag]);
+  const countries = useMemo(() => searchCountries(allCountries, query, 3, tag), [allCountries, query, tag]);
   const selectedKeys = new Set(selected.map(getTravelDestinationKey));
 
   useEffect(() => {
@@ -56,6 +55,7 @@ export default function MultiDestinationSelector({ label, selected = [], onChang
           signal: controller.signal,
           cityLimit: 5,
           airportLimit: 3,
+          tag,
         });
         if (requestRef.current === requestId) {
           setCities(result.cities);
@@ -75,7 +75,7 @@ export default function MultiDestinationSelector({ label, selected = [], onChang
       clearTimeout(timer);
       controller.abort();
     };
-  }, [query]);
+  }, [query, tag]);
 
   const exactAirports = airports.filter(airport => isExactAirportCode(airport, query));
   const otherAirports = airports.filter(airport => !isExactAirportCode(airport, query));
@@ -102,7 +102,7 @@ export default function MultiDestinationSelector({ label, selected = [], onChang
       name: country.name,
       nameEn: country.nameEn,
       label: country.name,
-      subtitle: 'País',
+      subtitle: t('multiDestinationSelector.countrySubtitle'),
     })),
     ...cities.map(city => {
       const labelText = formatCityLabel(city);
@@ -115,7 +115,7 @@ export default function MultiDestinationSelector({ label, selected = [], onChang
         name: labelText,
         nameEn: labelText,
         label: labelText,
-        subtitle: 'Cidade',
+        subtitle: t('multiDestinationSelector.citySubtitle'),
         city,
       };
     }),
@@ -145,7 +145,7 @@ export default function MultiDestinationSelector({ label, selected = [], onChang
               <CountryFlag countryCode={destination.countryCode || destination.code} width={22} height={15} borderRadius={2} />
               <Ionicons name={destinationIcon(destination.type)} size={14} color="#C4B5FD" />
               <Text style={styles.selectedName} numberOfLines={1}>{destination.name}</Text>
-              {index === 0 && <Text style={styles.primary}>PRINCIPAL</Text>}
+              {index === 0 && <Text style={styles.primary}>{t('multiDestinationSelector.mainBadge')}</Text>}
               <Ionicons name="close-circle" size={17} color="#A9B0C9" />
             </TouchableOpacity>
           ))}
@@ -157,7 +157,7 @@ export default function MultiDestinationSelector({ label, selected = [], onChang
         <TextInput
           value={query}
           onChangeText={setQuery}
-          placeholder="Cidade, país ou aeroporto (ex: GRU)"
+          placeholder={t('multiDestinationSelector.destinationPlaceholder')}
           placeholderTextColor="#626987"
           style={styles.input}
           autoCorrect={false}
@@ -193,7 +193,7 @@ export default function MultiDestinationSelector({ label, selected = [], onChang
           })}
         </View>
       )}
-      <Text style={styles.helper}>Adicione países, cidades específicas ou aeroportos. O primeiro será o destino principal.</Text>
+      <Text style={styles.helper}>{t('multiDestinationSelector.hint')}</Text>
     </View>
   );
 }

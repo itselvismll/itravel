@@ -20,6 +20,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../utils/constants';
@@ -28,13 +29,33 @@ import { isInWishlist, addToWishlist, removeFromWishlist } from '../../services/
 import { getCountryInfo, getBorderCountries } from '../../services/countriesApi';
 import { getCountryCulturalData } from '../../data/countriesData';
 import { ALPHA3_TO_ALPHA2 } from '../../utils/countryUtils';
+import { useLocale } from '../../i18n/LocaleProvider';
 import { getTopPlacesByCountry } from '../../services/photoService';
 import PhotoGallery from '../PhotoGallery';
 import PhotoUploader from '../PhotoUploader';
 import CountryFlag from '../CountryFlag';
 import CountryRequirementsCard from '../CountryRequirementsCard';
+import { buildGetYourGuideSearchUrl } from '../../utils/getYourGuideLink';
 
 const EMPTY_PHOTO_STATS = { photoCount: 0, cityCount: 0, favoriteCount: 0 };
+
+/**
+ * Título de seção com ícone.
+ *
+ * Os ícones daqui eram emoji (🍕, 🗺️, 🏆, 🌍), desenhados pela fonte do sistema:
+ * a mesma seção saía colorida e arredondada no iPhone e chapada no Android, sem
+ * nenhuma relação com a paleta do app. Agora são glifos do Ionicons, na variante
+ * outline e na cor de acento — monocromáticos, do mesmo tamanho e alinhados com
+ * o texto ao lado.
+ *
+ * @param {{ icon: any, children: any, style?: any }} props
+ */
+const SectionTitle = ({ icon, children, style }) => (
+  <View style={styles.sectionTitleRow}>
+    <Ionicons name={icon} size={14} color="#6C2BD9" />
+    <Text style={[styles.infoSectionTitle, style]}>{children}</Text>
+  </View>
+);
 
 /**
  * @param {{
@@ -72,6 +93,7 @@ export default function CountryDetailModal({
   onCoverPhotoSet,
   onPhotoUploaded,
 }) {
+  const { t, tag } = useLocale();
   const [loading, setLoading] = useState(false);
   const [details, setDetails] = useState(null);
   const [borderCountries, setBorderCountries] = useState([]);
@@ -101,18 +123,18 @@ export default function CountryDetailModal({
     (async () => {
       try {
         const [apiData, topResult] = await Promise.all([
-          getCountryInfo(code),
+          getCountryInfo(code, tag),
           getTopPlacesByCountry(code),
         ]);
         const culturalData = getCountryCulturalData(code);
-        const borders = await getBorderCountries(apiData.borders);
+        const borders = await getBorderCountries(apiData.borders, tag);
         if (cancelled) return;
 
         setDetails({ ...apiData, cultural: culturalData });
         setBorderCountries(borders);
         if (topResult.success) setTopPlaces(topResult.data);
       } catch {
-        if (!cancelled) Alert.alert('Erro', 'Não foi possível carregar os detalhes deste país.');
+        if (!cancelled) Alert.alert(t('countryDetail.genericErrorTitle'), t('countryDetail.genericLoadFailed'));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -121,7 +143,7 @@ export default function CountryDetailModal({
     return () => {
       cancelled = true;
     };
-  }, [visible, code]);
+  }, [visible, code, tag]);
 
   useEffect(() => {
     if (visible && code) {
@@ -147,19 +169,19 @@ export default function CountryDetailModal({
         const result = await unmarkCountryAsVisited(user.id, country.code);
         if (result.success) {
           onVisitedChange?.(countryCodeAlpha2, false);
-          Alert.alert('✅ Removido', `${country.name} foi removido dos países visitados`);
+          Alert.alert(t('countryDetail.removedTitle'), t('countryDetail.removedMessage', { country: country.name }));
         }
       } else {
         const result = await markCountryAsVisited(user.id, country.code, country.name);
         if (result.success) {
           onVisitedChange?.(countryCodeAlpha2, true);
           if (!suppressVisitedAlert) {
-            Alert.alert('🎉 Marcado!', `${country.name} foi adicionado aos países visitados!`);
+            Alert.alert(t('countryDetail.markedTitle'), t('countryDetail.markedMessage', { country: country.name }));
           }
         }
       }
     } catch {
-      Alert.alert('Erro', 'Não foi possível atualizar o país');
+      Alert.alert(t('countryDetail.genericErrorTitle'), t('countryDetail.updateFailed'));
     }
   };
 
@@ -184,7 +206,7 @@ export default function CountryDetailModal({
             {loading ? (
               <View style={styles.modalLoading}>
                 <ActivityIndicator size="large" color={COLORS.primary} />
-                <Text style={styles.modalLoadingText}>Carregando informações...</Text>
+                <Text style={styles.modalLoadingText}>{t('countryDetail.loading')}</Text>
               </View>
             ) : details ? (
               <>
@@ -210,15 +232,15 @@ export default function CountryDetailModal({
                   <View style={styles.statsRow}>
                     <View style={styles.statPill}>
                       <Text style={styles.statValue}>{photoStats.photoCount}</Text>
-                      <Text style={styles.statLabel}>fotos</Text>
+                      <Text style={styles.statLabel}>{t('countryDetail.stats.photos')}</Text>
                     </View>
                     <View style={styles.statPill}>
                       <Text style={styles.statValue}>{photoStats.cityCount}</Text>
-                      <Text style={styles.statLabel}>cidades</Text>
+                      <Text style={styles.statLabel}>{t('countryDetail.stats.cities')}</Text>
                     </View>
                     <View style={styles.statPill}>
                       <Text style={styles.statValue}>{photoStats.favoriteCount}</Text>
-                      <Text style={styles.statLabel}>favoritas</Text>
+                      <Text style={styles.statLabel}>{t('countryDetail.stats.favorites')}</Text>
                     </View>
                   </View>
 
@@ -265,8 +287,8 @@ export default function CountryDetailModal({
                     onPress={() => setShowCountryInfo(!showCountryInfo)}
                   >
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={styles.accordionIcon}>🌍</Text>
-                      <Text style={styles.accordionTitle}>Sobre o país</Text>
+                      <Ionicons name="earth-outline" size={16} color="#6C2BD9" style={styles.accordionIcon} />
+                      <Text style={styles.accordionTitle}>{t('countryDetail.about')}</Text>
                     </View>
                     <Ionicons
                       name={showCountryInfo ? 'chevron-up' : 'chevron-down'}
@@ -279,11 +301,11 @@ export default function CountryDetailModal({
                     <View style={styles.accordionBody}>
                       <View style={styles.infoGrid}>
                         <View style={styles.infoItem}>
-                          <Text style={styles.infoLabel}>Capital</Text>
+                          <Text style={styles.infoLabel}>{t('countryDetail.fields.capital')}</Text>
                           <Text style={styles.infoValue}>{details.capital || '-'}</Text>
                         </View>
                         <View style={styles.infoItem}>
-                          <Text style={styles.infoLabel}>População</Text>
+                          <Text style={styles.infoLabel}>{t('countryDetail.fields.population')}</Text>
                           <Text style={styles.infoValue}>
                             {details.population
                               ? (details.population / 1000000).toFixed(1) + 'M'
@@ -291,13 +313,13 @@ export default function CountryDetailModal({
                           </Text>
                         </View>
                         <View style={styles.infoItem}>
-                          <Text style={styles.infoLabel}>Idioma</Text>
+                          <Text style={styles.infoLabel}>{t('countryDetail.fields.language')}</Text>
                           <Text style={styles.infoValue} numberOfLines={1}>
                             {details.languages?.[0] || '-'}
                           </Text>
                         </View>
                         <View style={styles.infoItem}>
-                          <Text style={styles.infoLabel}>Moeda</Text>
+                          <Text style={styles.infoLabel}>{t('countryDetail.fields.currency')}</Text>
                           <Text style={styles.infoValue} numberOfLines={1}>
                             {details.currencies?.[0]
                               ? `${details.currencies[0].symbol || ''} ${details.currencies[0].name}`
@@ -305,11 +327,11 @@ export default function CountryDetailModal({
                           </Text>
                         </View>
                         <View style={styles.infoItem}>
-                          <Text style={styles.infoLabel}>Código</Text>
+                          <Text style={styles.infoLabel}>{t('countryDetail.fields.code')}</Text>
                           <Text style={styles.infoValue}>{details.phoneCode || '-'}</Text>
                         </View>
                         <View style={styles.infoItem}>
-                          <Text style={styles.infoLabel}>Área</Text>
+                          <Text style={styles.infoLabel}>{t('countryDetail.fields.area')}</Text>
                           <Text style={styles.infoValue}>
                             {details.area ? (details.area / 1000000).toFixed(1) + 'M km²' : '-'}
                           </Text>
@@ -318,7 +340,7 @@ export default function CountryDetailModal({
 
                       {details.cultural?.foods?.length > 0 && (
                         <View style={styles.infoSection}>
-                          <Text style={styles.infoSectionTitle}>🍕 Comidas típicas</Text>
+                          <SectionTitle icon="restaurant-outline">{t('countryDetail.foodsSection')}</SectionTitle>
                           <View style={styles.tagsRow}>
                             {details.cultural.foods.map((item, i) => (
                               <View key={i} style={styles.tag}>
@@ -331,7 +353,7 @@ export default function CountryDetailModal({
 
                       {details.cultural?.attractions?.length > 0 && (
                         <View style={styles.infoSection}>
-                          <Text style={styles.infoSectionTitle}>🗺️ Pontos turísticos</Text>
+                          <SectionTitle icon="map-outline">{t('countryDetail.attractionsSection')}</SectionTitle>
                           <View style={styles.tagsRow}>
                             {details.cultural.attractions.map((item, i) => (
                               <View key={i} style={[styles.tag, styles.tagOrange]}>
@@ -344,9 +366,9 @@ export default function CountryDetailModal({
 
                       {borderCountries.length > 0 && (
                         <View style={styles.infoSection}>
-                          <Text style={styles.infoSectionTitle}>
-                            🌍 Países vizinhos ({borderCountries.length})
-                          </Text>
+                          <SectionTitle icon="earth-outline">
+                            Países vizinhos ({borderCountries.length})
+                          </SectionTitle>
                           {borderCountries.slice(0, 3).map((border, i) => (
                             <View key={i} style={styles.neighborRow}>
                               <CountryFlag
@@ -373,12 +395,36 @@ export default function CountryDetailModal({
                     <CountryRequirementsCard countryCode={country?.code} light />
                   </View>
 
+                  {/* Passeios (afiliado GetYourGuide) — a cidade vem do mesmo
+                      dado de "Top lugares por cidade" abaixo (fotos de quem já
+                      visitou), e só cai na capital do país quando ainda não há
+                      nenhuma foto com cidade própria. */}
+                  {(() => {
+                    const tourCity = Object.keys(topPlaces)[0] || details?.capital || '';
+                    const tourUrl = buildGetYourGuideSearchUrl(tourCity);
+                    if (!tourUrl) return null;
+                    return (
+                      <View style={{ marginHorizontal: 12, marginTop: 10 }}>
+                        <SectionTitle icon="compass-outline">
+                          {t('countryDetail.toursSection', { city: tourCity })}
+                        </SectionTitle>
+                        <TouchableOpacity
+                          style={styles.addPhotoBtn}
+                          onPress={() => Linking.openURL(tourUrl)}
+                        >
+                          <Ionicons name="pricetag-outline" size={18} color="#6C2BD9" />
+                          <Text style={styles.addPhotoBtnText}>{t('countryDetail.toursCta')}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })()}
+
                   {/* Top Lugares por cidade */}
                   {Object.keys(topPlaces).length > 0 && (
                     <View style={{ marginHorizontal: 12, marginTop: 10 }}>
                       {Object.entries(topPlaces).map(([city, places]) => (
                         <View key={city} style={styles.topPlacesCard}>
-                          <Text style={styles.topPlacesTitle}>🏆 Top lugares em {city}</Text>
+                          <SectionTitle icon="trophy-outline" style={styles.topPlacesTitle}>Top lugares em {city}</SectionTitle>
                           {places.map((place, i) => (
                             <View key={place.name} style={styles.topPlaceRow}>
                               <Text style={styles.topPlaceRank}>{i + 1}º</Text>
@@ -402,7 +448,7 @@ export default function CountryDetailModal({
                   {/* Seção de fotos */}
                   <View style={styles.photosSection}>
                     <View style={styles.sectionHeader}>
-                      <Text style={styles.sectionTitle}>📸 Suas Fotos</Text>
+                      <SectionTitle icon="images-outline" style={styles.sectionTitle}>{t('countryDetail.photosSection')}</SectionTitle>
                     </View>
 
                     <TouchableOpacity
@@ -410,7 +456,7 @@ export default function CountryDetailModal({
                       onPress={() => setShowUploader(true)}
                     >
                       <Ionicons name="camera-outline" size={18} color="#6C2BD9" />
-                      <Text style={styles.addPhotoBtnText}>Adicionar foto</Text>
+                      <Text style={styles.addPhotoBtnText}>{t('countryDetail.addPhoto')}</Text>
                     </TouchableOpacity>
 
                     <PhotoGallery
@@ -433,7 +479,7 @@ export default function CountryDetailModal({
             ) : (
               <View style={styles.modalError}>
                 <Ionicons name="alert-circle-outline" size={64} color={COLORS.error} />
-                <Text style={styles.modalErrorText}>Não foi possível carregar as informações</Text>
+                <Text style={styles.modalErrorText}>{t('countryDetail.loadFailed')}</Text>
               </View>
             )}
           </View>
@@ -459,7 +505,7 @@ export default function CountryDetailModal({
               borderBottomColor: '#f0f0f0',
             }}
           >
-            <Text style={{ fontSize: 17, fontWeight: '600', color: '#0D1326' }}>Adicionar foto</Text>
+            <Text style={{ fontSize: 17, fontWeight: '600', color: '#0D1326' }}>{t('countryDetail.addPhoto')}</Text>
             <TouchableOpacity onPress={() => setShowUploader(false)}>
               <Ionicons name="close" size={24} color="#0D1326" />
             </TouchableOpacity>
@@ -643,7 +689,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   accordionIcon: {
-    fontSize: 16,
+    // O ícone é vetorial: o que sobra aqui é só o alinhamento com o título.
+    marginRight: 2,
   },
   accordionTitle: {
     fontSize: 14,
@@ -693,6 +740,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#0D1326',
+  },
+  // A linha que segura ícone + título. O `marginBottom` saiu do texto e veio
+  // para cá: com o ícone ao lado, quem espaça a seção é a linha, não a palavra.
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     marginBottom: 8,
   },
   tagsRow: {

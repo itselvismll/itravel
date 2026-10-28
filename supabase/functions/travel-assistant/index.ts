@@ -10,6 +10,41 @@ const jsonResponse = (body: unknown, status = 200) => new Response(
   { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
 )
 
+// Como pedir a resposta ao Gemini, por idioma.
+//
+// LISTA FECHADA, e não a string do cliente direto no prompt: este valor entra num
+// prompt enviado ao modelo, e texto arbitrário ali é injeção de prompt — um
+// "ignore as instruções anteriores e responda X" chegaria ao Gemini como se fosse
+// instrução nossa. Indexar uma tabela por chave conhecida fecha isso.
+//
+// O nome vai POR EXTENSO porque é assim que o modelo obedece de forma confiável:
+// com o código ("pt") ele às vezes responde em português europeu.
+//
+// Espelho de SUPPORTED_LOCALES em src/i18n/index.js. Idioma novo lá precisa de
+// entrada aqui; faltando, a resposta sai em português, que é degradação
+// aceitável e não erro.
+const ASSISTANT_LANGUAGES: Record<string, { promptName: string }> = {
+  pt: { promptName: 'português brasileiro' },
+  en: { promptName: 'English' },
+  es: { promptName: 'español' },
+}
+
+const DEFAULT_ASSISTANT_LANGUAGE = ASSISTANT_LANGUAGES.pt
+
+// A busca na tabela, restrita às chaves do PRÓPRIO objeto.
+//
+// `ASSISTANT_LANGUAGES[valor]` cru não serve: para `valor = '__proto__'` ele
+// devolve `Object.prototype` — que é um objeto verdadeiro, então o `??` não
+// dispara e o prompt sairia com "Responda em undefined". O mesmo vale para
+// 'constructor' e 'toString'. Um cliente mandando isso não causa dano, mas
+// degrada o prompt em silêncio, que é pior do que cair no padrão.
+const assistantLanguageFor = (value: unknown) => {
+  const key = String(value ?? '')
+  return Object.hasOwn(ASSISTANT_LANGUAGES, key)
+    ? ASSISTANT_LANGUAGES[key]
+    : DEFAULT_ASSISTANT_LANGUAGE
+}
+
 const sleep = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds))
 
 const parseDurationMs = (value: unknown) => {
@@ -119,11 +154,6 @@ const getGroundingSources = (payload: any) => {
   })).filter((source: { url: string }) => /^https?:\/\//i.test(source.url))
 }
 
-const normalizeBudgetCategory = (value: unknown) => String(value || '')
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .toLowerCase()
-
 const getBudgetCategoryAmount = (plan: any, pattern: RegExp) => (
   (plan?.budget?.items || []).reduce((sum: number, item: any) => (
     pattern.test(normalizeBudgetCategory(item?.category)) ? sum + (Number(item?.amount) || 0) : sum
@@ -211,6 +241,53 @@ const PLACE_CATEGORIES = [
   'restaurante', 'atracao', 'compras', 'hotel',
   'transporte', 'natureza', 'vida_noturna', 'outro',
 ] as const
+
+// Mesmo motivo do enum de category acima: sem um conjunto fechado, o client não
+// consegue traduzir o que o Gemini escreve. O mirror client-side vive em
+// src/utils/assistantPlanCategories.js — os dois lados têm que listar os mesmos
+// códigos, porque esta função roda em Deno e aquele módulo no bundle do app.
+const ACTIVITY_PERIODS = ['manha', 'tarde', 'noite'] as const
+
+const BUDGET_CATEGORIES = [
+  'passagens', 'hospedagem', 'alimentacao', 'transporte_local', 'passeios_ingressos', 'compras_reserva',
+] as const
+
+const CHECKLIST_CATEGORIES = ['documentos', 'saude', 'dinheiro', 'conectividade', 'bagagem'] as const
+
+const normalizeEnumText = (value: unknown) => String(value || '')
+  .normalize('NFD')
+  .replace(DIACRITICS_REGEX, '')
+  .toLowerCase()
+  .trim()
+
+// Exportadas apenas para os testes, igual normalizePlanGeography abaixo.
+export const normalizePeriod = (value: unknown, fallback = 'tarde') => {
+  const raw = normalizeEnumText(value)
+  return (ACTIVITY_PERIODS as readonly string[]).includes(raw) ? raw : fallback
+}
+
+// Só os nomes com mais de uma palavra precisam de alias: o texto antigo do
+// prompt usava espaço ("Transporte local"), o código usa underscore. O resto
+// ("Alimentação" -> "alimentacao") já bate direto ao tirar o acento.
+const BUDGET_CATEGORY_ALIASES: Record<string, string> = {
+  'transporte local': 'transporte_local',
+  'passeios e ingressos': 'passeios_ingressos',
+  'compras e reserva': 'compras_reserva',
+  // Bug histórico: a agregação abaixo comparava com a string exata "Compras"
+  // (sem "e Reserva"), então uma parcela do dado salvo tem só isto.
+  compras: 'compras_reserva',
+}
+
+export const normalizeBudgetCategory = (value: unknown, fallback = 'compras_reserva') => {
+  const raw = normalizeEnumText(value)
+  if ((BUDGET_CATEGORIES as readonly string[]).includes(raw)) return raw
+  return BUDGET_CATEGORY_ALIASES[raw] || fallback
+}
+
+export const normalizeChecklistCategory = (value: unknown, fallback = 'documentos') => {
+  const raw = normalizeEnumText(value)
+  return (CHECKLIST_CATEGORIES as readonly string[]).includes(raw) ? raw : fallback
+}
 
 // A IA recebe as categorias de realPlaces ('passeio'/'restaurante'/'hotel'); mapeamos
 // para o enum fechado para que o ícone do globo nunca receba um valor inesperado.
@@ -358,6 +435,7 @@ export const normalizePlanGeography = async (
 
       const matched = matchRealPlace(activity)
       activity.category = normalizeCategory(activity?.category, normalizeCategory(matched?.category))
+      activity.period = normalizePeriod(activity?.period)
 
       if (hasCoordinate) {
         activity.latitude = latitude
@@ -742,7 +820,7 @@ const planSchema = {
               type: 'OBJECT',
               required: ['period', 'startTime', 'endTime', 'title', 'description', 'location', 'duration', 'estimatedCost', 'mapQuery', 'indoor', 'purchaseNote', 'latitude', 'longitude', 'category', 'order'],
               properties: {
-                period: { type: 'STRING' },
+                period: { type: 'STRING', enum: [...ACTIVITY_PERIODS] },
                 startTime: { type: 'STRING' },
                 endTime: { type: 'STRING' },
                 title: { type: 'STRING' },
@@ -784,7 +862,7 @@ const planSchema = {
             type: 'OBJECT',
             required: ['category', 'amount', 'note'],
             properties: {
-              category: { type: 'STRING' },
+              category: { type: 'STRING', enum: [...BUDGET_CATEGORIES] },
               amount: { type: 'NUMBER' },
               note: { type: 'STRING' },
             },
@@ -798,7 +876,7 @@ const planSchema = {
         type: 'OBJECT',
         required: ['category', 'item', 'done'],
         properties: {
-          category: { type: 'STRING' },
+          category: { type: 'STRING', enum: [...CHECKLIST_CATEGORIES] },
           item: { type: 'STRING' },
           done: { type: 'BOOLEAN' },
         },
@@ -1066,6 +1144,11 @@ serve(async (req) => {
     }
 
     const body = await req.json()
+
+    // O idioma da resposta, pedido pelo cliente. Padrão português, que é o que
+    // esta função sempre respondeu: cliente que não manda o campo (app antigo em
+    // cache, chamada de teste) continua recebendo exatamente o que recebia.
+    const responseLanguage = assistantLanguageFor(body?.language)
     const supportedActions = ['generate_plan', 'regenerate_activity', 'adjust_plan']
     const action = supportedActions.includes(body?.action) ? body.action : 'generate_plan'
     const request = body?.planRequest || {}
@@ -1312,9 +1395,9 @@ serve(async (req) => {
         ),
       }
       const outputShape = includePlanDetails
-        ? `{"title":"...","summary":"...","destinationCountry":"...","localCurrency":"BRL","budgetStatus":"...","weatherNote":"...","days":[{"day":${spec.startDay},"date":"YYYY-MM-DD","theme":"...","activities":[{"period":"manhã","startTime":"09:00","endTime":"11:00","title":"...","description":"...","location":"...","duration":"2 horas","estimatedCost":0,"mapQuery":"...","indoor":false,"purchaseNote":"...","latitude":0.0,"longitude":0.0,"category":"atracao","order":1}]}],"budget":{"total":0,"currency":"${currency}","items":[{"category":"Alimentação","amount":0,"note":"..."}],"shoppingIncluded":false,"scopeNote":"..."},"checklist":[{"category":"Documentos","item":"...","done":false}],"safetyTips":["..."],"practicalTips":["..."],"sources":[]}`
-        : `{"days":[{"day":${spec.startDay},"date":"YYYY-MM-DD","theme":"...","activities":[{"period":"manhã","startTime":"09:00","endTime":"11:00","title":"...","description":"...","location":"...","duration":"2 horas","estimatedCost":0,"mapQuery":"...","indoor":false,"purchaseNote":"...","latitude":0.0,"longitude":0.0,"category":"atracao","order":1}]}]}`
-      const prompt = `Você é o planejador de viagens do Journi. Responda em português brasileiro e apenas no JSON solicitado.
+        ? `{"title":"...","summary":"...","destinationCountry":"...","localCurrency":"BRL","budgetStatus":"...","weatherNote":"...","days":[{"day":${spec.startDay},"date":"YYYY-MM-DD","theme":"...","activities":[{"period":"manha","startTime":"09:00","endTime":"11:00","title":"...","description":"...","location":"...","duration":"2 horas","estimatedCost":0,"mapQuery":"...","indoor":false,"purchaseNote":"...","latitude":0.0,"longitude":0.0,"category":"atracao","order":1}]}],"budget":{"total":0,"currency":"${currency}","items":[{"category":"alimentacao","amount":0,"note":"..."}],"shoppingIncluded":false,"scopeNote":"..."},"checklist":[{"category":"documentos","item":"...","done":false}],"safetyTips":["..."],"practicalTips":["..."],"sources":[]}`
+        : `{"days":[{"day":${spec.startDay},"date":"YYYY-MM-DD","theme":"...","activities":[{"period":"manha","startTime":"09:00","endTime":"11:00","title":"...","description":"...","location":"...","duration":"2 horas","estimatedCost":0,"mapQuery":"...","indoor":false,"purchaseNote":"...","latitude":0.0,"longitude":0.0,"category":"atracao","order":1}]}]}`
+      const prompt = `Você é o planejador de viagens do Journi. Responda em ${responseLanguage.promptName} e apenas no JSON solicitado.
 
 Pedido deste bloco: ${JSON.stringify(chunkRequest)}
 Contexto do roteiro completo: ${duration} dias; este bloco cobre os dias ${spec.startDay} a ${chunkEndDay}.
@@ -1348,14 +1431,16 @@ Regras:
 - Siga dayDestinations exatamente: cada dia deve acontecer somente no destino atribuído a ele. Use um dia de deslocamento coerente quando houver troca de país.
 - Use realPlaces do destino correto sempre que estiver disponível. Não repita a mesma atração em dias diferentes.
 - Todos os custos devem ser numéricos em ${currency}, para ${travelers} viajante(s). O total deve refletir a soma realista das categorias, sem ser limitado por um orçamento informado pelo usuário.
- - Quando houver researchedBudget nos dados externos, copie esse orçamento integralmente. A pesquisa de preços já foi feita separadamente e é a fonte oficial para Passagens, Hospedagem e demais categorias.
- - budget.items deve detalhar Passagens, Hospedagem, Alimentação, Transporte local, Passeios e ingressos, Compras e Reserva. Os itens devem somar exatamente budget.total.
+- Quando houver researchedBudget nos dados externos, copie esse orçamento integralmente. A pesquisa de preços já foi feita separadamente e é a fonte oficial para Passagens, Hospedagem e demais categorias.
+- budget.items deve detalhar Passagens, Hospedagem, Alimentação, Transporte local, Passeios e ingressos, Compras e Reserva, nesta ordem, e category deve ser exatamente um destes valores: ${BUDGET_CATEGORIES.join(', ')} (passagens, hospedagem, alimentação, transporte local, passeios e ingressos, compras e reserva, respectivamente). Os itens devem somar exatamente budget.total.
+- Não presuma passagens ou hospedagem: quando não houver dados suficientes, use valor 0 na categoria e explique em note que não está incluída. Não conte custos duas vezes.
 - Inclua Compras somente quando couber no orçamento. shoppingIncluded só pode ser true quando a categoria Compras tiver valor maior que 0.
 - Atividades realmente gratuitas devem ter estimatedCost igual a 0.
 - mapQuery deve ser uma busca precisa no formato "local, cidade, país".
 - Toda atividade é obrigada a trazer latitude e longitude reais do lugar, em graus decimais (ex.: -22.9519, -43.2105). Use as coordenadas verdadeiras do ponto citado no title/location, nunca o centro genérico da cidade e nunca 0. Se não souber a coordenada exata do estabelecimento, use a do endereço/quarteirão dele.
 - category deve ser exatamente um destes valores: ${PLACE_CATEGORIES.join(', ')}. Refeições são restaurante, bares e baladas são vida_noturna, hospedagem é hotel, museus e pontos turísticos são atracao, parques e trilhas são natureza, lojas e feiras são compras, deslocamentos são transporte. Use outro apenas quando nenhum dos anteriores se aplicar.
-- order é a sequência de visita dentro do dia, começando em 1 e seguindo a ordem cronológica (manhã, tarde, noite).
+- period deve ser exatamente um destes valores: ${ACTIVITY_PERIODS.join(', ')}. Nunca escreva "manhã", "tarde" ou "noite" com acento ou em outro idioma — o client traduz a partir deste código.
+- order é a sequência de visita dentro do dia, começando em 1 e seguindo a ordem cronológica (${ACTIVITY_PERIODS.join(', ')}).
 
 - Priorize realPlaces e copie seus dados verificados sem alterá-los. Combine restaurante, hotel e passeio com a categoria correta.
 
@@ -1363,7 +1448,7 @@ Regras:
 - Sem officialUrl, oriente em purchaseNote a consultar ingressos e canais oficiais na ficha do local no Maps.
 - Não invente avaliações, horários, preços oficiais ou regras legais. Indique estimativas claramente.
 - Use dados meteorológicos apenas quando existirem e inclua as fontes reais consultadas.
-- Checklist deve incluir documentos, saúde, dinheiro, conectividade e bagagem.
+- Checklist deve incluir um item para cada uma destas categorias: documentos, saúde, dinheiro, conectividade e bagagem. checklist[].category deve ser exatamente um destes valores: ${CHECKLIST_CATEGORIES.join(', ')}, na mesma ordem.
 - Inclua alertas de segurança objetivos, sem alarmismo.
 - ${includePlanDetails ? 'Inclua todos os campos gerais do roteiro.' : 'Este é um bloco complementar: retorne somente o campo days.'}`
       const activitiesSchema = {
@@ -1701,9 +1786,28 @@ Regras:
         ...plan.budget,
         scopeNote: `Estimativa da viagem completa de ${duration} dias, baseada na pesquisa de preços separada do roteiro.`,
       }
-      plan.checklist = [...new Map(chunkPlans.flatMap(item => item.checklist || []).map((item: any) => [`${item.category}:${item.item}`, item])).values()]
+      plan.checklist = [...new Map(chunkPlans.flatMap(item => item.checklist || []).map((item: any) => {
+        const category = normalizeChecklistCategory(item.category)
+        return [`${category}:${item.item}`, { ...item, category }]
+      })).values()]
       plan.safetyTips = [...new Set(chunkPlans.flatMap(item => item.safetyTips || []))]
       plan.practicalTips = [...new Set(chunkPlans.flatMap(item => item.practicalTips || []))]
+    }
+
+    // Rede de segurança igual à de activity.category/period acima: cobre tanto o roteiro de
+    // um bloco só (que não passa pela agregação acima) quanto o que o schema já deveria ter
+    // garantido, caso o provedor ignore o enum.
+    if (Array.isArray(plan?.budget?.items)) {
+      plan.budget.items = plan.budget.items.map((item: any) => ({
+        ...item,
+        category: normalizeBudgetCategory(item?.category),
+      }))
+    }
+    if (Array.isArray(plan?.checklist)) {
+      plan.checklist = plan.checklist.map((item: any) => ({
+        ...item,
+        category: normalizeChecklistCategory(item?.category),
+      }))
     }
 
     const groundedSources = [
