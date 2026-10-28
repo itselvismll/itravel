@@ -1,22 +1,26 @@
 import ukNationsGeoData from '../data/geo/uk-nations.json';
 import { getGeoCountryAlpha3 } from '../utils/geo-country-utils';
 
-// Fronteiras do mundo, servidas pelo próprio app a partir de public/geo.
+// Fronteiras do mundo, empacotadas junto com o app (import dinâmico).
 //
 // Antes isto apontava para raw.githubusercontent.com. O arquivo de lá tem 14,6 MB
 // (4,4 MB gzip) e 548.472 vértices, e vem com `cache-control: max-age=300` — cinco
 // minutos, ou seja, baixado de novo a cada sessão. A versão simplificada tem
-// 0,64 MB e 38.181 vértices (-93%), e sai do mesmo host do app, com o cache dele.
+// 0,64 MB e 38.181 vértices (-93%).
+//
+// Depois isto virou um fetch('/geo/countries.json') servido por public/geo — mas
+// a WebView nativa do globo (NativeGlobe.dom.js) carrega de `file:///android_asset/
+// www.bundle/...`, e a WebView do Android bloqueia fetch()/XMLHttpRequest para o
+// esquema file:// por padrão. O fetch falhava sempre lá dentro (TypeError: Failed
+// to fetch), mesmo com o arquivo certinho dentro do APK — e nunca falhou no web
+// porque lá a página é servida por https://, não file://.
+//
+// Por isso agora é import() dinâmico: o Metro resolve e empacota o JSON como
+// módulo, sem rede nenhuma — mesmo princípio do uk-nations.json (import estático),
+// só que lazy porque aqui são 672 KB e não convém inflar o bundle principal com
+// eles sempre que o módulo é carregado.
 //
 // O arquivo é gerado por scripts/build-country-geojson.cjs e versionado no git.
-//
-// O prefixo é o mesmo truque de GlobeMap.web.js: no web `EXPO_BASE_URL` é vazio e
-// a URL resolve na raiz do site; dentro do DOM Component nativo o documento é
-// servido por uma URL interna do Expo, e sem o prefixo o arquivo seria procurado
-// em `file:///geo/...` e não existiria.
-const publicBaseUrl = (process.env.EXPO_BASE_URL || '/').replace(/\/?$/, '/');
-const GEOJSON_URL = `${publicBaseUrl}geo/countries.json`;
-
 let countriesPromise;
 
 // England/Scotland/Wales/Northern Ireland boundaries (ONS Open Geography Portal,
@@ -59,11 +63,8 @@ export const withUkNations = (geoData, nations = getUkNationsGeoData()) => {
 
 export const getWorldGeoData = () => {
   if (!countriesPromise) {
-    countriesPromise = fetch(GEOJSON_URL)
-      .then((response) => {
-        if (!response.ok) throw new Error(`Não foi possível carregar o mapa (${response.status})`);
-        return response.json();
-      })
+    countriesPromise = import('../data/geo/countries.json')
+      .then((module) => module.default ?? module)
       // A correção do Reino Unido entra aqui, na fonte, e não em cada tela: o
       // globo, o passaporte e qualquer coisa que venha depois enxergam o mesmo
       // mundo. Uma tela que corrigisse por conta própria discordaria das outras

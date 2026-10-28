@@ -1,4 +1,4 @@
-// Gera public/geo/countries.json: as fronteiras do mundo simplificadas.
+// Gera src/data/geo/countries.json: as fronteiras do mundo simplificadas.
 //
 // POR QUE ISTO EXISTE
 //
@@ -69,7 +69,7 @@ const PRECISION = 0.001;
 const KEPT_FIELDS = ['ISO3166-1-Alpha-3', 'ISO3166-1-Alpha-2', 'name'];
 
 const root = path.join(__dirname, '..');
-const outputDir = path.join(root, 'public', 'geo');
+const outputDir = path.join(root, 'src', 'data', 'geo');
 const outputFile = path.join(outputDir, 'countries.json');
 const tempFile = path.join(outputDir, '.source.geojson');
 

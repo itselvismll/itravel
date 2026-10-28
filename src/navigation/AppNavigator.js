@@ -109,6 +109,14 @@ const GlobeScreenSafe = withErrorBoundary(GlobeScreen, 'Mapa');
 const ExploreScreenSafe = withErrorBoundary(ExploreScreen, 'Explorar');
 const ProfileStackSafe = withErrorBoundary(ProfileStack, 'Perfil');
 
+// AssistantResultScreen fica no ROOT stack, empilhado sobre o `Main` (a
+// TabNavigator com o globo ao vivo). Incidente de 06/10/2026: um erro de
+// render sem boundary aqui não derrubou só esta tela — sem nada para segurar o
+// erro no caminho, a árvore desmontou das raízes do stack para cima, levando
+// com ela o globo que já estava montado por baixo (daí o segundo erro, do
+// MapLibre, que era CONSEQUÊNCIA, não causa). Mesma rede de segurança das tabs.
+const AssistantResultScreenSafe = withErrorBoundary(AssistantResultScreen, 'Roteiro');
+
 // Raio da pílula do item ativo. Fecha a cápsula do item sem competir com o raio
 // da barra, que é maior.
 const TAB_ITEM_RADIUS = 27;
@@ -635,7 +643,7 @@ export default function AppNavigator() {
               />
               <Stack.Screen
                 name="AssistantResult"
-                component={AssistantResultScreen}
+                component={AssistantResultScreenSafe}
                 options={{ headerShown: false }}
               />
               <Stack.Screen
